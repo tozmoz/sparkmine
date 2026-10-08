@@ -74,7 +74,6 @@ export const EMPTY_SHOP: ShopModel = {
   gain: 0,
   nextCrystalAt: CRYSTAL_UNIT,
   showCollapse: false,
-  stats: { clicks: 0, tools: 0, turns: 0 },
 }
 
 export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopModel {
@@ -102,11 +101,7 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
     price: u.cost,
     canBuy: save.sparks >= u.cost,
   }))
-  let nextUp: ShopModel['next'] = null
-  if (next !== null) {
-    const p = game.progress(save, next)
-    nextUp = { name: next.name, icon: upgradeIcon(next), text: unlockText(next), have: Math.min(p.have, p.need), need: p.need }
-  }
+  const nextUp: ShopModel['next'] = next === null ? null : { name: next.name, icon: upgradeIcon(next), text: unlockText(next) }
   const gain = game.crystalGain(save)
   return {
     isLoaded,
@@ -125,7 +120,6 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
     gain,
     nextCrystalAt: (save.crystals + gain + 1) ** 3 * CRYSTAL_UNIT,
     showCollapse: save.crystals > 0 || save.allTime >= CRYSTAL_UNIT / 10,
-    stats: { clicks: save.clicks, tools: save.tools, turns: save.turns },
   }
 }
 
@@ -141,6 +135,8 @@ export const EMPTY_HUD: HudProps = {
   lastTurn: 0,
   last: null,
   goal: null,
+  tools: 0,
+  turns: 0,
 }
 
 export function hudProps(save: Save, view: View, mode: Mode, variant: HudProps['variant']): HudProps {
@@ -162,5 +158,7 @@ export function hudProps(save: Save, view: View, mode: Mode, variant: HudProps['
       next === null || progress === null
         ? null
         : { name: next.name, have: Math.min(progress.have, progress.need), need: progress.need },
+    tools: save.tools,
+    turns: save.turns,
   }
 }

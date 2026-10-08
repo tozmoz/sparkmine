@@ -535,8 +535,12 @@ function windowKeyframes(name: string, from: number, to: number): string {
   return stepKeyframes(name, 'opacity', '0', to < 1 ? [[from, '1'], [to, '0']] : [[from, '1']])
 }
 
-/** The scene as an SVG document whose own CSS animates it. */
-export function sceneSvg(spec: SceneSpec, scale: number): string {
+/**
+ * The scene as an SVG document whose own CSS animates it. `fluid` makes it fill
+ * whatever box draws it, cropping rather than leaving a margin, for a surface
+ * that may draw the box a little taller than asked.
+ */
+export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string {
   const { tunnel, rock } = world(false)
   const { frames, ms } = framesFor(spec.mode)
   const isDigging = spec.mode === 'work'
@@ -629,8 +633,11 @@ export function sceneSvg(spec: SceneSpec, scale: number): string {
     body.push(`<g class="sp">${paths(layer)}</g>`)
   }
 
+  const size = fluid
+    ? 'width="100%" height="100%" preserveAspectRatio="xMidYMid slice"'
+    : `width="${W * scale}" height="${H * scale}"`
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W * scale}" height="${H * scale}" shape-rendering="crispEdges">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" ${size} shape-rendering="crispEdges" style="display:block;background:#211915">` +
     `<style>${css.join('')}</style>${body.join('')}</svg>`
   )
 }

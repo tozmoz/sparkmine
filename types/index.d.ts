@@ -96,12 +96,19 @@ export type HudProps = {
   last: string | null
   /** The upgrade closest to unlocking, and how close. */
   goal: { name: string; have: number; need: number } | null
+  tools: number
+  turns: number
 }
+
+/** Something the mine earned, shown floating up from the rock face. */
+export type FeedItem = { id: number; text: string }
 
 /** What the clickable layer over the scene is handed. */
 export type TapProps = {
   mode: Mode
   click: number
+  /** The latest earnings, newest last: the layer pops the ones it has not shown. */
+  feed: FeedItem[]
 }
 
 export type IconId =
@@ -138,13 +145,13 @@ export type ShopModel = {
   teaser: number | null
   upgrades: ShopItem[]
   more: number
-  next: { name: string; icon: IconId; text: string; have: number; need: number } | null
+  /** The next unlock; how close it is lives in the live counter, so clicks do not redraw the pane. */
+  next: { name: string; icon: IconId; text: string } | null
   values: { click: number; read: number; edit: number }
   crystals: number
   gain: number
   nextCrystalAt: number
   showCollapse: boolean
-  stats: { clicks: number; tools: number; turns: number }
 }
 
 declare module 'claude-code' {

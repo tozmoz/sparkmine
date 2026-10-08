@@ -6,7 +6,7 @@ import type { ElementTable, RenderElement, RenderSurface } from 'claude-code'
 
 import type { IconId, ProducerId, ShopItem, ShopModel } from '../types'
 import { CRYSTAL_BONUS } from './data.ts'
-import { commas, fmt } from './format.ts'
+import { fmt } from './format.ts'
 
 type Elements = ElementTable<RenderSurface>
 
@@ -26,12 +26,6 @@ export type ShopParts = {
   live: RenderElement
   /** Cards get a border where there is room for one. */
   isRoomy: boolean
-}
-
-/** ▰▰▰▱▱▱▱▱▱▱ */
-export function bar(have: number, need: number, width = 10): string {
-  const filled = need <= 0 ? width : Math.max(0, Math.min(width, Math.floor((have / need) * width)))
-  return '▰'.repeat(filled) + '▱'.repeat(width - filled)
 }
 
 function card(el: Elements, parts: ShopParts, item: ShopItem, button: RenderElement): RenderElement {
@@ -108,10 +102,7 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
     model.next === null ? null : (
       <Box flexDirection="row" columnGap={1} alignItems="center" paddingX={1}>
         {parts.icon(model.next.icon, true)}
-        <Box flexDirection="column">
-          <Text dimColor>{`Next: ${model.next.name}, ${model.next.text}`}</Text>
-          <Text color="claude">{`${bar(model.next.have, model.next.need)} ${commas(model.next.have)}/${commas(model.next.need)}`}</Text>
-        </Box>
+        <Text dimColor>{`Next: ${model.next.name}, ${model.next.text}`}</Text>
       </Box>
     )
 
@@ -150,7 +141,6 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
         {next}
       </Box>
       {collapse}
-      <Text dimColor>{`Clicks ${commas(model.stats.clicks)} · Tool calls ${commas(model.stats.tools)} · Turns ${commas(model.stats.turns)}`}</Text>
     </Box>
   )
 }

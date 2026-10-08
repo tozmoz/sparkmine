@@ -9,7 +9,7 @@ import { iconSvg } from './icons.ts'
 import { EMPTY_HUD, EMPTY_SHOP, hudProps } from './model.ts'
 import { H, ROWS, W, momentAt, momentKey, sceneCells, sceneSvg, type SceneSpec } from './scene.ts'
 import * as state from './state.ts'
-import { INITIAL_BAND, INITIAL_VIEW, type Io } from './state.ts'
+import { INITIAL_BAND, INITIAL_VIEW, recentFeed, type Io } from './state.ts'
 import * as ui from './ui.tsx'
 
 // The session's values. The band draws from BAND and the shop from SHOP alone:
@@ -30,6 +30,10 @@ const HEADER_SCALE = 2
 const HUD_COLUMNS = 44
 /** Clicks one post may carry: a held key or a script gets no more than this. */
 const MAX_BURST = 10
+/** The HUD's fixed size in cells: a Client that changes its own size is unmounted. */
+const HUD_WORK = { width: 34, height: 3 } as const
+const HUD_IDLE = { width: 46, height: 1 } as const
+const HUD_SHOP = { width: 56, height: 4 } as const
 
 /** Tools that wait on the person, so the miner rests while they decide. */
 const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
@@ -37,11 +41,11 @@ const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 const specKey = (spec: SceneSpec) => `${spec.mode}:${spec.carts}:${spec.goblins}`
 const svgs = new Map<string, string>()
 
-function svgFor(spec: SceneSpec, scale: number): string {
-  const key = `${specKey(spec)}@${scale}`
+function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
+  const key = `${specKey(spec)}@${scale}${fluid ? ':fluid' : ''}`
   let svg = svgs.get(key)
   if (svg === undefined) {
-    svg = sceneSvg(spec, scale)
+    svg = sceneSvg(spec, scale, fluid)
     svgs.set(key, svg)
   }
   return svg
@@ -184,6 +188,9 @@ export const register: Register = on => {
     return verdict
   }).catch(($, e, next) => next(e))
 
+  /** What the tap layer reported, kept in the store while we learn how surfaces lay it out. */
+  let tapReport = ''
+
   // The HUD Clients ask for fresh numbers a few times a second; the tap layer
   // over the scene brings clicks. Each post carries its running total of clicks.
   on('ui.message', { element: ['hud', 'shophud', 'tap'] }, async ($, e) => {
@@ -195,13 +202,19 @@ export const register: Register = on => {
         const fresh = Math.min(MAX_BURST, post.total - before)
         for (let i = 0; i < fresh; i += 1) await state.click(io)
       }
+      const { columns, rows } = e.data as { columns?: unknown; rows?: unknown }
+      const report = JSON.stringify({ surface: e.surface, columns, rows, clicks: post.total })
+      if (report !== tapReport) {
+        tapReport = report
+        await $.store.set('tap-report', { ...JSON.parse(report), at: await $.clock.now() })
+      }
     }
     const mine = await read($, MINE)
     const view = await read($, VIEW)
     const band = await read($, BAND)
     const props = hudProps(mine.save, view, band.mode, e.element === 'shophud' ? 'shop' : 'band')
     if (e.element === 'tap') {
-      const tap: TapProps = { mode: band.mode, click: props.click }
+      const tap: TapProps = { mode: band.mode, click: props.click, feed: recentFeed() }
       return { props: tap }
     }
     if (e.element === 'hud') lastHud = props
@@ -215,16 +228,16 @@ export const register: Register = on => {
       return next(e)
     }
     const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode }
-    const tapProps: TapProps = { mode: band.mode, click: lastHud.click }
+    const tapProps: TapProps = { mode: band.mode, click: lastHud.click, feed: recentFeed() }
     const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins }
+    const hudSize = band.mode === 'idle' ? HUD_IDLE : HUD_WORK
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
-    const mine = () => (io === null ? 0 : state.click(io))
     let ours: RenderElement
 
     if (e.surface === 'desktop') {
       live = null
       const { Box, Button, Client, Svg, Text } = $.ui.resolve(e)
-      const hud = <Client key="hud" module="./hud.ts" props={props} />
+      const hud = <Client key="hud" module="./hud.ts" props={props} width={hudSize.width} height={hudSize.height} />
       const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
       if (band.mode === 'idle') {
         ours = (
@@ -246,13 +259,14 @@ export const register: Register = on => {
               ))}
             </Box>
           )
+        // On the desktop the mine itself is the button: the tap layer lies over the scene.
         ours = (
           <Box flexDirection="row" justifyContent="space-between" alignItems="center" borderStyle="round" borderColor="#5e3b1d" paddingX={1}>
             <Box flexDirection="row" columnGap={2} alignItems="center">
-              <Box position="relative">
+              <Box position="relative" alignItems="flex-start">
                 <Svg
-                  source={svgFor(spec, SCALE)}
-                  alt="A pixel miner digs into a rock wall"
+                  source={svgFor(spec, SCALE, true)}
+                  alt="A pixel miner digs into a rock wall. Click it to mine."
                   width={W * SCALE}
                   height={H * SCALE}
                   isInteractive
@@ -264,23 +278,21 @@ export const register: Register = on => {
                 ) : null}
               </Box>
               {hud}
-              <Box flexDirection="column" rowGap={1}>
-                {band.mode === 'work' ? <Button key="mine" label="⛏ Mine" variant="primary" hotkey="m" onPress={mine} /> : null}
-                {shop}
-              </Box>
+              {shop}
             </Box>
             {crew}
           </Box>
         )
       }
     } else if (e.surface === 'terminal') {
+      // The terminal reports the pointer only in fullscreen, so it keeps a Mine button.
       const { Box, Button, Client, Raster } = $.ui.resolve(e)
-      const hud = <Client key="hud" module="./hud.ts" props={props} />
+      const hud = <Client key="hud" module="./hud.ts" props={props} width={hudSize.width} height={hudSize.height} />
       const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
       const buttons =
         band.mode === 'work' ? (
           <Box flexDirection="column">
-            <Button key="mine" label="Mine" hotkey="m" onPress={mine} />
+            <Button key="mine" label="Mine" hotkey="m" onPress={() => (io === null ? 0 : state.click(io))} />
             {shop}
           </Box>
         ) : (
@@ -346,7 +358,7 @@ export const register: Register = on => {
       return ui.shopTree($.ui.resolve(e), shop, {
         icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
         header: <Svg source={svgFor(header, HEADER_SCALE)} alt="The mine" width={W * HEADER_SCALE} height={H * HEADER_SCALE} />,
-        live: <Client key="shophud" module="./hud.ts" props={props} />,
+        live: <Client key="shophud" module="./hud.ts" props={props} width={HUD_SHOP.width} height={HUD_SHOP.height} />,
         isRoomy: true,
       }, act)
     }
@@ -355,7 +367,7 @@ export const register: Register = on => {
       return ui.shopTree($.ui.resolve(e), shop, {
         icon: () => null,
         header: null,
-        live: <Client key="shophud" module="./hud.ts" props={props} />,
+        live: <Client key="shophud" module="./hud.ts" props={props} width={HUD_SHOP.width} height={HUD_SHOP.height} />,
         isRoomy: false,
       }, act)
     }
