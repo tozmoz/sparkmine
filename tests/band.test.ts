@@ -156,6 +156,10 @@ test('the wooden Shop sign opens the shop', async ($, on) => {
   const ui = await $.ui.mount(band('desktop'))
   expect((await ui.find({ in: 'shopbtn', key: 'shop' }))?.props).toMatchObject({ backgroundColor: '#4b2f1c' })
   expect(await ui.find({ in: 'shopbtn', type: 'Text', text: '✻ Shop' })).toBeDefined()
+  // The sign keeps its own width under the HUD instead of stretching across the column.
+  const holdsSign = (child: unknown) => (child as { type?: string }).type === 'Client' && JSON.stringify(child).includes('"shopbtn"')
+  const column = (await ui.findAll({ type: 'Box' })).find(box => box.children.some(holdsSign))
+  expect(column?.props).toMatchObject({ flexDirection: 'column', alignItems: 'flex-start' })
   await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'shopbtn' })
   await ui.advance(POLL)
   expect(w.opened).toEqual(['sparkmine'])
