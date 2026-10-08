@@ -95,6 +95,9 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
       </Box>
     )
 
+  // Bordered cards stand apart by a row, so their edges never touch.
+  const cards = (list: RenderElement[]) => (parts.isRoomy ? <Box flexDirection="column" rowGap={1}>{list}</Box> : list)
+
   const upgrades = model.upgrades.map(item =>
     card(el, parts, item, priceButton(el, `up-${item.id}`, `${fmt(item.price)} ✻`, item.canBuy, () => act.upgrade(item.id))),
   )
@@ -131,12 +134,12 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
             <Button key={`amount-${n}`} label={`×${n}`} plain dimColor={amount !== n} onPress={() => act.amount(n)} />
           ))}
         </Box>
-        {producers}
+        {cards(producers)}
         {teaser}
       </Box>
       <Box flexDirection="column">
         <Text bold>Upgrades</Text>
-        {upgrades.length > 0 ? upgrades : <Text dimColor>Nothing on sale yet.</Text>}
+        {upgrades.length > 0 ? cards(upgrades) : <Text dimColor>Nothing on sale yet.</Text>}
         {model.more > 0 ? <Text dimColor>{`+${model.more} more on sale`}</Text> : null}
         {next}
       </Box>

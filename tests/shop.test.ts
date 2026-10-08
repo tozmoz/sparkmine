@@ -106,3 +106,17 @@ test('/mine reset asks first', async ($, on) => {
   expect((await command($, 'reset')).text).toBe('Sparkmine was reset.')
   expect(w.store.get('save')).toMatchObject({ sparks: 0 })
 })
+
+test('on the desktop the cards stand a row apart, in the terminal they stay packed', async ($, on) => {
+  world(on, { save: seeded({ sparks: 1_000, producers: { apprentice: 3 } }) })
+  await start($)
+  const gapped = async (surface: 'terminal' | 'desktop') => {
+    const ui = await $.ui.mount(pane(surface))
+    const boxes = await ui.findAll({ type: 'Box' })
+    await ui.unmount()
+    // The box that holds the producer cards themselves, not the pane around them.
+    return boxes.some(box => box.props.rowGap === 1 && !JSON.stringify(box).includes('Producers') && JSON.stringify(box).includes('buy-apprentice'))
+  }
+  expect(await gapped('desktop')).toBe(true)
+  expect(await gapped('terminal')).toBe(false)
+})
