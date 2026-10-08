@@ -278,7 +278,8 @@ export const register: Register = on => {
             </Box>
           )
         // One row, in order, nothing stretched apart: where room runs out the crew is cut, never overlapped.
-        // The gold Mine sign leads the HUD, and the wooden Shop sign sits under it.
+        // The gold Mine sign leads the HUD, and the wooden Shop sign sits under it at its own
+        // width: a column stretches its children across by default, and a desktop does too.
         ours = (
           <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d" paddingX={1}>
             <Svg
@@ -288,7 +289,7 @@ export const register: Register = on => {
               height={H * SCALE}
               isInteractive
             />
-            <Box flexDirection="column" flexShrink={0}>
+            <Box flexDirection="column" alignItems="flex-start" flexShrink={0}>
               {hud}
               {shop}
             </Box>
