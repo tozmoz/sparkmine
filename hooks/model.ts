@@ -139,6 +139,8 @@ export const EMPTY_HUD: HudProps = {
   goal: null,
   tools: 0,
   turns: 0,
+  width: 34,
+  height: 3,
 }
 
 export function hudProps(save: Save, view: View, mode: Mode, variant: HudProps['variant']): HudProps {
@@ -162,5 +164,7 @@ export function hudProps(save: Save, view: View, mode: Mode, variant: HudProps['
         : { name: next.name, have: Math.min(progress.have, progress.need), need: progress.need },
     tools: save.tools,
     turns: save.turns,
+    width: EMPTY_HUD.width,
+    height: EMPTY_HUD.height,
   }
 }

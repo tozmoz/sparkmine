@@ -3,13 +3,13 @@
 import { atom, read, update } from 'claude-code'
 import type { RenderElement, Register, Timer } from 'claude-code'
 
-import type { HudProps, TapProps } from '../types'
+import type { HudProps } from '../types'
 import { newMine, producer } from './game.ts'
 import { iconSvg } from './icons.ts'
 import { EMPTY_HUD, EMPTY_SHOP, hudProps } from './model.ts'
 import { H, ROWS, W, momentAt, momentKey, sceneCells, sceneSvg, type SceneSpec } from './scene.ts'
 import * as state from './state.ts'
-import { INITIAL_BAND, INITIAL_VIEW, recentFeed, type Io } from './state.ts'
+import { INITIAL_BAND, INITIAL_VIEW, type Io } from './state.ts'
 import * as ui from './ui.tsx'
 
 // The session's values. The band draws from BAND and the shop from SHOP alone:
@@ -28,14 +28,6 @@ const SCALE = 3
 const HEADER_SCALE = 2
 /** Columns the HUD and the buttons need beside the terminal scene. */
 const HUD_COLUMNS = 44
-/** Clicks one post may carry: a held key or a script gets no more than this. */
-const MAX_BURST = 10
-/**
- * Rows the tap layer takes over the scene. The desktop lays a percentage of
- * height out as one row, so the layer asks for rows; a little more than the
- * scene is fine, since the band clips it.
- */
-const TAP_ROWS = 4
 /** The HUD's fixed size in cells: a Client that changes its own size is unmounted. */
 const HUD_WORK = { width: 34, height: 3 } as const
 const HUD_IDLE = { width: 46, height: 1 } as const
@@ -71,21 +63,11 @@ function cellsFor(spec: SceneSpec, ms: number): { key: string; cells: string } {
   return { key, cells: hit }
 }
 
-function readPost(data: unknown): { instance: string; total: number } | null {
-  if (data === null || typeof data !== 'object') return null
-  const { instance, total } = data as Record<string, unknown>
-  if (typeof instance !== 'string' || instance.length === 0 || instance.length > 64) return null
-  if (typeof total !== 'number' || !Number.isInteger(total) || total < 0) return null
-  return { instance, total }
-}
-
 export const register: Register = on => {
   let io: Io | null = null
   let isRunning = false
   /** The last numbers the HUD was handed, so a redraw of the band starts from them. */
   let lastHud: HudProps = EMPTY_HUD
-  /** Clicks already counted, per HUD instance: each post carries its running total. */
-  const counted = new Map<string, number>()
   /** The terminal's scene, which a timer repaints moment by moment. */
   let live: { requestId: string; spec: SceneSpec; shown: string } | null = null
   let animation: Timer | null = null
@@ -194,35 +176,13 @@ export const register: Register = on => {
     return verdict
   }).catch(($, e, next) => next(e))
 
-  /** What the tap layer reported, kept in the store while we learn how surfaces lay it out. */
-  let tapReport = ''
-
-  // The HUD Clients ask for fresh numbers a few times a second; the tap layer
-  // over the scene brings clicks. Each post carries its running total of clicks.
-  on('ui.message', { element: ['hud', 'shophud', 'tap'] }, async ($, e) => {
-    const post = readPost(e.data)
-    if (post !== null && e.element === 'tap' && io !== null) {
-      const before = counted.get(post.instance) ?? 0
-      if (post.total > before) {
-        counted.set(post.instance, post.total)
-        const fresh = Math.min(MAX_BURST, post.total - before)
-        for (let i = 0; i < fresh; i += 1) await state.click(io)
-      }
-      const { columns, rows, pointer } = e.data as { columns?: unknown; rows?: unknown; pointer?: unknown }
-      const report = JSON.stringify({ surface: e.surface, columns, rows, pointer, clicks: post.total })
-      if (report !== tapReport) {
-        tapReport = report
-        await $.store.set('tap-report', { ...JSON.parse(report), at: await $.clock.now() })
-      }
-    }
+  // The HUD Clients ask for fresh numbers a few times a second.
+  on('ui.message', { element: ['hud', 'shophud'] }, async ($, e) => {
     const mine = await read($, MINE)
     const view = await read($, VIEW)
     const band = await read($, BAND)
-    const props = hudProps(mine.save, view, band.mode, e.element === 'shophud' ? 'shop' : 'band')
-    if (e.element === 'tap') {
-      const tap: TapProps = { mode: band.mode, click: props.click, rows: TAP_ROWS, feed: recentFeed() }
-      return { props: tap }
-    }
+    const size = e.element === 'shophud' ? HUD_SHOP : band.mode === 'idle' ? HUD_IDLE : HUD_WORK
+    const props: HudProps = { ...hudProps(mine.save, view, band.mode, e.element === 'shophud' ? 'shop' : 'band'), ...size }
     if (e.element === 'hud') lastHud = props
     return { props }
   })
@@ -233,11 +193,11 @@ export const register: Register = on => {
       live = null
       return next(e)
     }
-    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode }
-    const tapProps: TapProps = { mode: band.mode, click: lastHud.click, rows: TAP_ROWS, feed: recentFeed() }
-    const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick }
     const hudSize = band.mode === 'idle' ? HUD_IDLE : HUD_WORK
+    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, ...hudSize }
+    const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick }
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
+    const mine = () => (io === null ? 0 : state.click(io))
     let ours: RenderElement
 
     if (e.surface === 'desktop') {
@@ -265,40 +225,34 @@ export const register: Register = on => {
               ))}
             </Box>
           )
-        // On the desktop the mine itself is the button: the tap layer lies over the scene.
         ours = (
           <Box flexDirection="row" justifyContent="space-between" alignItems="center" borderStyle="round" borderColor="#5e3b1d" paddingX={1}>
             <Box flexDirection="row" columnGap={2} alignItems="center">
-              <Box position="relative" alignItems="flex-start">
-                <Svg
-                  source={svgFor(spec, SCALE, true)}
-                  alt="A pixel miner digs into a rock wall. Click it to mine."
-                  width={W * SCALE}
-                  height={H * SCALE}
-                  isInteractive
-                />
-                {band.mode === 'work' ? (
-                  <Box position="absolute" top={0} left={0} width="100%">
-                    <Client key="tap" module="./tap.ts" width="100%" height={TAP_ROWS} props={tapProps} />
-                  </Box>
-                ) : null}
-              </Box>
+              <Svg
+                source={svgFor(spec, SCALE, true)}
+                alt="A pixel miner digs into a rock wall"
+                width={W * SCALE}
+                height={H * SCALE}
+                isInteractive
+              />
               {hud}
-              {shop}
+              <Box flexDirection="column" rowGap={1}>
+                {band.mode === 'work' ? <Button key="mine" label="⛏ Mine" onPress={mine} /> : null}
+                {shop}
+              </Box>
             </Box>
             {crew}
           </Box>
         )
       }
     } else if (e.surface === 'terminal') {
-      // The terminal reports the pointer only in fullscreen, so it keeps a Mine button.
       const { Box, Button, Client, Raster } = $.ui.resolve(e)
       const hud = <Client key="hud" module="./hud.ts" props={props} width={hudSize.width} height={hudSize.height} />
       const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
       const buttons =
         band.mode === 'work' ? (
           <Box flexDirection="column">
-            <Button key="mine" label="Mine" hotkey="m" onPress={() => (io === null ? 0 : state.click(io))} />
+            <Button key="mine" label="Mine" hotkey="m" onPress={mine} />
             {shop}
           </Box>
         ) : (
@@ -318,14 +272,7 @@ export const register: Register = on => {
         live = { requestId: e.requestId, spec, shown: frame.key }
         ours = (
           <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d">
-            <Box position="relative">
-              <Raster key="scene" columns={W} rows={ROWS} cells={frame.cells} />
-              {band.mode === 'work' ? (
-                <Box position="absolute" top={0} left={0} right={0} bottom={0}>
-                  <Client key="tap" module="./tap.ts" width="100%" height="100%" props={tapProps} />
-                </Box>
-              ) : null}
-            </Box>
+            <Raster key="scene" columns={W} rows={ROWS} cells={frame.cells} />
             {hud}
             {buttons}
           </Box>
@@ -357,7 +304,7 @@ export const register: Register = on => {
       amount: n => (io === null ? undefined : state.setAmount(io, n)),
       collapse: () => (io === null ? false : state.collapseMine(io)),
     }
-    const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode }
+    const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, ...HUD_SHOP }
     if (e.surface === 'desktop') {
       const { Client, Svg } = $.ui.resolve(e)
       const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins, pick: band.pick }

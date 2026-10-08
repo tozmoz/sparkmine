@@ -3,11 +3,8 @@ import { expect, test } from 'claude-code/testing'
 import { band, command, finishTurn, pane, seeded, start, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
-const POLL = 200
-/** Lets the tap layer poll once, so it holds the latest earnings. */
-const TAP_POLL = 300
-
-const tapAt = (x: number, y: number) => ({ type: 'down' as const, x, y, button: 'left' as const, in: 'tap' })
+const POLL = 150
+const SPARKS = /^[✦·⋆•✧]$/
 
 test('the band keeps one line while Claude is idle', async ($, on) => {
   world(on)
@@ -23,17 +20,15 @@ test('the band keeps one line while Claude is idle', async ($, on) => {
   }
 })
 
-test('on the desktop the mine itself is the button', async ($, on) => {
+test('while Claude works, the Mine button and tool calls mine', async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'fix the bug', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
-  await ui.advance(POLL)
   expect(await ui.find({ type: 'Svg' })).toBeDefined()
-  expect(await ui.find({ key: 'mine' })).toBeUndefined()
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '⛏ Click the mine to dig' })).toBeDefined()
-  await ui.pointer(tapAt(4, 1))
-  await ui.pointer(tapAt(5, 2))
+  expect((await ui.find({ key: 'mine' }))?.props).toMatchObject({ label: '⛏ Mine' })
+  await ui.press({ key: 'mine' })
+  await ui.press({ key: 'mine' })
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 2' })).toBeDefined()
   await $.tool.call({ tool: 'Read', file_path: '/tmp/project/a.ts' })
@@ -44,75 +39,38 @@ test('on the desktop the mine itself is the button', async ($, on) => {
   await ui.redraw()
   await ui.advance(POLL)
   expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  expect(await ui.find({ key: 'mine' })).toBeUndefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: '· last turn +3' })).toBeDefined()
 })
 
-test('a click pops what it earned where it landed, and in the counter', async ($, on) => {
+test('a click throws a few sparks and pops what it earned, then they fade', async ($, on) => {
   world(on, { save: seeded({ upgrades: ['pick-1', 'pick-2'], clicks: 100 }) })
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
-  await ui.pointer(tapAt(6, 2))
-  expect(await ui.find({ in: 'tap', type: 'Text', text: '+4' })).toBeDefined()
+  await ui.press({ key: 'mine' })
   await ui.advance(POLL)
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 4' })).toBeDefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeDefined()
+  expect((await ui.findAll({ in: 'hud', type: 'Text', text: SPARKS })).length).toBeGreaterThan(0)
   await ui.advance(1_000)
-  expect(await ui.find({ in: 'tap', type: 'Text', text: '+4' })).toBeUndefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeUndefined()
+  expect(await ui.findAll({ in: 'hud', type: 'Text', text: SPARKS })).toHaveLength(0)
 })
 
-test('what a tool call earns floats up from the rock face', async ($, on) => {
-  world(on)
-  await start($)
-  await $.turn.start({ text: 'go', turnId: 't1' })
-  const ui = await $.ui.mount(band('desktop'))
-  await ui.resize({ columns: 24, rows: 4, in: 'tap' })
-  await ui.advance(TAP_POLL)
-  await $.tool.call({ tool: 'Bash', command: 'npm test' })
-  await ui.advance(TAP_POLL)
-  expect(await ui.find({ in: 'tap', type: 'Text', text: '+2 Bash' })).toBeDefined()
-})
-
-test('the pointer over the scene shows how to mine', async ($, on) => {
-  world(on)
-  await start($)
-  await $.turn.start({ text: 'go', turnId: 't1' })
-  const ui = await $.ui.mount(band('desktop'))
-  expect(await ui.find({ in: 'tap', type: 'Text', text: '⛏ click to mine' })).toBeUndefined()
-  await ui.pointer({ type: 'enter', x: 3, y: 1, in: 'tap' })
-  expect(await ui.find({ in: 'tap', type: 'Text', text: '⛏ click to mine' })).toBeDefined()
-  await ui.pointer({ type: 'leave', x: 3, y: 1, in: 'tap' })
-  expect(await ui.find({ in: 'tap', type: 'Text', text: '⛏ click to mine' })).toBeUndefined()
-})
-
-test('clicks never redraw the scene', async ($, on) => {
+test('the HUD keeps one size through the sparks, and the scene is never redrawn', async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   const scene = await ui.find({ type: 'Svg' })
-  await ui.pointer(tapAt(2, 1))
-  await ui.pointer(tapAt(3, 1))
-  await ui.advance(POLL)
-  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+2$/ })).toBeDefined()
+  await ui.press({ key: 'mine' })
+  await ui.press({ key: 'mine' })
+  for (let frame = 0; frame < 12; frame += 1) {
+    await ui.advance(60)
+    expect((await ui.find({ in: 'hud', type: 'Box' }))?.props).toMatchObject({ width: 34, height: 3 })
+  }
   expect(await ui.find({ type: 'Svg' })).toEqual(scene)
-})
-
-test('the tap layer draws itself as tall as the scene, and says how big it was laid out', async ($, on) => {
-  const w = world(on)
-  await start($)
-  await $.turn.start({ text: 'go', turnId: 't1' })
-  const ui = await $.ui.mount(band('desktop'))
-  expect((await ui.find({ in: 'tap', type: 'Box' }))?.props.height).toBe(4)
-  await ui.resize({ columns: 24, rows: 4, in: 'tap' })
-  await ui.advance(TAP_POLL)
-  expect(w.store.get('tap-report')).toMatchObject({ surface: 'desktop', columns: 24, rows: 4, pointer: 0 })
-  await ui.pointer({ type: 'enter', x: 2, y: 1, in: 'tap' })
-  await ui.pointer(tapAt(2, 1))
-  await ui.advance(TAP_POLL)
-  expect(w.store.get('tap-report')).toMatchObject({ pointer: 2, clicks: 1 })
 })
 
 test('the crew and the next goal fill the rest of the band', async ($, on) => {
@@ -141,7 +99,7 @@ test('buying the Diamond pick puts it in the miner\'s hands', async ($, on) => {
   expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain('#5fd4e8')
 })
 
-test('the terminal keeps a Mine button, and draws the scene when it has room', async ($, on) => {
+test('the terminal draws the scene when it has room, and the HUD alone when not', async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'hi', turnId: 't1' })
@@ -165,7 +123,7 @@ test('a permission prompt pauses the miner until the turn moves on', async ($, o
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeDefined()
-  expect(await ui.find({ key: 'tap' })).toBeUndefined()
+  expect(await ui.find({ key: 'mine' })).toBeUndefined()
   await finishTurn($, 't1')
   await ui.redraw()
   await ui.advance(POLL)

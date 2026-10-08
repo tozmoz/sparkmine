@@ -95,7 +95,7 @@ test('what a session mines reaches the store', async ($, on) => {
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
-  await ui.pointer({ type: 'down', x: 3, y: 1, button: 'left', in: 'tap' })
+  await ui.press({ key: 'mine' })
   await ui.advance(250)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   await finishTurn($, 't1')

@@ -2,7 +2,7 @@
 // live in game.ts and what the drawings show in model.ts; this file holds the
 // store sync and the actions the hooks and buttons call.
 
-import type { Band, FeedItem, Mine, Mode, ProducerId, Save, ShopModel, View } from '../types'
+import type { Band, Mine, Mode, ProducerId, Save, ShopModel, View } from '../types'
 import { PRODUCERS } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
@@ -56,19 +56,6 @@ export const INITIAL_VIEW: View = {
 }
 
 export const INITIAL_BAND: Band = { isLoaded: false, mode: 'idle', isHidden: false, carts: 0, goblins: 0, pick: 0, crew: [] }
-
-/** The latest earnings, for the scene to float up from the rock face. Lives with the module. */
-const feed: FeedItem[] = []
-let feedId = 0
-const FEED_SIZE = 8
-
-export function pushFeed(text: string): void {
-  feedId += 1
-  feed.push({ id: feedId, text })
-  if (feed.length > FEED_SIZE) feed.splice(0, feed.length - FEED_SIZE)
-}
-
-export const recentFeed = (): FeedItem[] => feed.slice()
 
 export const newRunId = (): string =>
   `${Date.now().toString(36)}-${Math.floor(Math.random() * 36 ** 6).toString(36)}`
@@ -216,7 +203,6 @@ export async function minedTool(io: Io, tool: string): Promise<number> {
   const now = await io.now()
   const label = kind === 'mcp' ? 'MCP' : tool
   await io.view(view => ({ ...view, last: { label, value }, lastToolAt: now }))
-  pushFeed(`+${fmt(value)} ${label}`)
   await refresh(io, now)
   return value
 }
@@ -253,7 +239,6 @@ export async function endTurn(io: Io): Promise<number> {
     lastToolAt: 0,
     lastTurn: Math.max(0, mine.save.lifetime - view.turnStart),
   }))
-  if (bonus > 0) pushFeed(`+${fmt(bonus)} shift pay`)
   await refresh(io)
   void sync(io).catch(() => undefined)
   return bonus

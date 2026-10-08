@@ -100,20 +100,12 @@ export type HudProps = {
   goal: { name: string; have: number; need: number } | null
   tools: number
   turns: number
+  /** The region the HUD draws into, in cells. It always draws exactly this big: a surface unmounts a Client whose size keeps changing. */
+  width: number
+  height: number
 }
 
-/** Something the mine earned, shown floating up from the rock face. */
-export type FeedItem = { id: number; text: string }
 
-/** What the clickable layer over the scene is handed. */
-export type TapProps = {
-  mode: Mode
-  click: number
-  /** Rows to fill: the desktop sizes a Client by what it draws, so the layer draws this tall. */
-  rows: number
-  /** The latest earnings, newest last: the layer pops the ones it has not shown. */
-  feed: FeedItem[]
-}
 
 export type IconId =
   | ProducerId
