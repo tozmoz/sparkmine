@@ -66,9 +66,17 @@ test('the HUD keeps one size through the sparks, and the scene is never redrawn'
   const scene = await ui.find({ type: 'Svg' })
   await ui.press({ key: 'mine' })
   await ui.press({ key: 'mine' })
+  await ui.advance(150)
+  // What lays out in the flow (not the sparks, which are placed absolutely) stays put frame after frame.
+  const flow = async () => {
+    const root = await ui.find({ in: 'hud', type: 'Box' })
+    return JSON.stringify({ props: root?.props, rows: root?.children.filter(child => JSON.stringify(child).includes('"position":"absolute"') === false) })
+  }
+  const first = await flow()
+  expect(first).toContain('"height":3')
   for (let frame = 0; frame < 12; frame += 1) {
     await ui.advance(60)
-    expect((await ui.find({ in: 'hud', type: 'Box' }))?.props).toMatchObject({ width: 34, height: 3 })
+    expect(await flow()).toBe(first)
   }
   expect(await ui.find({ type: 'Svg' })).toEqual(scene)
 })

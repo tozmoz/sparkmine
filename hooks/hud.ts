@@ -1,10 +1,10 @@
 // The live numbers in the band and the shop. A Client draws them, so they
 // change without the band being redrawn and the scene never flickers.
 //
-// It always draws a box of exactly the size it is handed: a surface unmounts
-// a Client whose size changes frame after frame. What moves inside, the
-// sparks a click throws and the "+4" beside the counter, is placed absolutely
-// in that box and never changes it.
+// Its height is fixed and its width follows its text, which changes only when
+// new numbers arrive: a surface unmounts a Client whose size changes frame
+// after frame on its own. What moves inside, the sparks a click throws and
+// the "+4" beside the counter, is placed absolutely and never changes the size.
 //
 // It asks the hooks module for fresh numbers a few times a second. When the
 // click count it is handed grows, the counter throws a few small sparks.
@@ -125,8 +125,7 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
     surface.setState(s)
   }
 
-  const box = (children: unknown[]) =>
-    Box({ width: props.width, height: props.height, flexDirection: 'column', children: children as never[] })
+  const box = (children: unknown[]) => Box({ height: props.height, flexDirection: 'column', children: children as never[] })
   const line = (children: unknown[]) => Box({ flexDirection: 'row', columnGap: 1, children: children as never[] })
   const dim = (text: string) => Text({ dimColor: true, wrap: 'truncate-end', children: [text] })
   const count = Text({ color: 'claude', bold: true, children: [counter] })

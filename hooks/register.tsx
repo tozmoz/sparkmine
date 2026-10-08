@@ -28,10 +28,13 @@ const SCALE = 3
 const HEADER_SCALE = 2
 /** Columns the HUD and the buttons need beside the terminal scene. */
 const HUD_COLUMNS = 44
-/** The HUD's fixed size in cells: a Client that changes its own size is unmounted. */
-const HUD_WORK = { width: 34, height: 3 } as const
-const HUD_IDLE = { width: 46, height: 1 } as const
-const HUD_SHOP = { width: 56, height: 4 } as const
+/**
+ * The HUD's fixed height in rows, and how far its sparks may fly. Its width
+ * follows its text: a desktop draws a width in cells much wider than the text.
+ */
+const HUD_WORK = { width: 30, height: 3 } as const
+const HUD_IDLE = { width: 40, height: 1 } as const
+const HUD_SHOP = { width: 50, height: 4 } as const
 
 /** Tools that wait on the person, so the miner rests while they decide. */
 const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
@@ -203,7 +206,7 @@ export const register: Register = on => {
     if (e.surface === 'desktop') {
       live = null
       const { Box, Button, Client, Svg, Text } = $.ui.resolve(e)
-      const hud = <Client key="hud" module="./hud.ts" props={props} width={hudSize.width} height={hudSize.height} />
+      const hud = <Client key="hud" module="./hud.ts" props={props} height={hudSize.height} />
       const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
       if (band.mode === 'idle') {
         ours = (
@@ -225,29 +228,32 @@ export const register: Register = on => {
               ))}
             </Box>
           )
+        // One row, in order, nothing stretched apart: where room runs out the crew is cut, never overlapped.
         ours = (
-          <Box flexDirection="row" justifyContent="space-between" alignItems="center" borderStyle="round" borderColor="#5e3b1d" paddingX={1}>
-            <Box flexDirection="row" columnGap={2} alignItems="center">
-              <Svg
-                source={svgFor(spec, SCALE, true)}
-                alt="A pixel miner digs into a rock wall"
-                width={W * SCALE}
-                height={H * SCALE}
-                isInteractive
-              />
-              {hud}
-              <Box flexDirection="column" rowGap={1}>
-                {band.mode === 'work' ? <Button key="mine" label="⛏ Mine" onPress={mine} /> : null}
-                {shop}
-              </Box>
+          <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d" paddingX={1}>
+            <Svg
+              source={svgFor(spec, SCALE, true)}
+              alt="A pixel miner digs into a rock wall"
+              width={W * SCALE}
+              height={H * SCALE}
+              isInteractive
+            />
+            {hud}
+            <Box flexDirection="column" rowGap={1} flexShrink={0}>
+              {band.mode === 'work' ? <Button key="mine" label="⛏ Mine" onPress={mine} /> : null}
+              {shop}
             </Box>
-            {crew}
+            {crew === null ? null : (
+              <Box flexShrink={1} overflow="hidden" marginLeft={2}>
+                {crew}
+              </Box>
+            )}
           </Box>
         )
       }
     } else if (e.surface === 'terminal') {
       const { Box, Button, Client, Raster } = $.ui.resolve(e)
-      const hud = <Client key="hud" module="./hud.ts" props={props} width={hudSize.width} height={hudSize.height} />
+      const hud = <Client key="hud" module="./hud.ts" props={props} height={hudSize.height} />
       const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
       const buttons =
         band.mode === 'work' ? (
@@ -311,7 +317,7 @@ export const register: Register = on => {
       return ui.shopTree($.ui.resolve(e), shop, {
         icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
         header: <Svg source={svgFor(header, HEADER_SCALE)} alt="The mine" width={W * HEADER_SCALE} height={H * HEADER_SCALE} />,
-        live: <Client key="shophud" module="./hud.ts" props={props} width={HUD_SHOP.width} height={HUD_SHOP.height} />,
+        live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
         isRoomy: true,
       }, act)
     }
@@ -320,7 +326,7 @@ export const register: Register = on => {
       return ui.shopTree($.ui.resolve(e), shop, {
         icon: () => null,
         header: null,
-        live: <Client key="shophud" module="./hud.ts" props={props} width={HUD_SHOP.width} height={HUD_SHOP.height} />,
+        live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
         isRoomy: false,
       }, act)
     }
