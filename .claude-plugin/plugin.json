@@ -1,0 +1,11 @@
+{
+  "name": "sparkmine",
+  "version": "0.1.0",
+  "description": "A pixel-art mining clicker above your prompt. Claude works, you click.",
+  "author": { "name": "tozmoz" },
+  "homepage": "https://github.com/tozmoz/sparkmine",
+  "repository": "https://github.com/tozmoz/sparkmine",
+  "license": "MIT",
+  "keywords": ["mod", "game", "clicker", "idle", "pixel-art"],
+  "types": "./types/index.d.ts"
+}
