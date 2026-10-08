@@ -1,0 +1,16 @@
+{
+  "name": "sparkmine",
+  "owner": {
+    "name": "tozmoz"
+  },
+  "metadata": {
+    "description": "Sparkmine, a pixel-art mining clicker mod for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "sparkmine",
+      "source": "./",
+      "description": "A pixel-art mining clicker above your prompt. Claude works, you click."
+    }
+  ]
+}
