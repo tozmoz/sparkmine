@@ -5,10 +5,10 @@ Claude works. You click.
 
 ![A pixel miner swings a pickaxe at a rock wall](docs/miner.svg)
 
-While Claude works, a miner digs in the band above your prompt. He cuts into
-the wall swing by swing, the dirt piles up behind him, and when the vein is
-done the wall grows back for the next one. Every tool call Claude makes is
-ore. Click the mine, or press **Mine**, to dig faster. Spend your sparks in
+While Claude works, a miner digs an endless tunnel in the band above your
+prompt. Each swing takes him deeper: fresh rock comes in from the right, and
+the timbers, lanterns and spoil heaps he leaves behind slide away. Every tool
+call Claude makes is ore. Click the mine, or press **Mine**, to dig faster. Spend your sparks in
 the shop and your crew lines up on the right of the band. When the turn
 ends, the band shrinks to one line.
 

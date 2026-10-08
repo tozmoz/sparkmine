@@ -1,32 +1,39 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DIG, LOOP_MS, SWING_MS, compose, momentAt, sceneCells, sceneSvg, type SceneSpec } from '../hooks/scene.ts'
+import { CUT, CUTS, LOOP_MS, PERIOD, SWING_MS, compose, momentAt, sceneCells, sceneSvg, type SceneSpec } from '../hooks/scene.ts'
 import { ICON_IDS, iconSvg } from '../hooks/icons.ts'
 
 const WORK: SceneSpec = { mode: 'work', carts: 6, goblins: 1 }
+const pixels = (ms: number) => compose(WORK, momentAt('work', ms)).data.join(',')
 
-describe('the dig loop', () => {
-  test('each swing cuts one slice, then the wall grows back', () => {
-    const dugAt = (swing: number, within: number) => momentAt('work', (swing + within) * SWING_MS).dug
-    expect(dugAt(0, 0.1)).toBe(0)
-    expect(dugAt(0, 0.7)).toBe(1)
-    expect(dugAt(3, 0.7)).toBe(4)
-    expect(dugAt(DIG - 1, 0.7)).toBe(DIG)
-    expect(dugAt(DIG, 0.5)).toBe(DIG)
-    expect(dugAt(DIG, 0.85)).toBe(0)
-    expect(momentAt('work', (DIG + 0.85) * SWING_MS).dust).toBe(true)
-    expect(momentAt('work', LOOP_MS + 0.7 * SWING_MS).dug).toBe(1)
+describe('the endless tunnel', () => {
+  test('each strike slides the world one cut on, and it wraps after a period', () => {
+    const scrollAt = (swing: number, within: number) => momentAt('work', (swing + within) * SWING_MS).scroll
+    expect(scrollAt(0, 0.1)).toBe(0)
+    expect(scrollAt(0, 0.7)).toBe(CUT)
+    expect(scrollAt(4, 0.7)).toBe(5 * CUT)
+    expect(scrollAt(CUTS - 1, 0.5)).toBe(PERIOD - CUT)
+    expect(scrollAt(CUTS - 1, 0.7)).toBe(0)
   })
 
-  test('the miner rests when Claude does', () => {
-    expect(momentAt('idle', 5_000)).toMatchObject({ dug: 0, dust: false, spark: false })
-    expect(momentAt('pause', 5_000).frame).toBe(0)
+  test('the loop has no seam: a whole loop later the picture is the same', () => {
+    for (const ms of [100, 700, 5_000]) expect(pixels(ms + LOOP_MS)).toBe(pixels(ms))
   })
 
-  test('a cut changes the picture, and the regrown wall matches the first', () => {
-    const at = (ms: number) => compose(WORK, momentAt('work', ms)).data.join(',')
-    expect(at(0.7 * SWING_MS)).not.toBe(at(0.1 * SWING_MS))
-    expect(at((DIG - 1 + 0.7) * SWING_MS)).not.toBe(at(0.7 * SWING_MS))
+  test('the world moves while he digs, and the last strike lands where the first began', () => {
+    expect(pixels(0.7 * SWING_MS)).not.toBe(pixels(0.1 * SWING_MS))
+    expect(pixels((CUTS - 1 + 0.7) * SWING_MS)).not.toBe(pixels((CUTS - 1 + 0.5) * SWING_MS))
+  })
+
+  test('every fourth strike finds ore', () => {
+    const sparks = Array.from({ length: CUTS }, (_, swing) => momentAt('work', (swing + 0.7) * SWING_MS).spark)
+    expect(sparks.filter(Boolean)).toHaveLength(CUTS / 4)
+    expect(sparks[3]).toBe(true)
+  })
+
+  test('the miner rests when Claude does, and the world stands still', () => {
+    expect(momentAt('idle', 5_000)).toMatchObject({ scroll: 0, spark: false })
+    expect(momentAt('pause', 5_000)).toMatchObject({ frame: 0, scroll: 0 })
     expect(sceneCells(WORK, momentAt('work', 0)).length).toBeGreaterThan(0)
   })
 })
@@ -39,7 +46,8 @@ test('every scene fits the size an Svg may have', () => {
       expect(svg.startsWith('<svg')).toBe(true)
     }
   }
-  expect(sceneSvg(WORK, 3)).toContain('@keyframes adv')
+  expect(sceneSvg(WORK, 3)).toContain('@keyframes slide')
+  expect(sceneSvg({ ...WORK, mode: 'idle' }, 3)).not.toContain('@keyframes slide')
 })
 
 test('every icon draws', () => {
