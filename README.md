@@ -11,18 +11,27 @@ tool call Claude makes mines sparks ✻, and each press of **Mine** mines more.
 Claude's own work pays too: a test run that passes, a commit, a long turn.
 Spend it all in the shop on a crew that keeps digging, and on upgrades.
 
-<img src="docs/shop.png" alt="The shop: producers and upgrades with pixel icons" width="420">
+<img src="docs/shop.png" alt="The shop: producers, upgrades and stats, with pixel icons" width="420">
 
 ## Install
 
-Needs Claude Code v2.1.287 or later. In Claude Code, run:
+Needs Claude Code v2.1.287 or later. In a terminal, run:
 
-```
-/plugin install sparkmine --marketplace tozmoz/sparkmine
+```bash
+claude plugin marketplace add tozmoz/sparkmine
+claude plugin install sparkmine@sparkmine --scope user
 ```
 
-Pick the user scope to have it in every session, including the Code tab of
-the Claude Desktop app.
+The user scope puts it in every session, including the Code tab of the Claude
+Desktop app. New sessions load it; in open ones, run `/reload-plugins`. Inside Claude Code, `/plugin install sparkmine --marketplace
+tozmoz/sparkmine` does the same.
+
+To update later:
+
+```bash
+claude plugin marketplace update sparkmine
+claude plugin update sparkmine@sparkmine
+```
 
 ## Play
 
@@ -36,6 +45,9 @@ the Claude Desktop app.
   seconds. Catch it for two minutes of income, or a ×5 frenzy for thirty.
 - **Depth:** the mine goes a hundred metres deeper with every tenfold of
   sparks, through topsoil, stone, crystal caves and magma.
+
+  ![The four layers: topsoil, stone, crystal caves and magma](docs/layers.png)
+
 - **Collapse the mine** in the shop to trade a run for ◆ crystals, which add
   2% to everything for good. The mine starts again at the surface.
 
