@@ -1,22 +1,27 @@
 // The economy, as pure functions over plain data. No `$` in here, so the
 // rules can be tested on their own and shared by every drawing.
 
-import type { Counts, Delta, Mine, ProducerId, Save, ToolKind } from '../types'
+import type { Counts, Delta, EventKind, Mine, ProducerId, Save, SourceKind, ToolKind, VeinKind } from '../types'
 import {
+  BIOMES,
   CRYSTAL_BONUS,
   CRYSTAL_UNIT,
+  EVENTS,
   GEM_WORTH,
   GROWTH,
   PRODUCERS,
   REWARDS,
   TOOL_BASE,
   UPGRADES,
+  VEIN,
   type Producer,
   type Unlock,
   type Upgrade,
 } from './data.ts'
 
 export const TOOL_KINDS: readonly ToolKind[] = ['read', 'edit', 'bash', 'web', 'agent', 'mcp', 'other']
+export const SOURCE_KINDS: readonly SourceKind[] = ['crew', 'click', 'tool', 'turn', 'event', 'vein']
+export const EVENT_KINDS: readonly EventKind[] = ['tests', 'commit', 'longShift']
 
 export function fresh(runId: string): Save {
   return {
@@ -32,11 +37,31 @@ export function fresh(runId: string): Save {
     mined: {},
     producers: {},
     upgrades: [],
+    bySource: {},
+    bestTurn: 0,
+    gems: 0,
+    veins: 0,
+    events: {},
   }
 }
 
 export function emptyDelta(runId: string): Delta {
-  return { runId, sparks: 0, earned: 0, clicks: 0, tools: 0, turns: 0, mined: {}, producers: {}, upgrades: [] }
+  return {
+    runId,
+    sparks: 0,
+    earned: 0,
+    clicks: 0,
+    tools: 0,
+    turns: 0,
+    mined: {},
+    producers: {},
+    upgrades: [],
+    bySource: {},
+    bestTurn: 0,
+    gems: 0,
+    veins: 0,
+    events: {},
+  }
 }
 
 export function newMine(runId: string): Mine {
@@ -54,6 +79,17 @@ function counts<K extends string>(value: unknown, keys: readonly K[]): Counts<K>
     if (n > 0) out[key] = Math.floor(n)
   }
   return out
+}
+
+/** The all-time stats a save or a delta carries, read field by field. */
+function stats(r: Record<string, unknown>) {
+  return {
+    bySource: counts(r.bySource, SOURCE_KINDS),
+    bestTurn: num(r.bestTurn),
+    gems: Math.floor(num(r.gems)),
+    veins: Math.floor(num(r.veins)),
+    events: counts(r.events, EVENT_KINDS),
+  }
 }
 
 const PRODUCER_IDS = PRODUCERS.map(p => p.id)
@@ -79,7 +115,18 @@ export function normalize(raw: unknown): Save | null {
     upgrades: Array.isArray(r.upgrades)
       ? [...new Set(r.upgrades.filter((id): id is string => typeof id === 'string' && UPGRADE_IDS.has(id)))]
       : [],
+    ...stats(r),
   }
+}
+
+/**
+ * The session's mine with every field a newer version reads: a mine kept in
+ * the session's state from before an update lacks the stats fields.
+ */
+export function normalizeMine(mine: Mine): Mine {
+  const save = normalize(mine.save) ?? fresh('unloaded')
+  const pending: Delta = { ...emptyDelta(save.runId), ...mine.pending, ...stats(mine.pending as unknown as Record<string, unknown>) }
+  return { save, pending, isLoaded: mine.isLoaded }
 }
 
 export function classifyTool(name: string): ToolKind {
@@ -238,6 +285,91 @@ export function clickRoll(save: Save): number {
   return mix(seed ^ Math.imul(save.clicks + 1, 0x9e3779b9)) / 2 ** 32
 }
 
+/** A roll in [0, 1) for the run and a label: the same save always rolls the same. */
+export function roll(runId: string, label: string): number {
+  let seed = 2166136261
+  for (const ch of `${runId}:${label}`) seed = Math.imul(seed ^ ch.charCodeAt(0), 16777619)
+  return mix(seed) / 2 ** 32
+}
+
+/** How deep the mine is, in metres: a hundred more for every tenfold of this run's sparks. */
+export const depth = (save: Save): number => Math.round(100 * Math.log10(1 + save.lifetime / 1_000))
+
+/** The layer a depth is in: 0 topsoil, 1 stone, 2 crystal caves, 3 magma. */
+export function biomeAt(metres: number): number {
+  let biome = 0
+  BIOMES.forEach((b, i) => {
+    if (metres >= b.from) biome = i
+  })
+  return biome
+}
+
+/** What a work event pays: seconds of the crew's rate, and never less than its clicks. */
+export function eventValue(save: Save, kind: EventKind, m = multipliers(save)): number {
+  const e = EVENTS[kind]
+  return Math.max(rate(save, m) * e.seconds, clickValue(save, m) * e.clicks)
+}
+
+/** What a rich vein pays. */
+export function veinValue(save: Save, m = multipliers(save)): number {
+  return Math.max(rate(save, m) * VEIN.richSeconds, clickValue(save, m) * VEIN.richClicks)
+}
+
+/** Seconds of work before the `n`th vein of a session shows, and what kind it is. */
+export function veinAfter(runId: string, n: number): { seconds: number; kind: VeinKind } {
+  const wait = n === 0 ? VEIN.first : VEIN.next
+  return {
+    seconds: wait.min + Math.floor(wait.spread * roll(runId, `vein-${n}`)),
+    kind: roll(runId, `vein-kind-${n}`) < 0.5 ? 'rich' : 'frenzy',
+  }
+}
+
+/** A test runner at the head of one step of a shell command. */
+const TEST_RUNNERS: readonly RegExp[] = [
+  /^(npm|pnpm|yarn|bun)\s+(run\s+)?test\b/,
+  /^(npx|bunx|pnpm\s+(exec|dlx)|yarn\s+dlx)\s+(vitest|jest|mocha|ava|playwright\s+test)\b/,
+  /^(\.\/node_modules\/\.bin\/)?(vitest|jest|mocha|ava|pytest|rspec|phpunit|ctest)\b/,
+  /^(go|cargo|deno|swift|dotnet|mix|flutter)\s+test\b/,
+  /^cargo\s+nextest\b/,
+  /^make\s+(test|check)\b/,
+  /^python3?\s+-m\s+(pytest|unittest)\b/,
+  /^(\.\/)?(mvnw?|gradlew?)\b.*\btest\b/,
+  /^\S+\s+plugin\s+test\b/,
+]
+
+/** Whether a shell command runs a test suite, in any step of it. */
+export function isTestCommand(command: string): boolean {
+  return command
+    .split(/&&|\|\||;|\||\n/)
+    .map(step => step.trim().replace(/^(\w+=\S*\s+)+/, ''))
+    .some(step => TEST_RUNNERS.some(re => re.test(step)))
+}
+
+/** What a finished tool call tells about Claude's work, as plain data the hooks read off it. */
+export type ToolOutcome = { tool: string; command?: string; isError: boolean; interrupted: boolean; background: boolean; committed: boolean }
+
+/** Reads a finished call's input and result as a ToolOutcome: nothing in either is changed. */
+export function outcomeOf(tool: string, input: unknown, answer: { isError?: unknown; result?: unknown }): ToolOutcome {
+  const args = (input ?? {}) as { command?: unknown; run_in_background?: unknown }
+  const record = (answer.result ?? {}) as { interrupted?: unknown; backgroundTaskId?: unknown; gitOperation?: { commit?: { kind?: unknown } } }
+  return {
+    tool,
+    ...(typeof args.command === 'string' ? { command: args.command } : {}),
+    isError: answer.isError === true,
+    interrupted: record.interrupted === true,
+    background: args.run_in_background === true || typeof record.backgroundTaskId === 'string',
+    committed: record.gitOperation?.commit?.kind === 'committed',
+  }
+}
+
+/** The work event a tool call is, if any: a test run that passed, or a commit. */
+export function workEvent(o: ToolOutcome): EventKind | null {
+  if (o.tool !== 'Bash' || o.isError || o.interrupted || o.background) return null
+  if (o.committed) return 'commit'
+  if (o.command !== undefined && isTestCommand(o.command)) return 'tests'
+  return null
+}
+
 /** What the next click mines, and whether it strikes a gem. */
 export function strike(save: Save, m = multipliers(save)): { value: number; isGem: boolean } {
   const value = clickValue(save, m)
@@ -325,10 +457,12 @@ function add<K extends string>(into: Counts<K>, from: Counts<K>): Counts<K> {
 }
 
 export type Source =
-  | { kind: 'click' }
+  | { kind: 'click'; isGem?: boolean }
   | { kind: 'tool'; tool: ToolKind }
   | { kind: 'turn' }
   | { kind: 'crew' }
+  | { kind: 'event'; event: EventKind }
+  | { kind: 'vein' }
 
 /** Adds sparks to the mine, and counts what earned them. */
 export function earn(mine: Mine, amount: number, source: Source): Mine {
@@ -338,7 +472,11 @@ export function earn(mine: Mine, amount: number, source: Source): Mine {
   const clicks = source.kind === 'click' ? 1 : 0
   const tools = source.kind === 'tool' ? 1 : 0
   const turns = source.kind === 'turn' ? 1 : 0
+  const gems = source.kind === 'click' && source.isGem === true ? 1 : 0
+  const veins = source.kind === 'vein' ? 1 : 0
   const mined: Counts<ToolKind> = source.kind === 'tool' ? { [source.tool]: 1 } : {}
+  const bySource: Counts<SourceKind> = gain > 0 ? { [source.kind]: gain } : {}
+  const events: Counts<EventKind> = source.kind === 'event' ? { [source.event]: 1 } : {}
   return {
     ...mine,
     save: {
@@ -350,6 +488,10 @@ export function earn(mine: Mine, amount: number, source: Source): Mine {
       tools: s.tools + tools,
       turns: s.turns + turns,
       mined: add(s.mined, mined),
+      bySource: add(s.bySource, bySource),
+      gems: s.gems + gems,
+      veins: s.veins + veins,
+      events: add(s.events, events),
     },
     pending: {
       ...d,
@@ -359,8 +501,18 @@ export function earn(mine: Mine, amount: number, source: Source): Mine {
       tools: d.tools + tools,
       turns: d.turns + turns,
       mined: add(d.mined, mined),
+      bySource: add(d.bySource, bySource),
+      gems: d.gems + gems,
+      veins: d.veins + veins,
+      events: add(d.events, events),
     },
   }
+}
+
+/** Keeps the best turn yet, in the save and in what the next sync carries. */
+export function recordTurn(mine: Mine, earned: number): Mine {
+  if (!(earned > mine.save.bestTurn)) return mine
+  return { ...mine, save: { ...mine.save, bestTurn: earned }, pending: { ...mine.pending, bestTurn: Math.max(mine.pending.bestTurn, earned) } }
 }
 
 export function buyProducer(mine: Mine, id: ProducerId, n: number): Mine | null {
@@ -412,6 +564,11 @@ export function collapse(save: Save, runId: string): Save | null {
     tools: save.tools,
     turns: save.turns,
     mined: save.mined,
+    bySource: save.bySource,
+    bestTurn: save.bestTurn,
+    gems: save.gems,
+    veins: save.veins,
+    events: save.events,
   }
 }
 
@@ -433,6 +590,11 @@ export function applyDelta(stored: Save, d: Delta): Save {
     mined: add(stored.mined, d.mined),
     producers: sameRun ? add(stored.producers, d.producers) : stored.producers,
     upgrades: sameRun ? [...new Set([...stored.upgrades, ...d.upgrades])] : stored.upgrades,
+    bySource: add(stored.bySource, d.bySource),
+    bestTurn: Math.max(stored.bestTurn, d.bestTurn),
+    gems: stored.gems + d.gems,
+    veins: stored.veins + d.veins,
+    events: add(stored.events, d.events),
   }
 }
 
@@ -444,4 +606,9 @@ export const isEmptyDelta = (d: Delta): boolean =>
   d.turns === 0 &&
   Object.keys(d.mined).length === 0 &&
   Object.keys(d.producers).length === 0 &&
-  d.upgrades.length === 0
+  d.upgrades.length === 0 &&
+  Object.keys(d.bySource).length === 0 &&
+  d.bestTurn === 0 &&
+  d.gems === 0 &&
+  d.veins === 0 &&
+  Object.keys(d.events).length === 0

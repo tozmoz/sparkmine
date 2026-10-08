@@ -24,6 +24,10 @@ export type ShopParts = {
   header: RenderElement | null
   /** The Client that keeps the sparks counter live. */
   live: RenderElement
+  /** The Client that keeps the stats live, where the surface draws one. */
+  stats: RenderElement | null
+  /** A line above everything, such as that the game is stopped. */
+  notice: RenderElement | null
   /** Cards get a border where there is room for one. */
   isRoomy: boolean
 }
@@ -124,8 +128,17 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
     </Box>
   ) : null
 
+  const stats =
+    parts.stats === null ? null : (
+      <Box flexDirection="column">
+        <Text bold>Stats</Text>
+        {parts.stats}
+      </Box>
+    )
+
   return (
     <Box flexDirection="column" rowGap={1}>
+      {parts.notice}
       {header}
       <Box flexDirection="column">
         <Box flexDirection="row" columnGap={2}>
@@ -144,6 +157,7 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
         {next}
       </Box>
       {collapse}
+      {stats}
     </Box>
   )
 }

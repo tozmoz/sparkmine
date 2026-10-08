@@ -1,10 +1,13 @@
 import { expect, test } from 'claude-code/testing'
 
 import * as game from '../hooks/game.ts'
-import { band, command, finishTurn, pane, seeded, start, world } from './kit.ts'
+import { band, command, committed, failed, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
 const POLL = 150
+
+/** Lets the vein poll once: it asks less often than the HUD. */
+const VEIN_POLL = 300
 
 /** A press of the desktop's gold Mine sign: the pointer going down on the HUD. */
 const DOWN = { type: 'down', x: 1, y: 0, button: 'left', in: 'hud' } as const
@@ -157,9 +160,8 @@ test('the wooden Shop sign opens the shop', async ($, on) => {
   expect((await ui.find({ in: 'shopbtn', key: 'shop' }))?.props).toMatchObject({ backgroundColor: '#4b2f1c' })
   expect(await ui.find({ in: 'shopbtn', type: 'Text', text: '✻ Shop' })).toBeDefined()
   // The sign keeps its own width under the HUD instead of stretching across the column.
-  const holdsSign = (child: unknown) => (child as { type?: string }).type === 'Client' && JSON.stringify(child).includes('"shopbtn"')
-  const column = (await ui.findAll({ type: 'Box' })).find(box => box.children.some(holdsSign))
-  expect(column?.props).toMatchObject({ flexDirection: 'column', alignItems: 'flex-start' })
+  const column = (await ui.findAll({ type: 'Box' })).find(box => box.props.flexDirection === 'column' && JSON.stringify(box).includes('"shopbtn"'))
+  expect(column?.props).toMatchObject({ alignItems: 'flex-start' })
   await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'shopbtn' })
   await ui.advance(POLL)
   expect(w.opened).toEqual(['sparkmine'])
@@ -247,4 +249,156 @@ test('the spinner takes the word the mine unlocked', async ($, on) => {
   await $.ui.mount({ ...spinner, surface: 'desktop', props: { ...spinner.props, word: 'Creating notes.md' } })
   await $.ui.mount({ ...spinner, surface: 'desktop', props: { ...spinner.props, word: 'Working' } })
   expect(seen).toEqual(['terminal:Mining', 'desktop:Creating notes.md', 'desktop:Mining'])
+})
+
+test('green tests and a commit pay once a turn, and the HUD says what paid', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await $.tool.call({ tool: 'Bash', command: 'cd app && npm test' })
+  await ui.advance(POLL)
+  // Tests pay 30 seconds of the rate, and never less than 10 clicks: here, 10.
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Tests pass +10 ✻' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 12' })).toBeDefined()
+  // A second green run in the same turn pays the tool call alone.
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 14' })).toBeDefined()
+  // A red run pays nothing more, in the next turn too.
+  await finishTurn($, 't1')
+  await $.turn.start({ text: 'again', turnId: 't2' })
+  w.bash = command => (command.includes('test') ? failed : command.startsWith('git commit') ? committed : undefined)
+  await $.tool.call({ tool: 'Bash', command: 'npx vitest run' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 16' })).toBeDefined()
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "Fix it"' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Commit +20 ✻' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 38' })).toBeDefined()
+  // The reward shows a few seconds, then the last tool call is back.
+  await w.clock.advance(6_000)
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /★/ })).toBeUndefined()
+})
+
+test('a long shift pays when the turn ends', async ($, on) => {
+  world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await finishTurn($, 't1', 6 * 60_000)
+  await ui.redraw()
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Long shift +30 ✻' })).toBeDefined()
+})
+
+/** A run whose first vein is of the kind asked for. */
+function runWithVein(kind: 'rich' | 'frenzy'): string {
+  for (let i = 0; ; i += 1) if (game.veinAfter(`vein-run-${i}`, 0).kind === kind) return `vein-run-${i}`
+}
+
+test('a vein shows after a while of work, and a press catches it', async ($, on) => {
+  const runId = runWithVein('rich')
+  const w = world(on, { save: seeded({ runId }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeUndefined()
+  await wait(w, game.veinAfter(runId, 0).seconds + 1)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /^✦ Vein! \d+s$/ })).toBeDefined()
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'vein' })
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeUndefined()
+  // A rich vein pays two minutes of the rate, and never less than 30 clicks: here, 30.
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Rich vein +30 ✻' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 30' })).toBeDefined()
+})
+
+test('a vein not caught in time goes', async ($, on) => {
+  const runId = runWithVein('rich')
+  const w = world(on, { save: seeded({ runId }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await wait(w, game.veinAfter(runId, 0).seconds + 1)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeDefined()
+  await w.clock.advance(11_000)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeUndefined()
+})
+
+test('a frenzy vein makes every click count five times for half a minute', async ($, on) => {
+  const runId = runWithVein('frenzy')
+  const w = world(on, { save: seeded({ runId }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await wait(w, game.veinAfter(runId, 0).seconds + 1)
+  await ui.advance(VEIN_POLL)
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'vein' })
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /^Frenzy ×5 · \d+s$/ })).toBeDefined()
+  await ui.pointer(DOWN)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 5' })).toBeDefined()
+  await w.clock.advance(31_000)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /Frenzy/ })).toBeUndefined()
+  await ui.pointer(DOWN)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 6' })).toBeDefined()
+})
+
+test('the mine gets deeper, and its rock turns with the layer', async ($, on) => {
+  world(on, { save: seeded({ lifetime: 2_000_000, allTime: 2_000_000 }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  // Ten times the sparks is a hundred metres more: 2M is 330 m, in the crystal caves.
+  expect((await ui.find({ in: 'hud', type: 'Text', text: '330 m' }))?.props).toMatchObject({ color: '#b6a6ff' })
+  const scene = String((await ui.find({ type: 'Svg' }))?.props.source)
+  expect(scene).toContain('#4b4280')
+  expect(scene).not.toContain('#57473d')
+})
+
+test('compact keeps the band to one line while Claude works, in every session', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  expect(await ui.find({ type: 'Svg' })).toBeDefined()
+  expect((await command($, 'compact')).text).toContain('one line')
+  expect(w.store.get('compact')).toBe(true)
+  await ui.redraw()
+  await ui.advance(POLL)
+  expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  expect(await ui.find({ in: 'hud', key: 'mine' })).toBeDefined()
+  expect((await ui.find({ in: 'hud', type: 'Box' }))?.props).toMatchObject({ height: 1 })
+  await command($, 'compact')
+  await ui.redraw()
+  expect(await ui.find({ type: 'Svg' })).toBeDefined()
+})
+
+test('stop takes the band away and stops the mining, and start brings both back', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  expect((await command($, 'stop')).text).toContain('stopped')
+  expect(w.store.get('stopped')).toBe(true)
+  const ui = await $.ui.mount(band('desktop'))
+  expect(await ui.find({ type: 'Client' })).toBeUndefined()
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await w.clock.advance(5_000)
+  await command($, 'start')
+  await ui.redraw()
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 0' })).toBeDefined()
+  await $.tool.call({ tool: 'Read', file_path: '/tmp/project/a.ts' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
 })

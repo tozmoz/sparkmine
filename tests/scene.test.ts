@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { CUT, CUTS, LOOP_MS, PERIOD, SWING_MS, compose, momentAt, sceneCells, sceneSvg, type SceneSpec } from '../hooks/scene.ts'
 import { ICON_IDS, iconSvg } from '../hooks/icons.ts'
 
-const WORK: SceneSpec = { mode: 'work', carts: 6, goblins: 1, pick: 0 }
+const WORK: SceneSpec = { mode: 'work', carts: 6, goblins: 1, pick: 0, biome: 0 }
 const pixels = (ms: number) => compose(WORK, momentAt('work', ms)).data.join(',')
 
 describe('the endless tunnel', () => {
@@ -41,7 +41,7 @@ describe('the endless tunnel', () => {
 test('every scene fits the size an Svg may have', () => {
   for (const mode of ['work', 'idle', 'pause'] as const) {
     for (const carts of [0, 6]) {
-      const svg = sceneSvg({ mode, carts, goblins: 1, pick: 4 }, 3)
+      const svg = sceneSvg({ mode, carts, goblins: 1, pick: 4, biome: 3 }, 3)
       expect(svg.length).toBeLessThan(131_072)
       expect(svg.startsWith('<svg')).toBe(true)
     }

@@ -15,6 +15,14 @@ export type ProducerId =
 
 export type Counts<K extends string> = { [P in K]?: number }
 
+/** Where sparks come from, for the shop's stats. */
+export type SourceKind = 'crew' | 'click' | 'tool' | 'turn' | 'event' | 'vein'
+
+/** What Claude's own work turns into a reward: green tests, a commit, a long shift. */
+export type EventKind = 'tests' | 'commit' | 'longShift'
+
+export type VeinKind = 'rich' | 'frenzy'
+
 /** The mine as $.store keeps it, shared by every session on the machine. */
 export type Save = {
   v: 1
@@ -32,6 +40,13 @@ export type Save = {
   mined: Counts<ToolKind>
   producers: Counts<ProducerId>
   upgrades: string[]
+  /** All-time stats, kept through a collapse: sparks by where they came from, and what was found. */
+  bySource: Counts<SourceKind>
+  /** The most sparks one turn has mined. */
+  bestTurn: number
+  gems: number
+  veins: number
+  events: Counts<EventKind>
 }
 
 /** What this session changed since it last synced with the store. */
@@ -45,6 +60,11 @@ export type Delta = {
   mined: Counts<ToolKind>
   producers: Counts<ProducerId>
   upgrades: string[]
+  bySource: Counts<SourceKind>
+  bestTurn: number
+  gems: number
+  veins: number
+  events: Counts<EventKind>
 }
 
 export type Mine = {
@@ -69,6 +89,17 @@ export type View = {
   amount: number
   /** Gems struck so far this session, and what the latest ones added beyond their clicks. */
   gem: { seq: number; bonus: number } | null
+  /** The vein showing now, until when it can be caught. */
+  vein: { id: number; kind: VeinKind; until: number } | null
+  /** Seconds of work since the last vein showed, and how many have shown this session. */
+  veinWork: number
+  veinCount: number
+  /** A caught frenzy: everything mines `mult` times as much until then. */
+  frenzy: { mult: number; until: number } | null
+  /** The latest reward, which the HUD shows for a moment. */
+  event: { label: string; value: number; at: number } | null
+  /** The work events already rewarded this turn: each pays once a turn. */
+  turnEvents: EventKind[]
 }
 
 /** What the band's drawing depends on. It changes rarely, so the scene is not redrawn on every click. */
@@ -82,6 +113,12 @@ export type Band = {
   pick: number
   /** The producers owned, in shop order: the crew the band shows on its right. */
   crew: { id: ProducerId; owned: number }[]
+  /** The layer the mine has reached: 0 topsoil, 1 stone, 2 crystal caves, 3 magma. */
+  biome: number
+  /** One line even while Claude works: `/mine compact`. */
+  isCompact: boolean
+  /** Stopped by `/mine stop`: nothing mines and the band is gone. */
+  isStopped: boolean
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */
@@ -103,6 +140,15 @@ export type HudProps = {
   acked: number
   /** The latest gems struck: the HUD pops them when `seq` grows. */
   gem: { seq: number; bonus: number } | null
+  /** How deep the mine is, in metres, and the layer it is in. */
+  depth: number
+  layer: { name: string; color: string }
+  /** A reward from the last few seconds, which the HUD shows in place of the last tool call. */
+  event: { label: string; value: number } | null
+  /** A frenzy running now: the rate shows multiplied. */
+  frenzy: { mult: number; left: number } | null
+  /** One line even while Claude works. */
+  isCompact: boolean
   idle: number
   turn: number
   lastTurn: number
@@ -137,6 +183,25 @@ export type IconId =
   | 'whistle'
   | 'bolt'
   | 'gem'
+
+/** What the vein Client draws: a vein to catch, or the frenzy one started. */
+export type VeinProps = {
+  vein: { id: number; kind: VeinKind; left: number } | null
+  frenzy: { mult: number; left: number } | null
+  surface: 'terminal' | 'desktop' | 'other'
+}
+
+/** What the shop's stats Client draws. */
+export type StatsProps = {
+  bySource: Counts<SourceKind>
+  bestTurn: number
+  gems: number
+  veins: number
+  events: Counts<EventKind>
+  clicks: number
+  tools: number
+  turns: number
+}
 
 export type ShopItem = {
   id: string

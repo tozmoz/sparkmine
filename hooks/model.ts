@@ -2,8 +2,8 @@
 // draws its model and the HUD its props, so neither reads the mine itself and
 // neither is redrawn when nothing it shows has changed.
 
-import type { HudProps, IconId, Mode, Save, ShopModel, ToolKind, View } from '../types'
-import { CRYSTAL_UNIT, PRODUCERS, TOOL_NAMES, type Upgrade } from './data.ts'
+import type { Band, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
+import { BIOMES, CRYSTAL_UNIT, PRODUCERS, TOOL_NAMES, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate } from './format.ts'
 import * as game from './game.ts'
 
@@ -133,6 +133,15 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
   }
 }
 
+/** The layer a depth is in, by name and color, for the drawings. */
+export function layerAt(metres: number): { name: string; color: string } {
+  const b = BIOMES[game.biomeAt(metres)] ?? BIOMES[0]
+  return { name: b?.name ?? 'Topsoil', color: b?.color ?? '#c8a27a' }
+}
+
+/** How long the HUD shows a reward in place of the last tool call. */
+export const EVENT_SHOW_MS = 5_000
+
 export const EMPTY_HUD: HudProps = {
   variant: 'band',
   mode: 'idle',
@@ -143,6 +152,11 @@ export const EMPTY_HUD: HudProps = {
   clicks: 0,
   acked: 0,
   gem: null,
+  depth: 0,
+  layer: { name: 'Topsoil', color: '#c8a27a' },
+  event: null,
+  frenzy: null,
+  isCompact: false,
   idle: 0,
   turn: 0,
   lastTurn: 0,
@@ -153,20 +167,27 @@ export const EMPTY_HUD: HudProps = {
   height: 3,
 }
 
-export function hudProps(save: Save, view: View, mode: Mode, variant: HudProps['variant']): HudProps {
+export function hudProps(save: Save, view: View, band: Band, variant: HudProps['variant'], now: number): HudProps {
   const m = game.multipliers(save)
   const { next } = game.shopUpgrades(save)
   const progress = next === null ? null : game.progress(save, next)
+  const metres = game.depth(save)
+  const boost = view.frenzy !== null && now < view.frenzy.until ? view.frenzy : null
   return {
     variant,
-    mode,
+    mode: band.mode,
     surface: 'other',
     sparks: save.sparks,
     rate: game.rate(save, m),
-    click: game.clickValue(save, m),
+    click: game.clickValue(save, m) * (boost?.mult ?? 1),
     clicks: save.clicks,
     acked: 0,
     gem: view.gem ?? null,
+    depth: metres,
+    layer: layerAt(metres),
+    event: view.event !== null && now - view.event.at < EVENT_SHOW_MS ? { label: view.event.label, value: view.event.value } : null,
+    frenzy: boost === null ? null : { mult: boost.mult, left: Math.ceil((boost.until - now) / 1000) },
+    isCompact: band.isCompact,
     idle: m.idle,
     turn: Math.max(0, save.lifetime - view.turnStart),
     lastTurn: view.lastTurn,
@@ -180,3 +201,30 @@ export function hudProps(save: Save, view: View, mode: Mode, variant: HudProps['
     height: EMPTY_HUD.height,
   }
 }
+
+/** What the vein Client draws: the vein showing now, or the frenzy it started. */
+export function veinProps(view: View, now: number, surface: VeinProps['surface']): VeinProps {
+  const vein = view.vein !== null && now <= view.vein.until ? view.vein : null
+  const frenzy = view.frenzy !== null && now < view.frenzy.until ? view.frenzy : null
+  return {
+    vein: vein === null ? null : { id: vein.id, kind: vein.kind, left: Math.ceil((vein.until - now) / 1000) },
+    frenzy: frenzy === null ? null : { mult: frenzy.mult, left: Math.ceil((frenzy.until - now) / 1000) },
+    surface,
+  }
+}
+
+/** What the shop's stats Client draws, all time. */
+export function statsProps(save: Save): StatsProps {
+  return {
+    bySource: save.bySource,
+    bestTurn: save.bestTurn,
+    gems: save.gems,
+    veins: save.veins,
+    events: save.events,
+    clicks: save.clicks,
+    tools: save.tools,
+    turns: save.turns,
+  }
+}
+
+export const EMPTY_STATS: StatsProps = { bySource: {}, bestTurn: 0, gems: 0, veins: 0, events: {}, clicks: 0, tools: 0, turns: 0 }

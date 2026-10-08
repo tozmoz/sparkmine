@@ -1,6 +1,6 @@
 // Everything the shop sells, and the numbers behind it.
 
-import type { ProducerId, ToolKind } from '../types'
+import type { EventKind, ProducerId, ToolKind } from '../types'
 
 export type Producer = {
   id: ProducerId
@@ -166,6 +166,38 @@ export const UPGRADES: readonly Upgrade[] = [...otherUpgrades, ...producerUpgrad
 export const CRYSTAL_BONUS = 0.02
 /** Crystals owned in all are the cube root of all-time sparks over this. */
 export const CRYSTAL_UNIT = 1_000_000
+
+/**
+ * What Claude's own work pays, once a turn each: seconds of the crew's rate,
+ * and never less than this many clicks, so it counts before the crew does.
+ */
+export const EVENTS: Readonly<Record<EventKind, { label: string; seconds: number; clicks: number }>> = {
+  tests: { label: 'Tests pass', seconds: 30, clicks: 10 },
+  commit: { label: 'Commit', seconds: 45, clicks: 20 },
+  longShift: { label: 'Long shift', seconds: 90, clicks: 30 },
+}
+
+/** A turn at least this long pays the long-shift reward when it ends. */
+export const LONG_SHIFT_MS = 5 * 60_000
+
+/** Veins: how long one shows, the seconds of work before one shows, and what one pays. */
+export const VEIN = {
+  showMs: 10_000,
+  first: { min: 90, spread: 90 },
+  next: { min: 300, spread: 300 },
+  richSeconds: 120,
+  richClicks: 30,
+  frenzyMult: 5,
+  frenzyMs: 30_000,
+} as const
+
+/** The layers the mine digs through, from the depth where each starts, in metres. */
+export const BIOMES: readonly { name: string; from: number; color: string }[] = [
+  { name: 'Topsoil', from: 0, color: '#c8a27a' },
+  { name: 'Stone', from: 100, color: '#9aa3ad' },
+  { name: 'Crystal caves', from: 300, color: '#b6a6ff' },
+  { name: 'Magma', from: 500, color: '#ff7a2f' },
+]
 
 /** Spinner words, unlocked by all-time sparks. */
 export const REWARDS: readonly { at: number; word: string }[] = [
