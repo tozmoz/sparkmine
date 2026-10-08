@@ -6,6 +6,9 @@ import { band, command, finishTurn, pane, seeded, start, world } from './kit.ts'
 /** Lets the HUD poll once, so it holds fresh numbers. */
 const POLL = 150
 
+/** A press of the desktop's gold Mine sign: the pointer going down on the HUD. */
+const DOWN = { type: 'down', x: 1, y: 0, button: 'left', in: 'hud' } as const
+
 test('the band keeps one line while Claude is idle', async ($, on) => {
   world(on)
   await start($)
@@ -14,7 +17,7 @@ test('the band keeps one line while Claude is idle', async ($, on) => {
     await ui.advance(POLL)
     expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 0' })).toBeDefined()
     expect(await ui.find({ in: 'hud', type: 'Text', text: '· mines while Claude works' })).toBeDefined()
-    expect(await ui.find({ key: 'shop' })).toBeDefined()
+    expect(await ui.find(surface === 'desktop' ? { in: 'shopbtn', key: 'shop' } : { key: 'shop' })).toBeDefined()
     expect(await ui.find({ in: 'hud', key: 'mine' })).toBeUndefined()
     await ui.unmount()
   }
@@ -26,9 +29,12 @@ test('while Claude works, the Mine button and tool calls mine', async ($, on) =>
   await $.turn.start({ text: 'fix the bug', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   expect(await ui.find({ type: 'Svg' })).toBeDefined()
-  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ label: '⛏ Mine' })
-  await ui.press({ key: 'mine' })
-  await ui.press({ key: 'mine' })
+  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ backgroundColor: '#f2b632' })
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '⛏ Mine' })).toBeDefined()
+  // The gold lightens under the pointer: the surface applies the hover, no hook runs.
+  expect(JSON.stringify((await ui.find({ in: 'hud', type: 'Box' }))?.children[0])).toContain('"hover":{"backgroundColor":"#ffcd52"}')
+  await ui.pointer(DOWN)
+  await ui.pointer(DOWN)
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 2' })).toBeDefined()
   await $.tool.call({ tool: 'Read', file_path: '/tmp/project/a.ts' })
@@ -49,24 +55,27 @@ test('a press shows on the counter and pops at once, before the hooks answer', a
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
-  await ui.press({ key: 'mine' })
+  await ui.pointer(DOWN)
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 4' })).toBeDefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeDefined()
+  // The sign is pressed in for a moment, then comes back up.
+  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props.backgroundColor).toBe('#d9951f')
   // A run of presses adds up in one pop.
-  await ui.press({ key: 'mine' })
+  await ui.pointer(DOWN)
   expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+8$/ })).toBeDefined()
   // The hooks count each press once, and the counter agrees.
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 8' })).toBeDefined()
   await ui.advance(1_000)
   expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+\d/ })).toBeUndefined()
+  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props.backgroundColor).toBe('#f2b632')
 })
 
-test('the pointer mines at once, and the button press after it is not counted twice', async ($, on) => {
+test('on the terminal the pointer mines at once, and the button press after it is not counted twice', async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
-  const ui = await $.ui.mount(band('desktop'))
+  const ui = await $.ui.mount(band('terminal', { bodyColumns: 140 }))
   await ui.advance(POLL)
   await ui.pointer({ type: 'down', x: 2, y: 1, button: 'left', in: 'hud' })
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
@@ -74,7 +83,7 @@ test('the pointer mines at once, and the button press after it is not counted tw
   await ui.press({ key: 'mine' })
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
-  // A press with no pointer before it, from the keyboard, counts.
+  // A press with no pointer before it, from its hotkey, counts.
   await ui.press({ key: 'mine' })
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 2' })).toBeDefined()
@@ -89,7 +98,7 @@ test('a click that strikes a gem pops it in green', async ($, on) => {
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
-  await ui.press({ key: 'mine' })
+  await ui.pointer(DOWN)
   await ui.advance(POLL)
   const pop = await ui.find({ in: 'hud', type: 'Text', text: '◆ +40' })
   expect(pop?.props).toMatchObject({ color: '#5dcaa5' })
@@ -102,8 +111,8 @@ test('the HUD keeps one size while the pop fades, and the scene is never redrawn
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   const scene = await ui.find({ type: 'Svg' })
-  await ui.press({ key: 'mine' })
-  await ui.press({ key: 'mine' })
+  await ui.pointer(DOWN)
+  await ui.pointer(DOWN)
   await ui.advance(150)
   // The boxes and their sizes stay put frame after frame, the pop's slot
   // whether or not a pop is in it; only the words and their colors change.
@@ -117,7 +126,7 @@ test('the HUD keeps one size while the pop fades, and the scene is never redrawn
   }
   const layout = async () => JSON.stringify(shape(await ui.find({ in: 'hud', type: 'Box' })))
   const first = await layout()
-  expect(first).toContain('"height":3')
+  expect(first).toContain('"height":2')
   expect(first).toContain('"width":10')
   for (let frame = 0; frame < 12; frame += 1) {
     await ui.advance(60)
@@ -126,7 +135,7 @@ test('the HUD keeps one size while the pop fades, and the scene is never redrawn
   expect(await ui.find({ type: 'Svg' })).toEqual(scene)
 })
 
-test('the crew and the next goal fill the rest of the band', async ($, on) => {
+test('the crew fills the rest of the band, and the next goal is left to the shop', async ($, on) => {
   world(on, { save: seeded({ clicks: 30, producers: { apprentice: 17, cart: 6 } }) })
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
@@ -134,8 +143,22 @@ test('the crew and the next goal fill the rest of the band', async ($, on) => {
   await ui.advance(POLL)
   expect(await ui.find({ type: 'Text', text: '×17' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '×6' })).toBeDefined()
-  expect(await ui.find({ in: 'hud', type: 'Text', text: "Next: Foreman's whistle" })).toBeDefined()
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '▰▰▰▰▰▰▰▰▰▱' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /^Next:/ })).toBeUndefined()
+  const shop = await $.ui.mount(pane('desktop'))
+  await shop.advance(POLL)
+  expect(await shop.find({ in: 'shophud', type: 'Text', text: "Next: Foreman's whistle" })).toBeDefined()
+})
+
+test('the wooden Shop sign opens the shop', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  expect((await ui.find({ in: 'shopbtn', key: 'shop' }))?.props).toMatchObject({ backgroundColor: '#4b2f1c' })
+  expect(await ui.find({ in: 'shopbtn', type: 'Text', text: '✻ Shop' })).toBeDefined()
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'shopbtn' })
+  await ui.advance(POLL)
+  expect(w.opened).toEqual(['sparkmine'])
 })
 
 test('buying the Diamond pick puts it in the miner\'s hands', async ($, on) => {
@@ -176,9 +199,9 @@ test('a permission prompt pauses the miner until the turn moves on', async ($, o
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeDefined()
-  // The button stays, dimmed, so nothing moves; a press does nothing until Claude works again.
-  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ dimColor: true })
-  await ui.press({ key: 'mine' })
+  // The sign stays, dulled, so nothing moves; a press does nothing until Claude works again.
+  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ backgroundColor: '#5c4d2e' })
+  await ui.pointer(DOWN)
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 0' })).toBeDefined()
   await finishTurn($, 't1')
@@ -200,10 +223,10 @@ test('/mine hide and /mine show', async ($, on) => {
   const hidden = await command($, 'hide')
   expect(hidden.text).toContain('hidden')
   const ui = await $.ui.mount(band('desktop'))
-  expect(await ui.find({ key: 'shop' })).toBeUndefined()
+  expect(await ui.find({ type: 'Client' })).toBeUndefined()
   await command($, 'show')
   await ui.redraw()
-  expect(await ui.find({ key: 'shop' })).toBeDefined()
+  expect(await ui.find({ in: 'shopbtn', key: 'shop' })).toBeDefined()
 })
 
 test('the spinner takes the word the mine unlocked', async ($, on) => {

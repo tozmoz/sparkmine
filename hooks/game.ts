@@ -382,20 +382,6 @@ export function buyProducer(mine: Mine, id: ProducerId, n: number): Mine | null 
   }
 }
 
-/** How many of a producer the sparks on hand buy, up to `limit`. */
-export function affordable(save: Save, id: ProducerId, limit: number): number {
-  const p = producer(id)
-  let n = 0
-  let spent = 0
-  while (n < limit) {
-    const next = Math.ceil(p.cost * GROWTH ** (owned(save, id) + n))
-    if (spent + next > save.sparks) break
-    spent += next
-    n += 1
-  }
-  return n
-}
-
 export function buyUpgrade(mine: Mine, id: string): Mine | null {
   const u = upgrade(id)
   if (u === undefined || hasUpgrade(mine.save, id) || !isUnlocked(mine.save, u)) return null

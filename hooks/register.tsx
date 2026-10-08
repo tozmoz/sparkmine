@@ -26,13 +26,15 @@ const PANE = 'sparkmine'
 /** CSS pixels per scene pixel: the band's scene, and the smaller one atop the shop. */
 const SCALE = 3
 const HEADER_SCALE = 2
+/** CSS pixels of each producer in the band's crew rack. */
+const CREW_ICON = 20
 /** Columns the HUD, with its Mine button, and the Shop button need beside the terminal scene. */
 const HUD_COLUMNS = 54
 /**
  * The HUD's fixed height in rows. Its width follows its text: a desktop draws
  * a width in cells much wider than the text.
  */
-const HUD_WORK = { height: 3 } as const
+const HUD_WORK = { height: 2 } as const
 const HUD_IDLE = { height: 1 } as const
 const HUD_SHOP = { height: 4 } as const
 
@@ -206,6 +208,16 @@ export const register: Register = on => {
     return verdict
   }).catch(($, e, next) => next(e))
 
+  // The desktop's wooden Shop sign is a Client of its own: a press posts, and the shop opens.
+  on('ui.message', { element: 'shopbtn' }, async ($, e) => {
+    const data = e.data
+    if (data === null || typeof data !== 'object' || (data as { open?: unknown }).open !== true) return {}
+    await $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
+    const pane = (await $.ui.panes()).find(p => p.id === PANE)
+    if (pane !== undefined && !pane.isPlaced) $.ui.toast('The shop opens in a wider window, or with /mine')
+    return {}
+  })
+
   // The HUD Clients ask for fresh numbers ten times a second, and the band's
   // reports the presses of its Mine button.
   on('ui.message', { element: ['hud', 'shophud'] }, async ($, e) => {
@@ -242,9 +254,9 @@ export const register: Register = on => {
 
     if (e.surface === 'desktop') {
       live = null
-      const { Box, Button, Client, Svg, Text } = $.ui.resolve(e)
+      const { Box, Client, Svg, Text } = $.ui.resolve(e)
       const hud = <Client key="hud" module="./hud.ts" props={props} height={hudSize.height} />
-      const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
+      const shop = <Client key="shopbtn" module="./shopbutton.ts" props={{}} />
       if (band.mode === 'idle') {
         ours = (
           <Box flexDirection="row" columnGap={2} alignItems="center">
@@ -256,16 +268,17 @@ export const register: Register = on => {
         // Each producer owned, with its count: the crew fills the band's right side.
         const crew =
           band.crew.length === 0 ? null : (
-            <Box flexDirection="row" columnGap={2} alignItems="flex-end">
+            <Box flexDirection="row" columnGap={1} alignItems="flex-end">
               {band.crew.map(member => (
                 <Box flexDirection="column" alignItems="center">
-                  <Svg source={iconSvg(member.id, 24)} alt={producer(member.id).name} width={24} height={24} />
+                  <Svg source={iconSvg(member.id, CREW_ICON)} alt={producer(member.id).name} width={CREW_ICON} height={CREW_ICON} />
                   <Text dimColor>{`×${member.owned}`}</Text>
                 </Box>
               ))}
             </Box>
           )
         // One row, in order, nothing stretched apart: where room runs out the crew is cut, never overlapped.
+        // The gold Mine sign leads the HUD, and the wooden Shop sign sits under it.
         ours = (
           <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d" paddingX={1}>
             <Svg
@@ -275,10 +288,12 @@ export const register: Register = on => {
               height={H * SCALE}
               isInteractive
             />
-            {hud}
-            <Box flexShrink={0}>{shop}</Box>
+            <Box flexDirection="column" flexShrink={0}>
+              {hud}
+              {shop}
+            </Box>
             {crew === null ? null : (
-              <Box flexShrink={1} overflow="hidden" marginLeft={2}>
+              <Box flexShrink={1} overflow="hidden" marginLeft={1}>
                 {crew}
               </Box>
             )}
