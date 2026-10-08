@@ -100,8 +100,7 @@ export type HudProps = {
   goal: { name: string; have: number; need: number } | null
   tools: number
   turns: number
-  /** How far the sparks may fly, in cells, and the HUD's fixed height: a surface unmounts a Client whose size keeps changing. */
-  width: number
+  /** The HUD's fixed height in rows: a surface unmounts a Client whose size keeps changing. */
   height: number
 }
 

@@ -4,7 +4,6 @@ import { band, command, finishTurn, pane, seeded, start, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
 const POLL = 150
-const SPARKS = /^[✦·⋆•✧]$/
 
 test('the band keeps one line while Claude is idle', async ($, on) => {
   world(on)
@@ -43,7 +42,7 @@ test('while Claude works, the Mine button and tool calls mine', async ($, on) =>
   expect(await ui.find({ in: 'hud', type: 'Text', text: '· last turn +3' })).toBeDefined()
 })
 
-test('a click throws a few sparks and pops what it earned, then they fade', async ($, on) => {
+test('a press pops what it earned beside the counter, then it fades', async ($, on) => {
   world(on, { save: seeded({ upgrades: ['pick-1', 'pick-2'], clicks: 100 }) })
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
@@ -52,13 +51,11 @@ test('a click throws a few sparks and pops what it earned, then they fade', asyn
   await ui.press({ key: 'mine' })
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeDefined()
-  expect((await ui.findAll({ in: 'hud', type: 'Text', text: SPARKS })).length).toBeGreaterThan(0)
   await ui.advance(1_000)
   expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeUndefined()
-  expect(await ui.findAll({ in: 'hud', type: 'Text', text: SPARKS })).toHaveLength(0)
 })
 
-test('the HUD keeps one size through the sparks, and the scene is never redrawn', async ($, on) => {
+test('the HUD keeps one size while the pop fades, and the scene is never redrawn', async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
@@ -67,7 +64,7 @@ test('the HUD keeps one size through the sparks, and the scene is never redrawn'
   await ui.press({ key: 'mine' })
   await ui.press({ key: 'mine' })
   await ui.advance(150)
-  // What lays out in the flow (not the sparks, which are placed absolutely) stays put frame after frame.
+  // What lays out in the flow (not the pop, which is placed absolutely) stays put frame after frame.
   const flow = async () => {
     const root = await ui.find({ in: 'hud', type: 'Box' })
     return JSON.stringify({ props: root?.props, rows: root?.children.filter(child => JSON.stringify(child).includes('"position":"absolute"') === false) })

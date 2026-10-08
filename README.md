@@ -8,9 +8,10 @@ Claude works. You click.
 While Claude works, a miner digs an endless tunnel in the band above your
 prompt. Each swing takes him deeper: fresh rock comes in from the right, and
 the timbers, lanterns and spoil heaps he leaves behind slide away. Every tool
-call Claude makes is ore. Press **Mine** to dig faster: each press throws a
-few sparks off the counter. Spend your sparks in the shop, and your crew lines
-up on the right of the band. When the turn ends, the band shrinks to one line.
+call Claude makes is ore. Press **Mine** to dig faster: each press pops what
+it earned beside the counter. Spend your sparks in the shop, and your crew
+lines up on the right of the band. When the turn ends, the band shrinks to
+one line.
 
 ## Install
 

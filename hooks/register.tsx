@@ -29,12 +29,12 @@ const HEADER_SCALE = 2
 /** Columns the HUD and the buttons need beside the terminal scene. */
 const HUD_COLUMNS = 44
 /**
- * The HUD's fixed height in rows, and how far its sparks may fly. Its width
- * follows its text: a desktop draws a width in cells much wider than the text.
+ * The HUD's fixed height in rows. Its width follows its text: a desktop draws
+ * a width in cells much wider than the text.
  */
-const HUD_WORK = { width: 30, height: 3 } as const
-const HUD_IDLE = { width: 40, height: 1 } as const
-const HUD_SHOP = { width: 50, height: 4 } as const
+const HUD_WORK = { height: 3 } as const
+const HUD_IDLE = { height: 1 } as const
+const HUD_SHOP = { height: 4 } as const
 
 /** Tools that wait on the person, so the miner rests while they decide. */
 const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
