@@ -79,7 +79,8 @@ test('an upgrade goes on sale at its unlock', async ($, on) => {
   await ui.advance(250)
   expect(await ui.find({ type: 'Text', text: 'Next: Steel pick, after 100 clicks' })).toBeDefined()
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '▰▰▱▱▱▱▱▱▱▱ 25/100' })).toBeDefined()
-  expect(await ui.find({ in: 'shophud', type: 'Text', text: 'Clicks 25 · Tool calls 0 · Turns 0' })).toBeDefined()
+  await ui.advance(1_000)
+  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Clicks 25 · Tool calls 0 · Turns 0' })).toBeDefined()
   await ui.press({ key: 'up-pick-1' })
   await ui.advance(250)
   expect(await ui.find({ key: 'up-pick-1' })).toBeUndefined()
@@ -110,10 +111,10 @@ test('what a session mines reaches the store', async ($, on) => {
   const ui = await $.ui.mount(band('desktop'))
   await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'hud' })
   await ui.advance(250)
-  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await $.tool.call({ tool: 'Bash', command: 'ls' })
   await finishTurn($, 't1')
   await endSession($)
-  expect(w.store.get('save')).toMatchObject({ sparks: 3, clicks: 1, tools: 1, turns: 1, mined: { bash: 1 } })
+  expect(w.store.get('save')).toMatchObject({ sparks: 3, clicks: 1, tools: 1, turns: 1, mined: { bash: 1 }, bySource: { click: 1, tool: 2 }, bestTurn: 3 })
 })
 
 test('/mine reset asks first', async ($, on) => {
@@ -138,4 +139,23 @@ test('on the desktop the cards stand a row apart, in the terminal they stay pack
   }
   expect(await gapped('desktop')).toBe(true)
   expect(await gapped('terminal')).toBe(false)
+})
+
+test('the stats say where the sparks came from', async ($, on) => {
+  world(on, { save: seeded({ bySource: { crew: 600, click: 300, tool: 60, event: 40 }, bestTurn: 450, gems: 3, veins: 2, events: { tests: 4, commit: 1 } }) })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  await ui.advance(1_000)
+  expect(await ui.find({ in: 'stats', type: 'Text', text: '60% · ✻ 600' })).toBeDefined()
+  expect(await ui.find({ in: 'stats', type: 'Text', text: '4% · ✻ 40' })).toBeDefined()
+  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Best turn +450 · Gems 3 · Veins 2' })).toBeDefined()
+  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Tests passed 4 · Commits 1 · Long shifts 0' })).toBeDefined()
+})
+
+test('a stopped mine says so atop the shop', async ($, on) => {
+  world(on)
+  await start($)
+  await command($, 'stop')
+  const ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Text', text: 'Sparkmine is stopped. /mine start sets it going again.' })).toBeDefined()
 })

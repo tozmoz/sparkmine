@@ -188,3 +188,80 @@ test('numbers read short', () => {
   expect(fmtRate(2.25)).toBe('2.3')
   expect(fmtRate(9.96)).toBe('10')
 })
+
+describe('the work behind the mine', () => {
+  test('test runs and commits are told from every other command', () => {
+    for (const cmd of ['npm test', 'pnpm run test -- --watch=false', 'cd app && npx vitest run', 'go test ./...', 'cargo test', 'python -m pytest -q', 'CI=1 yarn test', '"$CLI" plugin test "$PWD" 2>&1 | tail -3']) {
+      expect(game.isTestCommand(cmd)).toBe(true)
+    }
+    for (const cmd of ['ls tests', 'cat jest.config.js', 'grep -r vitest .', 'git commit -m test', 'echo npm test']) {
+      expect(game.isTestCommand(cmd)).toBe(false)
+    }
+    const run = { tool: 'Bash', command: 'npm test', isError: false, interrupted: false, background: false, committed: false }
+    expect(game.workEvent(run)).toBe('tests')
+    expect(game.workEvent({ ...run, isError: true })).toBeNull()
+    expect(game.workEvent({ ...run, background: true })).toBeNull()
+    expect(game.workEvent({ ...run, command: 'git commit -m x', committed: true })).toBe('commit')
+    expect(game.workEvent({ ...run, tool: 'Read' })).toBeNull()
+  })
+
+  test("a call's outcome is read off its input and result", () => {
+    const commit = game.outcomeOf('Bash', { command: 'git commit -m x' }, { result: { interrupted: false, gitOperation: { commit: { sha: 'a', kind: 'committed' } } } })
+    expect(commit).toMatchObject({ tool: 'Bash', committed: true, isError: false })
+    expect(game.outcomeOf('Bash', { command: 'npm test', run_in_background: true }, { result: {} }).background).toBe(true)
+    expect(game.outcomeOf('Bash', { command: 'npm test' }, { result: {}, isError: true }).isError).toBe(true)
+  })
+
+  test('work events pay seconds of the rate, and never less than their clicks', () => {
+    expect(game.eventValue(saveWith({}), 'tests')).toBe(10)
+    expect(near(game.eventValue(saveWith({ producers: { cart: 10 } }), 'tests'))).toBe(150)
+    expect(near(game.eventValue(saveWith({ producers: { cart: 10 } }), 'longShift'))).toBe(450)
+    expect(game.veinValue(saveWith({}))).toBe(30)
+  })
+})
+
+describe('depth', () => {
+  test('a hundred metres more for every tenfold of the run', () => {
+    expect(game.depth(saveWith({ lifetime: 0 }))).toBe(0)
+    expect(game.depth(saveWith({ lifetime: 9_000 }))).toBe(100)
+    expect(game.depth(saveWith({ lifetime: 999_000 }))).toBe(300)
+    expect(game.depth(saveWith({ lifetime: 99_999_000 }))).toBe(500)
+    expect([0, 99, 100, 299, 300, 499, 500, 900].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3])
+  })
+})
+
+describe('veins', () => {
+  test('the first comes after a minute and a half to three of work, the rest after five to ten', () => {
+    const kinds = new Set<string>()
+    for (let n = 0; n < 40; n += 1) {
+      const { seconds, kind } = game.veinAfter('run', n)
+      kinds.add(kind)
+      if (n === 0) expect(seconds >= 90 && seconds < 180).toBe(true)
+      else expect(seconds >= 300 && seconds < 600).toBe(true)
+    }
+    expect([...kinds].sort()).toEqual(['frenzy', 'rich'])
+  })
+})
+
+describe('stats', () => {
+  test('earnings are counted by where they came from, and ride along a sync', () => {
+    let mine = mineWith({})
+    mine = game.earn(mine, 5, { kind: 'crew' })
+    mine = game.earn(mine, 40, { kind: 'click', isGem: true })
+    mine = game.earn(mine, 20, { kind: 'event', event: 'tests' })
+    mine = game.earn(mine, 0, { kind: 'vein' })
+    mine = game.recordTurn(mine, 65)
+    expect(mine.save).toMatchObject({ bySource: { crew: 5, click: 40, event: 20 }, gems: 1, veins: 1, events: { tests: 1 }, bestTurn: 65 })
+    const merged = game.applyDelta(saveWith({ bestTurn: 100, gems: 2 }), mine.pending)
+    expect(merged).toMatchObject({ bySource: { crew: 5, click: 40, event: 20 }, gems: 3, veins: 1, events: { tests: 1 }, bestTurn: 100 })
+  })
+
+  test('stats survive a collapse, and an older save reads with none', () => {
+    const after = game.collapse(saveWith({ allTime: 8e6, bySource: { crew: 9 }, gems: 4, bestTurn: 77 }), 'next')
+    expect(after).toMatchObject({ bySource: { crew: 9 }, gems: 4, bestTurn: 77 })
+    expect(game.normalize({ v: 1, runId: 'old', sparks: 5 })).toMatchObject({ bySource: {}, gems: 0, veins: 0, events: {}, bestTurn: 0 })
+    const old = { ...game.newMine('old'), save: { v: 1, runId: 'old', sparks: 5 } as unknown as Save }
+    expect(game.normalizeMine(old).save).toMatchObject({ sparks: 5, bySource: {}, events: {} })
+    expect(game.normalizeMine(old).pending).toMatchObject({ bySource: {}, gems: 0 })
+  })
+})

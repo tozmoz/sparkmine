@@ -19,7 +19,7 @@ export const ROWS = H / 2
 const CLEAR = -1
 
 /** `pick` is the miner's pick, 0 worn iron to 4 obsidian, as the pick upgrades make it. */
-export type SceneSpec = { mode: Mode; carts: number; goblins: number; pick: number }
+export type SceneSpec = { mode: Mode; carts: number; goblins: number; pick: number; biome: number }
 
 /** One pose of the miner: `t` runs from the strike (0) to the raised pick (1); null rests. */
 export type Frame = { at: number; t: number | null; bob: number; chips: boolean }
@@ -176,16 +176,6 @@ function rng(seed: number): () => number {
 }
 
 const OUTLINE = 0x1d1512
-const CAVE = 0x211915
-const CAVE_DARK = 0x1a1310
-const CAVE_LIGHT = 0x2a201b
-const ROCK = [0x2b221e, 0x4a3c34, 0x57473d] as const
-const CEILING = [0x2b221e, 0x3d322b, 0x4a3c34] as const
-const DIRT = 0x2a201b
-const DIRT_SPECK = 0x3a2c25
-const PEBBLE = 0x4a3c34
-const PILE = 0x6b4a2f
-const PILE_TOP = 0x8a6240
 const RAIL = 0x9aa3ad
 const TIE = 0x5e3b1d
 const WOOD = [0xa8743f, 0x8a5a2e, 0x5e3b1d] as const
@@ -199,6 +189,62 @@ const GOLD = [0xf2b632, 0xffe08a, 0xc7861d] as const
 const TEAL = [0x5dcaa5, 0xb5f0dc, 0x1d9e75] as const
 const SHIRT = 0xc2412d
 const SKIN = 0xf0c08a
+
+/** An ore's colors: its body, its glint and its shadow. */
+type Ore = readonly [number, number, number]
+
+/** The colors of one layer the mine digs through. */
+type Strata = {
+  cave: number
+  caveDark: number
+  caveLight: number
+  rock: readonly [number, number, number]
+  ceiling: readonly [number, number, number]
+  dirt: number
+  dirtSpeck: number
+  pebble: number
+  pile: number
+  pileTop: number
+  /** The two ores in the rock: the first is the one the pick throws sparks of. */
+  ores: readonly [Ore, Ore]
+}
+
+/** Deeper is stranger: the mine passes from topsoil through stone and crystal caves into magma. */
+const STRATA: readonly Strata[] = [
+  // Topsoil: warm brown earth with gold and teal.
+  {
+    cave: 0x211915, caveDark: 0x1a1310, caveLight: 0x2a201b,
+    rock: [0x2b221e, 0x4a3c34, 0x57473d], ceiling: [0x2b221e, 0x3d322b, 0x4a3c34],
+    dirt: 0x2a201b, dirtSpeck: 0x3a2c25, pebble: 0x4a3c34, pile: 0x6b4a2f, pileTop: 0x8a6240,
+    ores: [GOLD, TEAL],
+  },
+  // Stone: cold grey granite with gold and silver.
+  {
+    cave: 0x1b1c20, caveDark: 0x141518, caveLight: 0x24262b,
+    rock: [0x2a2c31, 0x4a4d55, 0x5f636c], ceiling: [0x2a2c31, 0x3a3d44, 0x4a4d55],
+    dirt: 0x24262b, dirtSpeck: 0x34373e, pebble: 0x4a4d55, pile: 0x575b63, pileTop: 0x7a7f88,
+    ores: [GOLD, [0xd0d6de, 0xffffff, 0x8a919b]],
+  },
+  // Crystal caves: indigo rock grown through with amethyst and diamond.
+  {
+    cave: 0x17142a, caveDark: 0x100e1e, caveLight: 0x221e3a,
+    rock: [0x221d3a, 0x3a3263, 0x4b4280], ceiling: [0x221d3a, 0x2e2850, 0x3a3263],
+    dirt: 0x1d1930, dirtSpeck: 0x2e2850, pebble: 0x3a3263, pile: 0x4b4280, pileTop: 0x7f77dd,
+    ores: [[0xb6a6ff, 0xe0d8ff, 0x7f77dd], [0x5fd4e8, 0xd8fbff, 0x2a8fa8]],
+  },
+  // Magma: black basalt, its seams running with lava and ruby.
+  {
+    cave: 0x241210, caveDark: 0x180b09, caveLight: 0x341a15,
+    rock: [0x1a1414, 0x2e2522, 0x4a271d], ceiling: [0x1a1414, 0x2e2522, 0x3d302b],
+    dirt: 0x2a1410, dirtSpeck: 0x5a1f10, pebble: 0x3d302b, pile: 0x4a2a20, pileTop: 0x6a3a28,
+    ores: [[0xff7a2f, 0xffd36e, 0xc2412d], [0xe24b4a, 0xf7c1c1, 0x8f2e20]],
+  },
+]
+
+const strataOf = (biome: number): Strata => STRATA[Math.max(0, Math.min(STRATA.length - 1, biome))] ?? (STRATA[0] as Strata)
+
+/** What the rock throws when an iron or steel pick strikes it: its ore and its own stone. */
+const rockSparks = (st: Strata): readonly number[] => [st.ores[0][1], st.rock[2], st.rock[1], st.rock[1], st.ores[0][0], st.rock[2]]
 
 const MINER_PALETTE: Readonly<Record<string, number>> = {
   K: OUTLINE,
@@ -275,18 +321,19 @@ const ORES: readonly (readonly [number, number, 0 | 1])[] = [
   [28, 3, 0],
 ]
 
-/** How each pick looks: its handle, the wrap where he holds it, its head, and what flies when it strikes. */
-type PickLook = { handle: number; grip: number | null; head: number; edge: number; shade: number; sparks: readonly number[] }
-
-const ROCK_SPARKS = [GOLD[1], ROCK[2], 0x8a7a6e, ROCK[1], GOLD[0], 0x8a7a6e] as const
+/**
+ * How each pick looks: its handle, the wrap where he holds it, its head, and
+ * what flies when it strikes; null for the rock's own chips.
+ */
+type PickLook = { handle: number; grip: number | null; head: number; edge: number; shade: number; sparks: readonly number[] | null }
 
 const PICKS: readonly PickLook[] = [
   // Worn iron, the pick he starts with.
-  { handle: HANDLE, grip: null, head: 0x8a8f96, edge: 0xb7bcc2, shade: 0x5c6168, sparks: ROCK_SPARKS },
+  { handle: HANDLE, grip: null, head: 0x8a8f96, edge: 0xb7bcc2, shade: 0x5c6168, sparks: null },
   // Sharpened: the same iron, its points bright.
-  { handle: HANDLE, grip: null, head: 0x9aa1a9, edge: 0xffffff, shade: 0x5c6168, sparks: ROCK_SPARKS },
+  { handle: HANDLE, grip: null, head: 0x9aa1a9, edge: 0xffffff, shade: 0x5c6168, sparks: null },
   // Steel, with a red wrap on the handle.
-  { handle: 0x7a4a26, grip: SHIRT, head: STEEL, edge: STEEL_LIGHT, shade: STEEL_DARK, sparks: ROCK_SPARKS },
+  { handle: 0x7a4a26, grip: SHIRT, head: STEEL, edge: STEEL_LIGHT, shade: STEEL_DARK, sparks: null },
   // Diamond, on a dark handle with a gold wrap: it throws diamond glints.
   { handle: 0x5e3b1d, grip: GOLD[0], head: 0x5fd4e8, edge: 0xd8fbff, shade: 0x2a8fa8, sparks: [0xd8fbff, 0x5fd4e8, 0xffffff, 0x2a8fa8, 0xd8fbff, 0x5fd4e8] },
   // Obsidian, black and violet.
@@ -296,13 +343,16 @@ const PICKS: readonly PickLook[] = [
 const lookOf = (pick: number): PickLook => PICKS[Math.max(0, Math.min(PICKS.length - 1, pick))] ?? (PICKS[0] as PickLook)
 
 const CHIPS = [
-  { x: 51, y: 11, dx1: -3, dy1: -4, dx2: -6, dy2: 1, color: GOLD[1] },
-  { x: 51, y: 13, dx1: -4, dy1: -2, dx2: -8, dy2: 3, color: ROCK[2] },
-  { x: 50, y: 12, dx1: -2, dy1: -5, dx2: -4, dy2: -1, color: 0x8a7a6e },
-  { x: 51, y: 15, dx1: -3, dy1: -1, dx2: -5, dy2: 5, color: ROCK[1] },
-  { x: 50, y: 10, dx1: -1, dy1: -4, dx2: -2, dy2: 0, color: GOLD[0] },
-  { x: 51, y: 14, dx1: -5, dy1: -3, dx2: -9, dy2: 2, color: 0x8a7a6e },
+  { x: 51, y: 11, dx1: -3, dy1: -4, dx2: -6, dy2: 1 },
+  { x: 51, y: 13, dx1: -4, dy1: -2, dx2: -8, dy2: 3 },
+  { x: 50, y: 12, dx1: -2, dy1: -5, dx2: -4, dy2: -1 },
+  { x: 51, y: 15, dx1: -3, dy1: -1, dx2: -5, dy2: 5 },
+  { x: 50, y: 10, dx1: -1, dy1: -4, dx2: -2, dy2: 0 },
+  { x: 51, y: 14, dx1: -5, dy1: -3, dx2: -9, dy2: 2 },
 ] as const
+
+/** The colors the chips fly in: the pick's own, or the rock's. */
+const sparksOf = (look: PickLook, st: Strata): readonly number[] => look.sparks ?? rockSparks(st)
 
 function mix(a: number, b: number, share: number): number {
   const ch = (shift: number) => {
@@ -314,23 +364,23 @@ function mix(a: number, b: number, share: number): number {
 }
 
 /** One PERIOD-wide tile of the dug tunnel: back wall, timbers, lantern, rails, spoil. */
-function tunnelTile(): Pixels {
+function tunnelTile(st: Strata): Pixels {
   const r = rng(11)
   const pick = <T>(list: readonly T[]): T => list[Math.floor(r() * list.length)] as T
   const t = new Pixels(PERIOD, H)
-  t.data.fill(CAVE)
+  t.data.fill(st.cave)
   for (const y of [5, 9, 13, 17]) {
     let x = Math.floor(r() * 4)
     while (x < PERIOD) {
       const len = 3 + Math.floor(r() * 5)
-      for (let i = 0; i < len; i += 1) t.set(x + i, y, CAVE_DARK)
-      t.set(x + len, y + 1, CAVE_DARK)
+      for (let i = 0; i < len; i += 1) t.set(x + i, y, st.caveDark)
+      t.set(x + len, y + 1, st.caveDark)
       x += len + 2 + Math.floor(r() * 3)
     }
   }
-  for (let i = 0; i < 10; i += 1) t.set(Math.floor(r() * PERIOD), 3 + Math.floor(r() * 16), r() < 0.5 ? CAVE_LIGHT : CAVE_DARK)
+  for (let i = 0; i < 10; i += 1) t.set(Math.floor(r() * PERIOD), 3 + Math.floor(r() * 16), r() < 0.5 ? st.caveLight : st.caveDark)
   for (let x = 0; x < PERIOD; x += 1) {
-    t.set(x, 0, pick(CEILING))
+    t.set(x, 0, pick(st.ceiling))
     t.set(x, 1, WOOD[0])
     t.set(x, 2, WOOD[2])
   }
@@ -340,10 +390,10 @@ function tunnelTile(): Pixels {
     t.set(POST_X + 2, y, WOOD[2])
   }
   SPOIL.heights.forEach((height, i) => {
-    for (let k = 0; k < height; k += 1) t.set(SPOIL.x + i, 20 - k, k === height - 1 ? PILE_TOP : PILE)
+    for (let k = 0; k < height; k += 1) t.set(SPOIL.x + i, 20 - k, k === height - 1 ? st.pileTop : st.pile)
   })
-  for (let y = 22; y < H; y += 1) for (let x = 0; x < PERIOD; x += 1) t.set(x, y, r() < 0.12 ? DIRT_SPECK : DIRT)
-  for (let i = 0; i < 3; i += 1) t.set(Math.floor(r() * PERIOD), 22, PEBBLE)
+  for (let y = 22; y < H; y += 1) for (let x = 0; x < PERIOD; x += 1) t.set(x, y, r() < 0.12 ? st.dirtSpeck : st.dirt)
+  for (let i = 0; i < 3; i += 1) t.set(Math.floor(r() * PERIOD), 22, st.pebble)
   for (let x = 0; x < PERIOD; x += 1) {
     t.set(x, 21, RAIL)
     if (x % 4 < 2) t.set(x, 22, TIE)
@@ -362,19 +412,19 @@ function tunnelTile(): Pixels {
 }
 
 /** One PERIOD-wide tile of the rock still ahead, with its ore. */
-function rockTile(): Pixels {
+function rockTile(st: Strata): Pixels {
   const r = rng(29)
   const t = new Pixels(PERIOD, H)
   for (let y = 0; y < H; y += 1) {
     for (let x = 0; x < PERIOD; x += 1) {
       const shade = r()
-      let color: number = shade < 0.15 ? ROCK[0] : shade < 0.7 ? ROCK[1] : ROCK[2]
-      if (y % 7 === 0 && r() < 0.6) color = ROCK[0]
+      let color: number = shade < 0.15 ? st.rock[0] : shade < 0.7 ? st.rock[1] : st.rock[2]
+      if (y % 7 === 0 && r() < 0.6) color = st.rock[0]
       t.set(x, y, color)
     }
   }
   for (const [ox, oy, kind] of ORES) {
-    const [main, light, dark] = kind === 1 ? TEAL : GOLD
+    const [main, light, dark] = st.ores[kind]
     for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const) t.set(ox + dx, oy + dy, main)
     t.set(ox, oy, light)
     t.set(ox - 1, oy - 1, light)
@@ -393,19 +443,20 @@ function strip(tile: Pixels, width: number): Pixels {
 const STRIP = W + PERIOD
 const lanterns = Array.from({ length: Math.ceil(STRIP / PERIOD) }, (_, k) => LANTERN_X + k * PERIOD)
 
-const worlds = new Map<boolean, { tunnel: Pixels; rock: Pixels }>()
+const worlds = new Map<string, { tunnel: Pixels; rock: Pixels }>()
 
-/** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once. */
-function world(withGlow: boolean): { tunnel: Pixels; rock: Pixels } {
-  const hit = worlds.get(withGlow)
+/** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once a layer. */
+function world(withGlow: boolean, biome: number): { tunnel: Pixels; rock: Pixels } {
+  const key = `${biome}:${withGlow}`
+  const hit = worlds.get(key)
   if (hit !== undefined) return hit
-  const built = buildWorld(withGlow)
-  worlds.set(withGlow, built)
+  const built = buildWorld(withGlow, strataOf(biome))
+  worlds.set(key, built)
   return built
 }
 
-function buildWorld(withGlow: boolean): { tunnel: Pixels; rock: Pixels } {
-  const tunnel = strip(tunnelTile(), STRIP)
+function buildWorld(withGlow: boolean, st: Strata): { tunnel: Pixels; rock: Pixels } {
+  const tunnel = strip(tunnelTile(st), STRIP)
   if (withGlow) {
     for (const lx of lanterns) {
       for (let y = 0; y < H; y += 1) {
@@ -417,13 +468,13 @@ function buildWorld(withGlow: boolean): { tunnel: Pixels; rock: Pixels } {
       }
     }
   }
-  return { tunnel, rock: strip(rockTile(), STRIP) }
+  return { tunnel, rock: strip(rockTile(st), STRIP) }
 }
 
 /** The face's dark edge: the line between the tunnel and the rock. */
-function faceEdge(): Pixels {
+function faceEdge(st: Strata): Pixels {
   const edge = new Pixels()
-  for (let y = 0; y < H; y += 1) edge.set(faceAt(y), y, ROCK[0])
+  for (let y = 0; y < H; y += 1) edge.set(faceAt(y), y, st.rock[0])
   return edge
 }
 
@@ -503,12 +554,13 @@ function miner(px: Pixels, frame: Frame, look: PickLook): void {
   px.set(hx, hy, SKIN)
 }
 
-function chips(px: Pixels, look: PickLook): void {
-  CHIPS.forEach((chip, i) => px.set(chip.x + chip.dx1, chip.y + chip.dy1, look.sparks[i] ?? chip.color))
+function chips(px: Pixels, look: PickLook, st: Strata): void {
+  const colors = sparksOf(look, st)
+  CHIPS.forEach((chip, i) => px.set(chip.x + chip.dx1, chip.y + chip.dy1, colors[i] ?? st.rock[2]))
 }
 
-function sparkle(px: Pixels, look: PickLook): void {
-  const ray = look.sparks === ROCK_SPARKS ? GOLD[0] : (look.sparks[1] ?? GOLD[0])
+function sparkle(px: Pixels, look: PickLook, st: Strata): void {
+  const ray = look.sparks === null ? st.ores[0][0] : (look.sparks[1] ?? GOLD[0])
   for (const [dx, dy] of [[0, -2], [0, -1], [0, 1], [0, 2], [-2, 0], [-1, 0], [1, 0], [2, 0]] as const) px.set(53 + dx, 11 + dy, ray)
   px.set(53, 11, LAMP)
 }
@@ -567,7 +619,8 @@ function windowKeyframes(name: string, from: number, to: number): string {
  * that may draw the box a little taller than asked.
  */
 export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string {
-  const { tunnel, rock } = world(false)
+  const st = strataOf(spec.biome)
+  const { tunnel, rock } = world(false, spec.biome)
   const look = lookOf(spec.pick)
   const { frames, ms } = framesFor(spec.mode)
   const isDigging = spec.mode === 'work'
@@ -595,7 +648,7 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
   const glows = lanterns.map(lx => `${glowPath(lx, 10)}${glowPath(lx, 6)}`).join('')
   body.push(`<g${slide}>${paths(tunnel)}<g class="glow">${glows}</g></g>`)
   body.push(`<g clip-path="url(#rock)"><g${slide}>${paths(rock)}</g></g>`)
-  body.push(paths(faceEdge()))
+  body.push(paths(faceEdge(st)))
 
   // The crew that follows him stays put on screen while the world slides by.
   if (spec.carts > 0) {
@@ -649,13 +702,13 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
           `${pct(a + 0.12)}{opacity:1;transform:translate(${chip.dx1}px,${chip.dy1}px)}` +
           `${pct(a + 0.3)}{opacity:0;transform:translate(${chip.dx2}px,${chip.dy2}px)}100%{opacity:0}}`,
       )
-      body.push(`<rect class="c c${i}" x="${chip.x}" y="${chip.y}" width="1" height="1" fill="${hex(look.sparks[i] ?? chip.color)}"/>`)
+      body.push(`<rect class="c c${i}" x="${chip.x}" y="${chip.y}" width="1" height="1" fill="${hex(sparksOf(look, st)[i] ?? st.rock[2])}"/>`)
     })
     // Every few strikes the pick finds ore.
     const sparks: (readonly [number, string])[] = []
     for (let k = SPARK_EVERY - 1; k < CUTS; k += SPARK_EVERY) sparks.push([cutAt(k), '1'], [(k + IMPACT_AT + SPARK_FOR) / CUTS, '0'])
     const layer = new Pixels()
-    sparkle(layer, look)
+    sparkle(layer, look, st)
     css.push(`.sp{opacity:0;animation:sp ${LOOP_MS}ms step-end infinite}`, stepKeyframes('sp', 'opacity', '0', sparks))
     body.push(`<g class="sp">${paths(layer)}</g>`)
   }
@@ -664,19 +717,20 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
     ? 'width="100%" height="100%" preserveAspectRatio="xMidYMid slice"'
     : `width="${W * scale}" height="${H * scale}"`
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" ${size} shape-rendering="crispEdges" style="display:block;background:#211915">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" ${size} shape-rendering="crispEdges" style="display:block;background:${hex(st.cave)}">` +
     `<style>${css.join('')}</style>${body.join('')}</svg>`
   )
 }
 
 /** The scene at one moment, as pixels: what the terminal paints and the tests read. */
 export function compose(spec: SceneSpec, m: Moment): Pixels {
-  const { tunnel, rock } = world(true)
+  const st = strataOf(spec.biome)
+  const { tunnel, rock } = world(true, spec.biome)
   const px = new Pixels()
   for (let y = 0; y < H; y += 1) {
     for (let x = 0; x < W; x += 1) px.set(x, y, (x >= faceAt(y) ? rock : tunnel).get(x + m.scroll, y))
   }
-  px.stamp(faceEdge())
+  px.stamp(faceEdge(st))
   if (spec.carts > 0) cart(px, spec.carts, m.wheel)
   if (spec.goblins > 0) goblin(px, 0)
   const look = lookOf(spec.pick)
@@ -684,9 +738,9 @@ export function compose(spec: SceneSpec, m: Moment): Pixels {
   const frame = frames[m.frame] ?? frames[0]
   if (frame !== undefined) {
     miner(px, frame, look)
-    if (frame.chips) chips(px, look)
+    if (frame.chips) chips(px, look, st)
   }
-  if (m.spark) sparkle(px, look)
+  if (m.spark) sparkle(px, look, st)
   return px
 }
 

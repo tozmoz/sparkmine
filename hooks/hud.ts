@@ -55,6 +55,8 @@ const MAX_PER_SECOND = 20
 /** How long after the pointer's press the button's own press can still come. */
 const MATCH_MS = 1_000
 const GEM_COLOR = '#5dcaa5'
+/** A reward or a frenzy reads in warm gold. */
+const REWARD_COLOR = '#ffd36e'
 const BAR = 10
 const PRESS_FRAMES = 2
 
@@ -164,27 +166,41 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
   const count = Text({ color: 'claude', bold: true, children: [counter] })
   const goal = props.goal === null ? null : `Next: ${props.goal.name}`
 
+  // How deep the mine is, in the color of its layer; a reward for a moment; a frenzy on the rate.
+  const deep = Text({ color: props.layer?.color ?? '#c8a27a', children: [`${commas(props.depth ?? 0)} m`] })
+  const event = props.event ?? null
+  const reward = event === null ? null : Text({ color: REWARD_COLOR, bold: true, wrap: 'truncate-end', children: [`★ ${event.label} +${short(event.value)} ✻`] })
+  const frenzy = props.frenzy ?? null
+  const rate =
+    frenzy === null
+      ? dim(`${perSecond(props.rate)}/s`)
+      : Text({ color: REWARD_COLOR, bold: true, children: [`${perSecond(props.rate * frenzy.mult)}/s ×${frenzy.mult}`] })
+
   if (props.variant === 'shop') {
     const idle = props.idle > 0 ? ` · ${Math.round(props.idle * 100)}% while idle` : ''
-    const rows: unknown[] = [line([count]), dim(`${perSecond(props.rate)}/s while Claude works${idle}`)]
+    const rows: unknown[] = [
+      line([count]),
+      dim(`${perSecond(props.rate)}/s while Claude works${idle}`),
+      line([Text({ color: props.layer?.color ?? '#c8a27a', children: [props.layer?.name ?? 'Topsoil'] }), dim(`· ${commas(props.depth ?? 0)} m deep`)]),
+    ]
     if (props.goal !== null) {
       rows.push(line([dim(goal ?? ''), Text({ color: 'claude', children: [`${bar(props.goal.have, props.goal.need)} ${commas(props.goal.have)}/${commas(props.goal.need)}`] })]))
     }
-    rows.push(dim(`Clicks ${commas(props.clicks)} · Tool calls ${commas(props.tools)} · Turns ${commas(props.turns)}`))
     return box(rows)
   }
 
   if (props.mode === 'idle') {
     const notes = [props.lastTurn > 0 ? `last turn +${short(props.lastTurn)}` : 'mines while Claude works']
     if (props.idle > 0) notes.push(`crew at ${Math.round(props.idle * 100)}%`)
-    return box([line([count, dim(`· ${notes.join(' · ')}`)])])
+    return box([line([count, dim('·'), deep, reward === null ? dim(`· ${notes.join(' · ')}`) : line([dim('·'), reward])])])
   }
 
   // The band leaves the next goal to the shop, where its numbers explain it.
-  const second =
+  const news =
     props.mode === 'pause'
       ? Text({ color: 'warning', wrap: 'truncate-end', children: ['Claude is waiting for you'] })
-      : dim(props.last ?? `this turn +${short(props.turn)}`)
+      : (reward ?? dim(props.last ?? `this turn +${short(props.turn)}`))
+  const second = line([deep, dim('·'), news])
   const pop = s.pop
   const isBright = pop !== null && pop.age < (pop.isGem ? GEM_BRIGHT : POP_BRIGHT)
   const popText =
@@ -213,12 +229,14 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
           flexShrink: 0,
           children: [Text({ bold: true, color: isWorking ? GOLD.ink : DULL.ink, children: ['⛏ Mine'] })],
         })
+  // Compact: everything on one line beside the sign.
+  const text = props.isCompact === true ? box([line([count, rate, slot, dim('·'), deep, dim('·'), news])]) : box([line([count, rate, slot]), second])
   return Box({
     height: props.height,
     flexDirection: 'row',
     columnGap: 2,
     alignItems: 'center',
-    children: [mine, box([line([count, dim(`${perSecond(props.rate)}/s`), slot]), second])],
+    children: [mine, text],
   })
 }
 

@@ -3,10 +3,10 @@
 import { atom, read, update } from 'claude-code'
 import type { RenderElement, Register, Timer } from 'claude-code'
 
-import type { HudProps } from '../types'
-import { newMine, producer } from './game.ts'
+import type { HudProps, StatsProps } from '../types'
+import { newMine, normalizeMine, outcomeOf, producer } from './game.ts'
 import { iconSvg } from './icons.ts'
-import { EMPTY_HUD, EMPTY_SHOP, hudProps } from './model.ts'
+import { EMPTY_HUD, EMPTY_SHOP, EMPTY_STATS, hudProps, statsProps, veinProps } from './model.ts'
 import { H, ROWS, W, momentAt, momentKey, sceneCells, sceneSvg, type SceneSpec } from './scene.ts'
 import * as state from './state.ts'
 import { INITIAL_BAND, INITIAL_VIEW, type Io } from './state.ts'
@@ -28,8 +28,8 @@ const SCALE = 3
 const HEADER_SCALE = 2
 /** CSS pixels of each producer in the band's crew rack. */
 const CREW_ICON = 20
-/** Columns the HUD, with its Mine button, and the Shop button need beside the terminal scene. */
-const HUD_COLUMNS = 54
+/** Columns the HUD, with its Mine button, the Shop button and a vein need beside the terminal scene. */
+const HUD_COLUMNS = 64
 /**
  * The HUD's fixed height in rows. Its width follows its text: a desktop draws
  * a width in cells much wider than the text.
@@ -38,10 +38,13 @@ const HUD_WORK = { height: 2 } as const
 const HUD_IDLE = { height: 1 } as const
 const HUD_SHOP = { height: 4 } as const
 
+/** Where the band draws, as the Clients' props say it. */
+const surfaceOf = (surface: string): HudProps['surface'] => (surface === 'terminal' || surface === 'desktop' ? surface : 'other')
+
 /** Tools that wait on the person, so the miner rests while they decide. */
 const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
-const specKey = (spec: SceneSpec) => `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}`
+const specKey = (spec: SceneSpec) => `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}`
 const svgs = new Map<string, string>()
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
@@ -80,6 +83,8 @@ export const register: Register = on => {
   let lastHud: HudProps = EMPTY_HUD
   /** The presses the band's HUD was last told were counted: the shop's HUD has none. */
   let lastAcked = 0
+  /** The stats the shop's Client was last handed, so a redraw of the shop starts from them. */
+  let lastStats: StatsProps = EMPTY_STATS
   /** Presses each band HUD has posted so far, by instance. */
   const totals = new Map<string, number>()
 
@@ -111,14 +116,15 @@ export const register: Register = on => {
       put: (key, value) => $.store.set(key, value),
       toast: text => $.ui.toast(text),
       ask: (question, options) => $.ui.ask(question, options),
-      mine: change => update($, MINE, change),
-      view: change => update($, VIEW, change),
-      band: change => update($, BAND, change),
+      // Values kept in the session from before an update lack newer fields: every read fills them.
+      mine: change => update($, MINE, m => change(normalizeMine(m))),
+      view: change => update($, VIEW, v => change(state.fillView(v))),
+      band: change => update($, BAND, b => change(state.fillBand(b))),
       shop: change => update($, SHOP, change),
       reward: change => update($, REWARD, change),
-      readMine: () => read($, MINE),
-      readView: () => read($, VIEW),
-      readBand: () => read($, BAND),
+      readMine: async () => normalizeMine(await read($, MINE)),
+      readView: async () => state.fillView(await read($, VIEW)),
+      readBand: async () => state.fillBand(await read($, BAND)),
       readShop: () => read($, SHOP),
       readReward: () => read($, REWARD),
     }
@@ -127,7 +133,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'mine',
       description: 'Open the Sparkmine shop',
-      argumentHint: '[hide|show|reset]',
+      argumentHint: '[stop|start|compact|hide|show|reset]',
       immediate: true,
     })
     await state.ensureLoaded(engine)
@@ -181,7 +187,7 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (io !== null && e.agentId === undefined) await state.endTurn(io)
+    if (io !== null && e.agentId === undefined) await state.endTurn(io, e.durationMs)
     return result
   })
 
@@ -195,7 +201,8 @@ export const register: Register = on => {
     } finally {
       if (io !== null) await state.setWaiting(io, e.tool_use_id, false)
     }
-    if (io !== null && result.deny === undefined && !asks) await state.minedTool(io, tool)
+    // Read only: the outcome says whether tests passed or a commit landed, and the call goes on unchanged.
+    if (io !== null && result.deny === undefined && !asks) await state.minedTool(io, outcomeOf(tool, e, result))
     return result
   }).catch(($, e, next) => next(e))
 
@@ -218,19 +225,36 @@ export const register: Register = on => {
     return {}
   })
 
+  // The vein asks four times a second whether one is showing, and says when it is caught.
+  on('ui.message', { element: 'vein' }, async ($, e) => {
+    if (io === null) return {}
+    const data = e.data
+    if (data !== null && typeof data === 'object' && typeof (data as { catch?: unknown }).catch === 'number') {
+      await state.catchVein(io, (data as { catch: number }).catch)
+    }
+    return { props: veinProps(await io.readView(), await io.now(), surfaceOf(e.surface)) }
+  })
+
+  // The shop's stats ask for fresh numbers once a second.
+  on('ui.message', { element: 'stats' }, async () => {
+    if (io === null) return {}
+    lastStats = statsProps((await io.readMine()).save)
+    return { props: lastStats }
+  })
+
   // The HUD Clients ask for fresh numbers ten times a second, and the band's
   // reports the presses of its Mine button.
   on('ui.message', { element: ['hud', 'shophud'] }, async ($, e) => {
     const isBand = e.element === 'hud'
     const acked = isBand && io !== null ? await countPresses(io, e.data) : 0
-    const mine = await read($, MINE)
-    const view = await read($, VIEW)
-    const band = await read($, BAND)
-    const size = isBand ? (band.mode === 'idle' ? HUD_IDLE : HUD_WORK) : HUD_SHOP
+    const mine = normalizeMine(await read($, MINE))
+    const view = state.fillView(await read($, VIEW))
+    const band = state.fillBand(await read($, BAND))
+    const size = !isBand ? HUD_SHOP : band.mode === 'idle' || band.isCompact ? HUD_IDLE : HUD_WORK
     const props: HudProps = {
-      ...hudProps(mine.save, view, band.mode, isBand ? 'band' : 'shop'),
+      ...hudProps(mine.save, view, band, isBand ? 'band' : 'shop', await $.clock.now()),
       ...size,
-      surface: e.surface === 'terminal' || e.surface === 'desktop' ? e.surface : 'other',
+      surface: surfaceOf(e.surface),
       acked,
     }
     lastHud = props
@@ -239,16 +263,17 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const band = await read($, BAND)
-    if (e.props.hasSurvey || !band.isLoaded || band.isHidden) {
+    const band = state.fillBand(await read($, BAND))
+    if (e.props.hasSurvey || !band.isLoaded || band.isHidden || band.isStopped) {
       live = null
       return next(e)
     }
-    const hudSize = band.mode === 'idle' ? HUD_IDLE : HUD_WORK
-    const surface = e.surface === 'terminal' || e.surface === 'desktop' ? e.surface : 'other'
+    const isOneLine = band.mode === 'idle' || band.isCompact
+    const hudSize = isOneLine ? HUD_IDLE : HUD_WORK
+    const surface = surfaceOf(e.surface)
     // The Mine button is the HUD's own, so a press answers without a round trip.
-    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, ...hudSize }
-    const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick }
+    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, isCompact: band.isCompact, ...hudSize }
+    const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick, biome: band.biome }
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
     let ours: RenderElement
 
@@ -257,11 +282,14 @@ export const register: Register = on => {
       const { Box, Client, Svg, Text } = $.ui.resolve(e)
       const hud = <Client key="hud" module="./hud.ts" props={props} height={hudSize.height} />
       const shop = <Client key="shopbtn" module="./shopbutton.ts" props={{}} />
-      if (band.mode === 'idle') {
+      // A vein to catch beside the Shop sign, or the frenzy one started; nothing the rest of the time.
+      const vein = <Client key="vein" module="./vein.ts" props={{ vein: null, frenzy: null, surface }} />
+      if (isOneLine) {
         ours = (
           <Box flexDirection="row" columnGap={2} alignItems="center">
             {hud}
             {shop}
+            {vein}
           </Box>
         )
       } else {
@@ -291,7 +319,10 @@ export const register: Register = on => {
             />
             <Box flexDirection="column" alignItems="flex-start" flexShrink={0}>
               {hud}
-              {shop}
+              <Box flexDirection="row" columnGap={1} alignItems="center">
+                {shop}
+                {vein}
+              </Box>
             </Box>
             {crew === null ? null : (
               <Box flexShrink={1} overflow="hidden" marginLeft={1}>
@@ -305,13 +336,15 @@ export const register: Register = on => {
       const { Box, Button, Client, Raster } = $.ui.resolve(e)
       const hud = <Client key="hud" module="./hud.ts" props={props} height={hudSize.height} />
       const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
+      const vein = <Client key="vein" module="./vein.ts" props={{ vein: null, frenzy: null, surface }} />
       const hasRoom = e.props.bodyColumns >= W + HUD_COLUMNS && e.props.maxRows >= ROWS + 2
-      if (band.mode === 'idle' || !hasRoom) {
+      if (isOneLine || !hasRoom) {
         live = null
         ours = (
           <Box flexDirection="row" columnGap={2}>
             {hud}
             {shop}
+            {vein}
           </Box>
         )
       } else {
@@ -322,6 +355,7 @@ export const register: Register = on => {
             <Raster key="scene" columns={W} rows={ROWS} cells={frame.cells} />
             {hud}
             {shop}
+            {vein}
           </Box>
         )
       }
@@ -344,7 +378,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: 'sparkmine' }, async ($, e) => {
     const shop = await read($, SHOP)
-    const band = await read($, BAND)
+    const band = state.fillBand(await read($, BAND))
     const act: ui.ShopActions = {
       buy: id => (io === null ? 0 : state.buyProducer(io, id)),
       upgrade: id => (io === null ? false : state.buyUpgrade(io, id)),
@@ -352,13 +386,17 @@ export const register: Register = on => {
       collapse: () => (io === null ? false : state.collapseMine(io)),
     }
     const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, acked: 0, ...HUD_SHOP }
+    const { Text } = $.ui.resolve(e)
+    const notice = band.isStopped ? <Text color="warning">Sparkmine is stopped. /mine start sets it going again.</Text> : null
     if (e.surface === 'desktop') {
       const { Client, Svg } = $.ui.resolve(e)
-      const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins, pick: band.pick }
+      const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins, pick: band.pick, biome: band.biome }
       return ui.shopTree($.ui.resolve(e), shop, {
         icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
         header: <Svg source={svgFor(header, HEADER_SCALE)} alt="The mine" width={W * HEADER_SCALE} height={H * HEADER_SCALE} />,
         live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
+        stats: <Client key="stats" module="./stats.ts" props={lastStats} />,
+        notice,
         isRoomy: true,
       }, act)
     }
@@ -368,18 +406,19 @@ export const register: Register = on => {
         icon: () => null,
         header: null,
         live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
+        stats: <Client key="stats" module="./stats.ts" props={lastStats} />,
+        notice,
         isRoomy: false,
       }, act)
     }
-    const { Text } = $.ui.resolve(e)
-    return ui.shopTree($.ui.resolve(e), shop, { icon: () => null, header: null, live: <Text bold>{`✻ ${Math.floor(lastHud.sparks)}`}</Text>, isRoomy: false }, act)
+    return ui.shopTree($.ui.resolve(e), shop, { icon: () => null, header: null, live: <Text bold>{`✻ ${Math.floor(lastHud.sparks)}`}</Text>, stats: null, notice, isRoomy: false }, act)
   })
 
   // The spinner says what the mine has unlocked. On the desktop its word names
   // the step Claude is on, so only the plain "Working" changes there.
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const word = await read($, REWARD)
-    if (word === null) return next(e)
+    if (word === null || state.fillBand(await read($, BAND)).isStopped) return next(e)
     if (e.surface === 'desktop' && e.props.word !== 'Working') return next(e)
     return next({ ...e, props: { ...e.props, word } })
   })
@@ -392,16 +431,29 @@ export const register: Register = on => {
     }
     if (io === null) return { text: 'Sparkmine is still starting.' }
     switch (arg) {
+      case 'stop':
+      case 'pause':
+        await state.setStopped(io, true)
+        return { text: 'Sparkmine is stopped in every session: nothing is mined and the band is gone. /mine start sets it going again.' }
+      case 'start':
+      case 'resume':
+        await state.setStopped(io, false)
+        return { text: 'Sparkmine is mining again.' }
+      case 'compact': {
+        const wasCompact = (await io.readBand()).isCompact
+        await state.setCompact(io, !wasCompact)
+        return { text: wasCompact ? 'The full band is back.' : 'Compact band: one line, even while Claude works. /mine compact again for the full band.' }
+      }
       case 'hide':
         await state.setHidden(io, true)
         return { text: 'Sparkmine is hidden. /mine show brings it back.' }
       case 'show':
         await state.setHidden(io, false)
-        return { text: 'Sparkmine is back above the prompt.' }
+        return { text: (await io.readBand()).isStopped ? 'Sparkmine is stopped. /mine start sets it going again.' : 'Sparkmine is back above the prompt.' }
       case 'reset':
         return { text: (await state.resetMine(io)) ? 'Sparkmine was reset.' : 'Nothing was reset.' }
       default:
-        return { text: 'Usage: /mine [shop|hide|show|reset]' }
+        return { text: 'Usage: /mine [shop|stop|start|compact|hide|show|reset]' }
     }
   })
 }

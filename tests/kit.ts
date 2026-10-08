@@ -16,6 +16,8 @@ export type World = {
   answers: string[]
   /** What a permission check decides. */
   decision: 'allow' | 'ask' | 'deny'
+  /** How a Bash call ends, by its command: a failed run, a commit. Unset, it succeeds plainly. */
+  bash?: (command: string) => { result: unknown; isError?: true } | undefined
 }
 
 export function world(on: On, store: Record<string, unknown> = {}): World {
@@ -55,6 +57,7 @@ export function world(on: On, store: Record<string, unknown> = {}): World {
   on('turn.complete', ($, e) => ({ text: e.answer }))
   // $.ui.ask is a call of the AskUserQuestion tool: answer it as the person would.
   on('tool.call', ($, e) => {
+    if (e.tool === 'Bash') return w.bash?.(String(e.command)) ?? { result: { stdout: '', stderr: '', interrupted: false } }
     if (e.tool !== 'AskUserQuestion') return { result: 'ok' }
     const question = e.questions[0]?.question ?? ''
     return { result: { questions: e.questions, answers: { [question]: w.answers.shift() ?? 'No' } } }
@@ -77,8 +80,20 @@ export const command = ($: Engine, args: string) =>
 export const endSession = ($: Engine) =>
   $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } })
 
-export const finishTurn = ($: Engine, turnId: string) =>
-  $.turn.complete({ answer: 'Done.', durationMs: 1_000, isAborted: false, turnId, reason: 'answer' })
+export const finishTurn = ($: Engine, turnId: string, durationMs = 1_000) =>
+  $.turn.complete({ answer: 'Done.', durationMs, isAborted: false, turnId, reason: 'answer' })
+
+/**
+ * Lets time pass a second at a time, as it does for a running session: one
+ * long jump would fire every tick at once, each reading the same moment.
+ */
+export async function wait(w: World, seconds: number): Promise<void> {
+  for (let i = 0; i < seconds; i += 1) await w.clock.advance(1_000)
+}
+
+/** A Bash call's answer when it fails, and when it commits. */
+export const failed = { result: { stdout: '', stderr: '1 failing', interrupted: false }, isError: true } as const
+export const committed = { result: { stdout: '', stderr: '', interrupted: false, gitOperation: { commit: { sha: 'abc1234', kind: 'committed' } } } }
 
 export function seeded(patch: Partial<Save>): Save {
   return {
@@ -94,6 +109,11 @@ export function seeded(patch: Partial<Save>): Save {
     mined: {},
     producers: {},
     upgrades: [],
+    bySource: {},
+    bestTurn: 0,
+    gems: 0,
+    veins: 0,
+    events: {},
     ...patch,
   }
 }
