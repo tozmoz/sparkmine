@@ -1,0 +1,154 @@
+// Everything the shop sells, and the numbers behind it.
+
+import type { ProducerId, ToolKind } from '../types'
+
+export type Producer = {
+  id: ProducerId
+  name: string
+  plural: string
+  blurb: string
+  /** Price of the first one; each next one costs GROWTH times more. */
+  cost: number
+  /** Sparks per second each one mines while Claude works. */
+  rate: number
+}
+
+export const GROWTH = 1.17
+
+export const PRODUCERS: readonly Producer[] = [
+  { id: 'apprentice', name: 'Apprentice', plural: 'Apprentices', blurb: 'Swings a tiny pick when nobody is looking.', cost: 15, rate: 0.05 },
+  { id: 'cart', name: 'Mine cart', plural: 'Mine carts', blurb: 'Rolls loose ore up to the surface.', cost: 110, rate: 0.5 },
+  { id: 'goblin', name: 'Grep goblin', plural: 'Grep goblins', blurb: 'Finds veins by pattern.', cost: 1_200, rate: 4 },
+  { id: 'drill', name: 'Steam drill', plural: 'Steam drills', blurb: 'Loud, hot and very persuasive.', cost: 13_000, rate: 23.5 },
+  { id: 'crew', name: 'Subagent crew', plural: 'Subagent crews', blurb: 'Digs five tunnels in parallel.', cost: 140_000, rate: 130 },
+  { id: 'cache', name: 'Cache vein', plural: 'Cache veins', blurb: 'Ore you already mined, mined again.', cost: 1_500_000, rate: 700 },
+  { id: 'refinery', name: 'Token refinery', plural: 'Token refineries', blurb: 'Smelts raw tokens into sparks.', cost: 21_000_000, rate: 3_900 },
+  { id: 'core', name: 'Context core', plural: 'Context cores', blurb: 'A million tokens of solid ore.', cost: 340_000_000, rate: 22_000 },
+]
+
+/** Sparks one tool call mines before any upgrade. */
+export const TOOL_BASE: Readonly<Record<ToolKind, number>> = {
+  read: 1,
+  edit: 4,
+  bash: 2,
+  web: 3,
+  agent: 8,
+  mcp: 2,
+  other: 1,
+}
+
+export const TOOL_NAMES: Readonly<Record<ToolKind, string>> = {
+  read: 'Read, Grep and Glob',
+  edit: 'Edit and Write',
+  bash: 'Bash',
+  web: 'Web',
+  agent: 'Agent',
+  mcp: 'MCP',
+  other: 'Other',
+}
+
+export type Effect =
+  | { kind: 'click'; mult: number }
+  /** Each click also mines this percent of the per-second rate. */
+  | { kind: 'clickRate'; pct: number }
+  | { kind: 'producer'; id: ProducerId; mult: number }
+  | { kind: 'tool'; tool: ToolKind; mult: number }
+  /** Each tool call also mines this many seconds of the rate. */
+  | { kind: 'ore'; seconds: number }
+  /** The share of the rate the crew mines while Claude is idle. */
+  | { kind: 'idle'; share: number }
+  /** Each finished turn mines this many seconds of the rate. */
+  | { kind: 'shift'; seconds: number }
+  | { kind: 'global'; mult: number }
+
+export type Unlock =
+  | { kind: 'clicks'; n: number }
+  | { kind: 'tools'; n: number }
+  | { kind: 'turns'; n: number }
+  | { kind: 'mined'; tool: ToolKind; n: number }
+  | { kind: 'owned'; id: ProducerId; n: number }
+  | { kind: 'crew'; n: number }
+  | { kind: 'earned'; n: number }
+
+export type Upgrade = {
+  id: string
+  name: string
+  blurb: string
+  cost: number
+  effect: Effect
+  unlock: Unlock
+}
+
+const TIERS = [
+  { at: 1, times: 10 },
+  { at: 5, times: 50 },
+  { at: 25, times: 500 },
+  { at: 50, times: 50_000 },
+] as const
+
+const TIER_NAMES: Readonly<Record<ProducerId, readonly [string, string, string, string]>> = {
+  apprentice: ['Hard hats', 'Coffee rations', 'Union contract', 'Guild charter'],
+  cart: ['Greased axles', 'Double rails', 'Express track', 'Maglev carts'],
+  goblin: ['Regex lessons', 'Case folding', 'Multiline mode', 'Ripgrep blood'],
+  drill: ['Tungsten bits', 'Pressure valves', 'Twin turbines', 'Diamond crowns'],
+  crew: ['Shared context', 'Worktrees', 'Background agents', 'Swarm protocol'],
+  cache: ['Warm cache', 'Longer TTL', 'Prefix reuse', 'Perfect hit rate'],
+  refinery: ['Better tokenizer', 'Batch smelting', 'Speculative pours', 'Distillation'],
+  core: ['Long context', 'Auto compaction', 'Memory files', 'Total recall'],
+}
+
+const producerUpgrades: Upgrade[] = PRODUCERS.flatMap(p =>
+  TIERS.map((tier, i) => ({
+    id: `${p.id}-${i + 1}`,
+    name: TIER_NAMES[p.id][i] ?? `${p.name} ${i + 1}`,
+    blurb: `${p.plural} mine 50% more.`,
+    cost: p.cost * tier.times,
+    effect: { kind: 'producer', id: p.id, mult: 1.5 },
+    unlock: { kind: 'owned', id: p.id, n: tier.at },
+  })),
+)
+
+const otherUpgrades: Upgrade[] = [
+  { id: 'pick-1', name: 'Sharpened pick', blurb: 'Clicks mine twice as much.', cost: 100, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 25 } },
+  { id: 'pick-2', name: 'Steel pick', blurb: 'Clicks mine twice as much.', cost: 500, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 100 } },
+  { id: 'pick-3', name: 'Diamond pick', blurb: 'Clicks mine twice as much.', cost: 10_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 500 } },
+  { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 1% of your rate.', cost: 50_000, effect: { kind: 'clickRate', pct: 1 }, unlock: { kind: 'clicks', n: 1_000 } },
+  { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 2% of your rate.', cost: 5_000_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 3_000 } },
+  { id: 'pick-6', name: 'Obsidian edge', blurb: 'Clicks mine twice as much.', cost: 500_000_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 10_000 } },
+
+  { id: 'tool-read', name: 'Reading glasses', blurb: 'Read, Grep and Glob calls mine 3x.', cost: 300, effect: { kind: 'tool', tool: 'read', mult: 3 }, unlock: { kind: 'mined', tool: 'read', n: 50 } },
+  { id: 'tool-bash', name: 'Blasting caps', blurb: 'Bash calls mine 3x.', cost: 1_500, effect: { kind: 'tool', tool: 'bash', mult: 3 }, unlock: { kind: 'mined', tool: 'bash', n: 25 } },
+  { id: 'tool-edit', name: 'Edit dynamite', blurb: 'Edit and Write calls mine 3x.', cost: 2_000, effect: { kind: 'tool', tool: 'edit', mult: 3 }, unlock: { kind: 'mined', tool: 'edit', n: 25 } },
+  { id: 'tool-web', name: 'Surface survey', blurb: 'Web calls mine 3x.', cost: 3_000, effect: { kind: 'tool', tool: 'web', mult: 3 }, unlock: { kind: 'mined', tool: 'web', n: 10 } },
+  { id: 'tool-mcp', name: 'MCP adapters', blurb: 'MCP tool calls mine 3x.', cost: 5_000, effect: { kind: 'tool', tool: 'mcp', mult: 3 }, unlock: { kind: 'mined', tool: 'mcp', n: 10 } },
+  { id: 'tool-agent', name: 'Subagent swarm', blurb: 'Agent calls mine 3x.', cost: 8_000, effect: { kind: 'tool', tool: 'agent', mult: 3 }, unlock: { kind: 'mined', tool: 'agent', n: 5 } },
+  { id: 'ore-1', name: 'Ore sense', blurb: 'Every tool call also mines 5s of your rate.', cost: 25_000, effect: { kind: 'ore', seconds: 5 }, unlock: { kind: 'tools', n: 200 } },
+  { id: 'ore-2', name: 'Mother lode', blurb: 'Every tool call mines another 15s of your rate.', cost: 2_500_000, effect: { kind: 'ore', seconds: 15 }, unlock: { kind: 'tools', n: 1_000 } },
+
+  { id: 'idle-1', name: 'Night shift', blurb: 'Your crew mines at 10% while Claude is idle.', cost: 10_000, effect: { kind: 'idle', share: 0.1 }, unlock: { kind: 'crew', n: 10 } },
+  { id: 'idle-2', name: 'Graveyard shift', blurb: 'Your idle crew mines at 25%.', cost: 1_000_000, effect: { kind: 'idle', share: 0.25 }, unlock: { kind: 'crew', n: 50 } },
+  { id: 'idle-3', name: 'Automation', blurb: 'Your idle crew mines at 50%.', cost: 1_000_000_000, effect: { kind: 'idle', share: 0.5 }, unlock: { kind: 'crew', n: 200 } },
+  { id: 'shift-1', name: 'Overtime pay', blurb: 'Each finished turn pays 10s of your rate.', cost: 50_000, effect: { kind: 'shift', seconds: 10 }, unlock: { kind: 'turns', n: 50 } },
+  { id: 'shift-2', name: 'Hazard pay', blurb: 'Each finished turn pays another 30s.', cost: 5_000_000, effect: { kind: 'shift', seconds: 30 }, unlock: { kind: 'turns', n: 250 } },
+
+  { id: 'lamp-1', name: 'Brighter lanterns', blurb: 'Everything mines 10% more.', cost: 250_000, effect: { kind: 'global', mult: 1.1 }, unlock: { kind: 'earned', n: 1_000_000 } },
+  { id: 'lamp-2', name: 'Canary in the mine', blurb: 'Everything mines 15% more.', cost: 25_000_000, effect: { kind: 'global', mult: 1.15 }, unlock: { kind: 'earned', n: 100_000_000 } },
+]
+
+export const UPGRADES: readonly Upgrade[] = [...otherUpgrades, ...producerUpgrades].sort(
+  (a, b) => a.cost - b.cost,
+)
+
+/** Each crystal adds this share to everything the mine earns. */
+export const CRYSTAL_BONUS = 0.02
+/** Crystals owned in all are the cube root of all-time sparks over this. */
+export const CRYSTAL_UNIT = 1_000_000
+
+/** Spinner words, unlocked by all-time sparks. */
+export const REWARDS: readonly { at: number; word: string }[] = [
+  { at: 1_000, word: 'Mining' },
+  { at: 100_000, word: 'Tunneling' },
+  { at: 10_000_000, word: 'Prospecting' },
+  { at: 1_000_000_000, word: 'Smelting' },
+  { at: 100_000_000_000, word: 'Excavating' },
+]
