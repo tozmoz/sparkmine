@@ -55,8 +55,8 @@ export type Mine = {
 
 export type Mode = 'idle' | 'work' | 'pause'
 
+/** What changes while Claude works. Nothing draws from it directly, so it can change often. */
 export type View = {
-  mode: Mode
   isTurn: boolean
   lastToolAt: number
   /** Tool calls waiting on the person: a permission dialog or a question. */
@@ -65,9 +65,73 @@ export type View = {
   /** Lifetime sparks when the turn started, so the band can say what it earned. */
   turnStart: number
   lastTurn: number
-  isHidden: boolean
   /** How many producers one press of a buy button buys. */
   amount: number
+}
+
+/** What the band's drawing depends on. It changes rarely, so the scene is not redrawn on every click. */
+export type Band = {
+  isLoaded: boolean
+  mode: Mode
+  isHidden: boolean
+  carts: number
+  goblins: number
+}
+
+/** The live numbers the band's and the shop's Client draw, answered to their polls. */
+export type HudProps = {
+  variant: 'band' | 'shop'
+  mode: Mode
+  sparks: number
+  rate: number
+  click: number
+  idle: number
+  turn: number
+  lastTurn: number
+  last: string | null
+}
+
+export type IconId =
+  | ProducerId
+  | 'pick'
+  | 'glasses'
+  | 'dynamite'
+  | 'terminal'
+  | 'globe'
+  | 'plug'
+  | 'nugget'
+  | 'moon'
+  | 'clock'
+  | 'lantern'
+  | 'crystal'
+  | 'locked'
+
+export type ShopItem = {
+  id: string
+  icon: IconId
+  name: string
+  detail: string
+  owned: number
+  price: number
+  canBuy: boolean
+}
+
+/** What the shop pane draws. Rebuilt on every change, written only when it differs. */
+export type ShopModel = {
+  isLoaded: boolean
+  amount: number
+  producers: ShopItem[]
+  /** The price of the next producer, still hidden. */
+  teaser: number | null
+  upgrades: ShopItem[]
+  more: number
+  next: { name: string; icon: IconId; text: string; have: number; need: number } | null
+  values: { click: number; read: number; edit: number }
+  crystals: number
+  gain: number
+  nextCrystalAt: number
+  showCollapse: boolean
+  stats: { clicks: number; tools: number; turns: number }
 }
 
 declare module 'claude-code' {
@@ -75,6 +139,8 @@ declare module 'claude-code' {
     sparkmine: {
       mine: Mine
       view: View
+      band: Band
+      shop: ShopModel
       reward: string | null
     }
   }

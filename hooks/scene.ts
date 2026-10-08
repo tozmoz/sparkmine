@@ -1,6 +1,10 @@
 // The mine above the prompt, drawn pixel by pixel. One picture, two outputs:
-// an SVG whose CSS animates the miner (desktop), and Raster cells, two
-// pixels to a cell, that a timer flips through (terminal).
+// an SVG whose own CSS animates it (desktop), and Raster cells, two pixels to
+// a cell, that a timer repaints (terminal).
+//
+// While Claude works the miner digs in loops: each of DIG swings cuts a slice
+// off the wall, he steps into the gap, the dirt piles up behind him and the
+// vein bar fills. Then the wall grows back in a puff of dust and he starts over.
 
 import type { Mode } from '../types'
 
@@ -17,16 +21,16 @@ export type SceneSpec = { mode: Mode; carts: number; goblins: number }
 export type Frame = { at: number; t: number | null; bob: number; chips: boolean }
 
 export const SWING_MS = 900
+export const IMPACT_AT = 0.64
 export const SWING: readonly Frame[] = [
   { at: 0, t: 0.3, bob: 0, chips: false },
   { at: 0.1, t: 0.6, bob: 0, chips: false },
   { at: 0.2, t: 0.85, bob: 0, chips: false },
   { at: 0.3, t: 1, bob: 0, chips: false },
   { at: 0.56, t: 0.5, bob: 0, chips: false },
-  { at: 0.64, t: 0, bob: 1, chips: true },
+  { at: IMPACT_AT, t: 0, bob: 1, chips: true },
   { at: 0.76, t: 0, bob: 0, chips: false },
 ]
-export const IMPACT_AT = 0.64
 
 export const REST_MS = 1600
 export const REST: readonly Frame[] = [
@@ -34,21 +38,59 @@ export const REST: readonly Frame[] = [
   { at: 0.5, t: null, bob: 1, chips: false },
 ]
 
+/** Swings in one loop of the dig, and how many of them cut the wall. */
+export const SWINGS = 8
+export const DIG = 6
+export const LOOP_MS = SWING_MS * SWINGS
+/** How far into the swing after the last cut the wall grows back. */
+const REGROW_AT = 0.8
+const DUST_FOR = 0.15
+const SPARK_FOR = 0.25
+
+const loopAt = (swing: number, within: number) => (swing + within) / SWINGS
+const cutAt = (k: number) => loopAt(k, IMPACT_AT)
+const REGROW = loopAt(DIG, REGROW_AT)
+
 export function framesFor(mode: Mode): { frames: readonly Frame[]; ms: number } {
   if (mode === 'work') return { frames: SWING, ms: SWING_MS }
   if (mode === 'pause') return { frames: REST.slice(0, 1), ms: REST_MS }
   return { frames: REST, ms: REST_MS }
 }
 
-/** Which frame shows `ms` into the loop. */
-export function frameAt(frames: readonly Frame[], loopMs: number, ms: number): number {
-  const at = (((ms % loopMs) + loopMs) % loopMs) / loopMs
+const mod = (n: number, m: number) => ((n % m) + m) % m
+
+/** Which of `frames` shows at `share` (0 to 1) of its loop. */
+export function frameIndex(frames: readonly Frame[], share: number): number {
   let index = 0
   frames.forEach((frame, i) => {
-    if (frame.at <= at) index = i
+    if (frame.at <= share) index = i
   })
   return index
 }
+
+/** Everything that moves, `ms` into the animation. */
+export type Moment = { frame: number; dug: number; dust: boolean; spark: boolean }
+
+export function momentAt(mode: Mode, ms: number): Moment {
+  if (mode !== 'work') {
+    const { frames, ms: loop } = framesFor(mode)
+    return { frame: frameIndex(frames, mod(ms, loop) / loop), dug: 0, dust: false, spark: false }
+  }
+  const at = mod(ms, LOOP_MS)
+  const swing = Math.floor(at / SWING_MS)
+  const within = (at - swing * SWING_MS) / SWING_MS
+  let dug = 0
+  if (swing < DIG) dug = swing + (within >= IMPACT_AT ? 1 : 0)
+  else if (swing === DIG) dug = within < REGROW_AT ? DIG : 0
+  return {
+    frame: frameIndex(SWING, within),
+    dug,
+    dust: swing === DIG && within >= REGROW_AT && within < REGROW_AT + DUST_FOR,
+    spark: swing === DIG - 1 && within >= IMPACT_AT && within < IMPACT_AT + SPARK_FOR,
+  }
+}
+
+export const momentKey = (m: Moment) => `${m.frame}:${m.dug}:${m.dust ? 1 : 0}:${m.spark ? 1 : 0}`
 
 class Pixels {
   data: Int32Array
@@ -65,6 +107,16 @@ class Pixels {
 
   get(x: number, y: number): number {
     return this.data[y * W + x] ?? CLEAR
+  }
+
+  /** Draws `over` on top, its clear pixels letting this one show. */
+  stamp(over: Pixels, dx = 0): void {
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        const color = over.get(x, y)
+        if (color !== CLEAR) this.set(x + dx, y, color)
+      }
+    }
   }
 
   line(x0: number, y0: number, x1: number, y1: number, color: number): void {
@@ -115,10 +167,16 @@ function rng(seed: number): () => number {
 const OUTLINE = 0x1d1512
 const CAVE = 0x211915
 const CAVE_DARK = 0x1a1310
+const CAVE_LIGHT = 0x2a201b
+const TUNNEL = 0x120c09
 const ROCK = [0x2b221e, 0x4a3c34, 0x57473d] as const
 const CEILING = [0x2b221e, 0x3d322b, 0x4a3c34] as const
 const DIRT = 0x2a201b
 const DIRT_SPECK = 0x3a2c25
+const PEBBLE = 0x4a3c34
+const PILE = 0x6b4a2f
+const PILE_TOP = 0x8a6240
+const DUST = 0xb39a7c
 const RAIL = 0x9aa3ad
 const TIE = 0x5e3b1d
 const WOOD = [0xa8743f, 0x8a5a2e, 0x5e3b1d] as const
@@ -182,13 +240,13 @@ const GOBLIN_PALETTE: Readonly<Record<string, number>> = {
 const GOBLIN = ['g....g', 'gggggg', 'gEggEg', '.gggg.', '.bbbb.', '.bbbb.', '.K..K.'] as const
 
 const ORES: readonly (readonly [number, number, 0 | 1])[] = [
-  [54, 4, 0],
-  [59, 7, 1],
-  [55, 11, 0],
-  [61, 13, 0],
-  [57, 16, 1],
-  [53, 19, 0],
-  [60, 19, 0],
+  [54, 5, 0],
+  [59, 8, 1],
+  [53, 12, 0],
+  [61, 14, 0],
+  [57, 17, 1],
+  [52, 19, 0],
+  [60, 20, 0],
 ]
 
 const HEAP: readonly (readonly [number, number])[] = [
@@ -197,9 +255,14 @@ const HEAP: readonly (readonly [number, number])[] = [
   [14, 10], [15, 10], [13, 10], [16, 10],
 ]
 
-/** Where the miner stands, and where the pick meets the wall. */
+/** Where the miner stands at the start of a loop. */
 const SX = 32
 const SY = 2
+/** The rows of the wall the miner cuts. */
+const FACE_TOP = 3
+const FACE_BOTTOM = 21
+/** The dirt piles up behind him in a mound, one column a cut. */
+const MOUND = [1, 2, 3, 3, 2, 1] as const
 
 const CHIPS = [
   { x: 51, y: 11, dx1: -3, dy1: -4, dx2: -6, dy2: 1, color: GOLD[1] },
@@ -210,6 +273,10 @@ const CHIPS = [
   { x: 51, y: 14, dx1: -5, dy1: -3, dx2: -9, dy2: 2, color: 0x8a7a6e },
 ] as const
 
+const DUST_SPOTS: readonly (readonly [number, number])[] = [
+  [50, 6], [52, 9], [49, 13], [53, 15], [50, 18], [55, 11], [47, 20], [45, 21], [51, 4], [54, 20], [48, 8], [56, 16],
+]
+
 function mix(a: number, b: number, share: number): number {
   const ch = (shift: number) => {
     const x = (a >> shift) & 0xff
@@ -219,75 +286,144 @@ function mix(a: number, b: number, share: number): number {
   return ch(16) | ch(8) | ch(0)
 }
 
-const LANTERN = { x: 25, y: 6 } as const
+const LANTERN = { x: 25, y: 7 } as const
 
-function background(px: Pixels, spec: SceneSpec, withGlow: boolean): void {
+/** The scene split into what never moves and what the dig loop shows and hides. */
+type Layers = {
+  bg: Pixels
+  /** DIG slices of the wall face: slice k is the k-th pixel in from the edge, row by row. */
+  face: Pixels[]
+  pile: Pixels[]
+  bar: Pixels[]
+  dust: Pixels
+  spark: Pixels
+}
+
+function layers(spec: SceneSpec, withGlow: boolean): Layers {
   const r = rng(11)
-  const pick = <T,>(list: readonly T[]): T => list[Math.floor(r() * list.length)] as T
+  const pick = <T>(list: readonly T[]): T => list[Math.floor(r() * list.length)] as T
+  const bg = new Pixels()
 
-  px.data.fill(CAVE)
-  for (let i = 0; i < 30; i += 1) px.set(Math.floor(r() * 50), 2 + Math.floor(r() * 19), CAVE_DARK)
+  // The back of the cave: dark rock in courses, a few lighter flecks.
+  bg.data.fill(CAVE)
+  for (let y = 4; y < 21; y += 4) {
+    let x = Math.floor(r() * 4)
+    while (x < 50) {
+      const len = 3 + Math.floor(r() * 5)
+      for (let i = 0; i < len; i += 1) bg.set(x + i, y, CAVE_DARK)
+      bg.set(x + len, y + 1, CAVE_DARK)
+      x += len + 2 + Math.floor(r() * 3)
+    }
+  }
+  for (let i = 0; i < 26; i += 1) bg.set(Math.floor(r() * 50), 3 + Math.floor(r() * 18), r() < 0.5 ? CAVE_LIGHT : CAVE_DARK)
 
+  // The ceiling, with a few stalactites.
   for (let x = 0; x < W; x += 1) {
-    px.set(x, 0, pick(CEILING))
-    if (r() < 0.55) px.set(x, 1, pick(CEILING))
+    bg.set(x, 0, pick(CEILING))
+    if (r() < 0.55) bg.set(x, 1, pick(CEILING))
+  }
+  for (const [x, len] of [[5, 2], [11, 1], [19, 3], [38, 2], [44, 1]] as const) {
+    for (let i = 0; i < len; i += 1) bg.set(x, 2 + i, i === len - 1 ? ROCK[0] : CEILING[1])
   }
 
+  // The wall: drawn whole first, then the face it loses to the miner is lifted into slices.
+  const wall = new Pixels()
+  const edges: number[] = []
   let edge = 50
   for (let y = 0; y < 22; y += 1) {
     if (y % 3 === 0) edge = 50 + Math.floor(r() * 3)
+    edges.push(edge)
     for (let x = edge; x < W; x += 1) {
       const shade = r()
       let color: number = shade < 0.15 ? ROCK[0] : shade < 0.7 ? ROCK[1] : ROCK[2]
       if (y % 7 === 0 && r() < 0.6) color = ROCK[0]
-      px.set(x, y, x === edge ? ROCK[0] : color)
+      wall.set(x, y, x === edge ? ROCK[0] : color)
     }
   }
   for (const [ox, oy, kind] of ORES) {
     const [main, light, dark] = kind === 1 ? TEAL : GOLD
-    for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const) px.set(ox + dx, oy + dy, main)
-    px.set(ox, oy, light)
-    px.set(ox - 1, oy - 1, light)
-    px.set(ox + 1, oy + 1, dark)
+    for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const) wall.set(ox + dx, oy + dy, main)
+    wall.set(ox, oy, light)
+    wall.set(ox - 1, oy - 1, light)
+    wall.set(ox + 1, oy + 1, dark)
   }
-
-  for (let y = 22; y < H; y += 1) for (let x = 0; x < W; x += 1) px.set(x, y, r() < 0.12 ? DIRT_SPECK : DIRT)
-  for (let x = 0; x < 31; x += 1) {
-    px.set(x, 21, RAIL)
-    if (x % 4 < 2) px.set(x, 22, TIE)
-  }
-
-  for (let x = 0; x < 30; x += 1) {
-    px.set(x, 1, WOOD[0])
-    px.set(x, 2, WOOD[2])
-  }
-  for (let y = 3; y < 21; y += 1) {
-    px.set(27, y, WOOD[0])
-    px.set(28, y, WOOD[1])
-    px.set(29, y, WOOD[2])
-  }
-
-  if (spec.carts > 0) cart(px, spec.carts)
-
-  if (withGlow) {
-    for (let y = 0; y < H; y += 1) {
-      for (let x = 0; x < W; x += 1) {
-        const d = Math.hypot(x - LANTERN.x, y - LANTERN.y)
-        if (d <= 10) px.set(x, y, mix(px.get(x, y), GLOW, d <= 6 ? 0.12 : 0.06))
+  const face = Array.from({ length: DIG }, () => new Pixels())
+  for (let y = 0; y < 22; y += 1) {
+    const e = edges[y] ?? 50
+    for (let x = e; x < W; x += 1) {
+      const k = x - e
+      const color = wall.get(x, y)
+      if (y >= FACE_TOP && y <= FACE_BOTTOM && k < DIG) {
+        face[k]?.set(x, y, color)
+        bg.set(x, y, k === DIG - 1 || y === FACE_TOP ? ROCK[0] : TUNNEL)
+      } else {
+        bg.set(x, y, color)
       }
     }
   }
 
-  px.set(25, 3, STEEL_DARK)
+  // The vein bar, set in the rock above the face.
+  for (let x = 51; x < W; x += 1) for (let y = 0; y < 3; y += 1) bg.set(x, y, y === 1 && x < 63 ? TUNNEL : ROCK[0])
+  const bar = Array.from({ length: DIG }, (_, k) => {
+    const seg = new Pixels()
+    seg.set(52 + k * 2, 1, k === DIG - 1 ? GOLD[1] : GOLD[0])
+    seg.set(53 + k * 2, 1, GOLD[2])
+    return seg
+  })
+
+  // The floor, the rails and the timbers.
+  for (let y = 22; y < H; y += 1) for (let x = 0; x < W; x += 1) bg.set(x, y, r() < 0.12 ? DIRT_SPECK : DIRT)
+  for (let i = 0; i < 6; i += 1) bg.set(33 + Math.floor(r() * 16), 22, PEBBLE)
+  for (let x = 0; x < 31; x += 1) {
+    bg.set(x, 21, RAIL)
+    if (x % 4 < 2) bg.set(x, 22, TIE)
+  }
+  for (let x = 0; x < 30; x += 1) {
+    bg.set(x, 1, WOOD[0])
+    bg.set(x, 2, WOOD[2])
+  }
+  for (let y = 3; y < 21; y += 1) {
+    bg.set(27, y, WOOD[0])
+    bg.set(28, y, WOOD[1])
+    bg.set(29, y, WOOD[2])
+  }
+
+  if (spec.carts > 0) cart(bg, spec.carts)
+
+  if (withGlow) {
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < 46; x += 1) {
+        const d = Math.hypot(x - LANTERN.x, y - LANTERN.y)
+        if (d <= 10) bg.set(x, y, mix(bg.get(x, y), GLOW, d <= 6 ? 0.12 : 0.06))
+      }
+    }
+  }
+
+  bg.set(25, 3, STEEL_DARK)
   for (let x = 24; x < 27; x += 1) {
-    px.set(x, 4, OUTLINE)
-    px.set(x, 7, OUTLINE)
+    bg.set(x, 4, OUTLINE)
+    bg.set(x, 7, OUTLINE)
   }
   for (let y = 5; y < 7; y += 1) {
-    px.set(24, y, OUTLINE)
-    px.set(25, y, LAMP)
-    px.set(26, y, OUTLINE)
+    bg.set(24, y, OUTLINE)
+    bg.set(25, y, LAMP)
+    bg.set(26, y, OUTLINE)
   }
+
+  const pile = MOUND.map((height, k) => {
+    const chunk = new Pixels()
+    for (let i = 0; i < height; i += 1) chunk.set(SX + 1 + k, 21 - i, i === height - 1 ? PILE_TOP : PILE)
+    return chunk
+  })
+
+  const dust = new Pixels()
+  for (const [x, y] of DUST_SPOTS) dust.set(x, y, DUST)
+
+  const spark = new Pixels()
+  for (const [dx, dy] of [[0, -2], [0, -1], [0, 1], [0, 2], [-2, 0], [-1, 0], [1, 0], [2, 0]] as const) spark.set(58 + dx, 12 + dy, GOLD[0])
+  spark.set(58, 12, LAMP)
+
+  return { bg, face, pile, bar, dust, spark }
 }
 
 function cart(px: Pixels, carts: number): void {
@@ -361,12 +497,12 @@ function miner(px: Pixels, frame: Frame): void {
   px.set(hx, hy, SKIN)
 }
 
-function chips(px: Pixels): void {
-  for (const chip of CHIPS) px.set(chip.x + chip.dx1, chip.y + chip.dy1, chip.color)
+function chipsAt(px: Pixels, dx: number): void {
+  for (const chip of CHIPS) px.set(chip.x + chip.dx1 + dx, chip.y + chip.dy1, chip.color)
 }
 
 const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`
-const pct = (share: number) => `${(Math.min(1, Math.max(0, share)) * 100).toFixed(2)}%`
+const pct = (share: number) => `${(Math.min(1, Math.max(0, share)) * 100).toFixed(3)}%`
 
 /** One <path> per color, each a run of same-colored pixels in a row. */
 function paths(px: Pixels): string {
@@ -401,53 +537,73 @@ function glowPath(radius: number): string {
   return `<path fill="${hex(GLOW)}" fill-opacity=".07" d="${d.join('')}"/>`
 }
 
-/** Keyframes that show one frame for its slice of the loop and hide it otherwise. */
-function frameKeyframes(name: string, from: number, to: number): string {
-  const steps = [`0%{opacity:${from === 0 ? 1 : 0}}`]
-  if (from > 0) steps.push(`${pct(from)}{opacity:1}`)
-  if (to < 1) steps.push(`${pct(to)}{opacity:0}`)
-  steps.push(`100%{opacity:${to < 1 ? 0 : 1}}`)
-  return `@keyframes ${name}{${steps.join('')}}`
+/** Keyframes that switch a property at the given shares of the loop and hold it between. */
+function stepKeyframes(name: string, prop: string, start: string, steps: readonly (readonly [number, string])[]): string {
+  const body = [`0%{${prop}:${start}}`, ...steps.map(([at, value]) => `${pct(at)}{${prop}:${value}}`)]
+  return `@keyframes ${name}{${body.join('')}}`
+}
+
+/** Shows a frame for its slice of the loop and hides it otherwise. */
+function windowKeyframes(name: string, from: number, to: number): string {
+  if (from === 0) return stepKeyframes(name, 'opacity', '1', to < 1 ? [[to, '0']] : [])
+  return stepKeyframes(name, 'opacity', '0', to < 1 ? [[from, '1'], [to, '0']] : [[from, '1']])
 }
 
 /** The scene as an SVG document whose own CSS animates it. */
 export function sceneSvg(spec: SceneSpec, scale: number): string {
-  const bg = new Pixels()
-  background(bg, spec, false)
+  const l = layers(spec, false)
   const { frames, ms } = framesFor(spec.mode)
+  const isDigging = spec.mode === 'work'
   const css: string[] = [
     '.glow{animation:flicker 1.7s step-end infinite}',
     '@keyframes flicker{0%{opacity:.9}22%{opacity:.65}31%{opacity:1}64%{opacity:.8}83%{opacity:1}}',
   ]
-  const body: string[] = [paths(bg), `<g class="glow">${glowPath(10)}${glowPath(6)}</g>`]
+  const body: string[] = [paths(l.bg), `<g class="glow">${glowPath(10)}${glowPath(6)}</g>`]
+
+  if (isDigging) {
+    css.push(
+      `.fc,.pk,.du,.sp{animation-duration:${LOOP_MS}ms;animation-timing-function:step-end;animation-iteration-count:infinite}`,
+      '.pk,.du,.sp{opacity:0}',
+    )
+    l.face.forEach((slice, k) => {
+      css.push(`.fc${k}{animation-name:fc${k}}`, stepKeyframes(`fc${k}`, 'opacity', '1', [[cutAt(k), '0'], [REGROW, '1']]))
+      body.push(`<g class="fc fc${k}">${paths(slice)}</g>`)
+    })
+    l.face.forEach((_, k) => {
+      css.push(`.pk${k}{animation-name:pk${k}}`, stepKeyframes(`pk${k}`, 'opacity', '0', [[cutAt(k), '1'], [REGROW, '0']]))
+      body.push(`<g class="pk pk${k}">${paths(l.pile[k] ?? new Pixels())}${paths(l.bar[k] ?? new Pixels())}</g>`)
+    })
+  } else {
+    for (const slice of l.face) body.push(paths(slice))
+  }
 
   if (spec.goblins > 0) {
-    css.push(`.gb{opacity:0;animation:1.2s step-end infinite}`)
+    css.push('.gb{opacity:0;animation:1.2s step-end infinite}')
     ;[0, 1].forEach(bob => {
       const layer = new Pixels()
       goblin(layer, bob)
-      css.push(`.gb${bob}{animation-name:gb${bob}}`, frameKeyframes(`gb${bob}`, bob * 0.5, bob === 0 ? 0.5 : 1))
+      css.push(`.gb${bob}{animation-name:gb${bob}}`, windowKeyframes(`gb${bob}`, bob * 0.5, bob === 0 ? 0.5 : 1))
       body.push(`<g class="gb gb${bob}">${paths(layer)}</g>`)
     })
   }
 
+  const minerParts: string[] = []
   if (frames.length === 1) {
     const layer = new Pixels()
     miner(layer, frames[0] as Frame)
-    body.push(`<g>${paths(layer)}</g>`)
+    minerParts.push(paths(layer))
   } else {
     css.push(`.m{opacity:0;animation-duration:${ms}ms;animation-timing-function:step-end;animation-iteration-count:infinite}`)
     frames.forEach((frame, i) => {
       const layer = new Pixels()
       miner(layer, frame)
       const to = frames[i + 1]?.at ?? 1
-      css.push(`.m${i}{animation-name:m${i}}`, frameKeyframes(`m${i}`, frame.at, to))
-      body.push(`<g class="m m${i}">${paths(layer)}</g>`)
+      css.push(`.m${i}{animation-name:m${i}}`, windowKeyframes(`m${i}`, frame.at, to))
+      minerParts.push(`<g class="m m${i}">${paths(layer)}</g>`)
     })
   }
-
-  if (spec.mode === 'work') {
-    css.push(`.c{opacity:0;animation:${ms}ms linear infinite}`)
+  if (isDigging) {
+    css.push(`.c{opacity:0;animation:${SWING_MS}ms linear infinite}`)
     CHIPS.forEach((chip, i) => {
       const a = IMPACT_AT
       css.push(
@@ -457,14 +613,54 @@ export function sceneSvg(spec: SceneSpec, scale: number): string {
           `${pct(a + 0.12)}{opacity:1;transform:translate(${chip.dx1}px,${chip.dy1}px)}` +
           `${pct(a + 0.3)}{opacity:0;transform:translate(${chip.dx2}px,${chip.dy2}px)}100%{opacity:0}}`,
       )
-      body.push(`<rect class="c c${i}" x="${chip.x}" y="${chip.y}" width="1" height="1" fill="${hex(chip.color)}"/>`)
+      minerParts.push(`<rect class="c c${i}" x="${chip.x}" y="${chip.y}" width="1" height="1" fill="${hex(chip.color)}"/>`)
     })
+    // He steps into each gap he cuts, and back when the wall grows in again.
+    css.push(
+      `.adv{animation:adv ${LOOP_MS}ms step-end infinite}`,
+      stepKeyframes('adv', 'transform', 'translate(0px,0px)', [
+        ...Array.from({ length: DIG }, (_, k) => [cutAt(k), `translate(${k + 1}px,0px)`] as const),
+        [REGROW, 'translate(0px,0px)'],
+      ]),
+      '.du{animation-name:du}',
+      stepKeyframes('du', 'opacity', '0', [[REGROW, '1'], [loopAt(DIG, REGROW_AT + DUST_FOR), '0']]),
+      '.sp{animation-name:sp}',
+      stepKeyframes('sp', 'opacity', '0', [[cutAt(DIG - 1), '1'], [loopAt(DIG - 1, IMPACT_AT + SPARK_FOR), '0']]),
+    )
+    body.push(`<g class="adv">${minerParts.join('')}</g>`)
+    body.push(`<g class="du">${paths(l.dust)}</g>`, `<g class="sp">${paths(l.spark)}</g>`)
+  } else {
+    body.push(minerParts.join(''))
   }
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W * scale}" height="${H * scale}" shape-rendering="crispEdges">` +
     `<style>${css.join('')}</style>${body.join('')}</svg>`
   )
+}
+
+/** The scene at one moment, as pixels: what the terminal paints and the tests read. */
+export function compose(spec: SceneSpec, m: Moment): Pixels {
+  const l = layers(spec, true)
+  const px = new Pixels(l.bg)
+  l.face.forEach((slice, k) => {
+    if (k >= m.dug) px.stamp(slice)
+  })
+  for (let k = 0; k < m.dug; k += 1) {
+    px.stamp(l.pile[k] ?? new Pixels())
+    px.stamp(l.bar[k] ?? new Pixels())
+  }
+  if (spec.goblins > 0) goblin(px, 0)
+  const { frames } = framesFor(spec.mode)
+  const frame = frames[m.frame] ?? frames[0] ?? REST[0]
+  if (frame === undefined) return px
+  const body = new Pixels()
+  miner(body, frame)
+  px.stamp(body, m.dug)
+  if (frame.chips) chipsAt(px, m.dug)
+  if (m.dust) px.stamp(l.dust)
+  if (m.spark) px.stamp(l.spark)
+  return px
 }
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
@@ -488,7 +684,7 @@ export function base64(bytes: Uint8Array): string {
 const UPPER_HALF = 0x2580
 
 /** Packs pixels into Raster cells: the upper half block, top pixel as ink, bottom as paper. */
-function cellsOf(px: Pixels): string {
+export function cellsOf(px: Pixels): string {
   const view = new DataView(new ArrayBuffer(W * ROWS * 12))
   let offset = 0
   for (let row = 0; row < ROWS; row += 1) {
@@ -502,17 +698,5 @@ function cellsOf(px: Pixels): string {
   return base64(new Uint8Array(view.buffer))
 }
 
-/** The scene's frames as Raster cells, for the terminal. */
-export function sceneCells(spec: SceneSpec): { cells: string[]; frames: readonly Frame[]; ms: number } {
-  const bg = new Pixels()
-  background(bg, spec, true)
-  if (spec.goblins > 0) goblin(bg, 0)
-  const { frames, ms } = framesFor(spec.mode)
-  const cells = frames.map(frame => {
-    const px = new Pixels(bg)
-    miner(px, frame)
-    if (frame.chips) chips(px)
-    return cellsOf(px)
-  })
-  return { cells, frames, ms }
-}
+/** The terminal's cells for one moment of the scene. */
+export const sceneCells = (spec: SceneSpec, m: Moment): string => cellsOf(compose(spec, m))

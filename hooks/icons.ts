@@ -1,0 +1,360 @@
+// Pixel icons for the shop, 12 x 12, drawn as SVG images on the desktop.
+
+import type { IconId } from '../types'
+
+const PALETTE: Readonly<Record<string, number>> = {
+  K: 0x1d1512,
+  Y: 0xf2b632,
+  y: 0xc7861d,
+  L: 0xfff4b8,
+  S: 0xf0c08a,
+  E: 0x1d1512,
+  B: 0x7a4a26,
+  R: 0xc2412d,
+  O: 0x3a6ea5,
+  G: 0x4b2f1c,
+  M: 0xaab4bf,
+  m: 0x6c7682,
+  W: 0xe6edf3,
+  H: 0x9c6b3c,
+  g: 0x6fa84a,
+  A: 0xf2b632,
+  a: 0xffe08a,
+  T: 0x5dcaa5,
+  t: 0xb5f0dc,
+  F: 0xff7a2f,
+  f: 0xffd36e,
+  P: 0x7f77dd,
+  p: 0xcecbf6,
+  C: 0xfff4b8,
+  N: 0x26215c,
+  Z: 0x5f5e5a,
+  z: 0xb4b2a9,
+}
+
+const ICONS: Readonly<Record<IconId, readonly string[]>> = {
+  apprentice: [
+    '....KKKK....',
+    '...KYYYYK...',
+    '..KYYYYYYKL.',
+    '..KyyyyyyyK.',
+    '..KSSSSSSK..',
+    '..KSESSESK..',
+    '..KSSSSSSK..',
+    '...KBBBBK...',
+    '..KRRBBRRK..',
+    '.KRRRRRRRRK.',
+    '.KRROOOORRK.',
+    '.KKKKKKKKKK.',
+  ],
+  cart: [
+    '............',
+    '....aAaA....',
+    '..AaAAaAaA..',
+    '.WWWWWWWWWW.',
+    '.KMMMMMMMMK.',
+    '.KMmMMmMMmK.',
+    '.KMMMMMMMMK.',
+    '..KKKKKKKK..',
+    '..KmK..KmK..',
+    '..KKK..KKK..',
+    'zzzzzzzzzzzz',
+    'H..H..H..H..',
+  ],
+  goblin: [
+    'g..........g',
+    'gg..gggg..gg',
+    '.gggggggggg.',
+    '..gggggggg..',
+    '..gaggggag..',
+    '..gggggggg..',
+    '...gKKKKg...',
+    '....gggg....',
+    '...BBBBBB...',
+    '..BBBBBBBB..',
+    '..BB.BB.BB..',
+    '...K....K...',
+  ],
+  drill: [
+    '.zz.........',
+    'zzzz........',
+    '.zz.........',
+    '..KK........',
+    '.KMMMMK.....',
+    '.KMRRMKmm...',
+    '.KMRRMKmmWW.',
+    '.KMMMMKmmWWW',
+    '.KMMMMKmm...',
+    '.KKKKKK.....',
+    '.KmK.KmK....',
+    '..K...K.....',
+  ],
+  crew: [
+    '............',
+    '.Y...Y...Y..',
+    'YYY.YYY.YYY.',
+    'yyy.yyy.yyy.',
+    'SSS.SSS.SSS.',
+    'ESE.ESE.ESE.',
+    'SSS.SSS.SSS.',
+    'RRR.RRR.RRR.',
+    'RRR.RRR.RRR.',
+    'OOO.OOO.OOO.',
+    'O.O.O.O.O.O.',
+    'G.G.G.G.G.G.',
+  ],
+  cache: [
+    '............',
+    '.....t......',
+    '....tTt.....',
+    '...tTTTt.t..',
+    '...TTTTT.Tt.',
+    '..t.TTT.TTT.',
+    '.tTt.T.TTTT.',
+    '.TTT...TTT..',
+    'TTTTT.ZZZZ..',
+    'ZZZZZZZZZZZZ',
+    'ZzZZzZZZzZZZ',
+    'ZZZZZZZZZZZZ',
+  ],
+  refinery: [
+    '...zz.......',
+    '..zzzz......',
+    '...zz.......',
+    '....KK......',
+    '..KKKKKKKK..',
+    '..KmmmmmmK..',
+    '..KmKKKKmK..',
+    '..KmKfFKmK..',
+    '..KmKFfKmK..',
+    '..KmKKKKmK..',
+    '..KmmmmmmK..',
+    '.KKKKKKKKKK.',
+  ],
+  core: [
+    '....PPPP....',
+    '..PPppppPP..',
+    '.PppCCCCppP.',
+    '.PpCCaaCCpP.',
+    'PpCCaaaaCCpP',
+    'PpCaaaaaaCpP',
+    'PpCaaaaaaCpP',
+    'PpCCaaaaCCpP',
+    '.PpCCaaCCpP.',
+    '.PppCCCCppP.',
+    '..PPppppPP..',
+    '....PPPP....',
+  ],
+  pick: [
+    '...WMMMMW...',
+    '..W.MMMM.W..',
+    '.W...HH...W.',
+    '.....HH.....',
+    '.....HH.....',
+    '....HH......',
+    '....HH......',
+    '...HH.......',
+    '...HH.......',
+    '..HH........',
+    '..HH........',
+    '............',
+  ],
+  glasses: [
+    '............',
+    '............',
+    '............',
+    '.KKKK..KKKK.',
+    'KTtTK..KTtTK',
+    'KTTTKKKKTTTK',
+    'KTTTK..KTTTK',
+    '.KKK....KKK.',
+    '............',
+    '............',
+    '............',
+    '............',
+  ],
+  dynamite: [
+    '.........a..',
+    '........fa..',
+    '.......H....',
+    '......H.....',
+    '..KKKKKK....',
+    '.KRRRRRRK...',
+    '.KRRRRRRK...',
+    '.KCCCCCCK...',
+    '.KRRRRRRK...',
+    '.KRRRRRRK...',
+    '..KKKKKK....',
+    '............',
+  ],
+  terminal: [
+    '............',
+    'KKKKKKKKKKKK',
+    'KZZZZZZZZZZK',
+    'KNNNNNNNNNNK',
+    'KNaNNNNNNNNK',
+    'KNNaNNNNNNNK',
+    'KNaNNNNNNNNK',
+    'KNNNNaaaNNNK',
+    'KNNNNNNNNNNK',
+    'KKKKKKKKKKKK',
+    '............',
+    '............',
+  ],
+  globe: [
+    '....OOOO....',
+    '..OOggOOOO..',
+    '.OgggOOOggO.',
+    '.OggOOOOggO.',
+    'OOgOOOOOOgOO',
+    'OOOOOggOOOOO',
+    'OOOOgggOOOOO',
+    'OgOOOggOOOgO',
+    '.OgOOOOOOgO.',
+    '.OOOOOOOOOO.',
+    '..OOOOOOOO..',
+    '....OOOO....',
+  ],
+  plug: [
+    '...M....M...',
+    '...M....M...',
+    '..KKKKKKKK..',
+    '..KmmmmmmK..',
+    '..KmmmmmmK..',
+    '...KmmmmK...',
+    '....KmmK....',
+    '.....HH.....',
+    '.....HH.....',
+    '......HH....',
+    '.......HH...',
+    '........HH..',
+  ],
+  nugget: [
+    '............',
+    '............',
+    '....aaa.....',
+    '..aAAAAa....',
+    '.aAAaAAAA...',
+    '.AAAAAAyAa..',
+    'AAyAAAAAAAA.',
+    '.AAAAyAAAAy.',
+    '..yAAAAAyy..',
+    '...yyyyy....',
+    '............',
+    '............',
+  ],
+  moon: [
+    '....CCCC....',
+    '..CCCC......',
+    '.CCCC.......',
+    '.CCC........',
+    'CCCC........',
+    'CCCC.....a..',
+    'CCCC........',
+    'CCCC..a.....',
+    '.CCC........',
+    '.CCCC.....C.',
+    '..CCCCCCCC..',
+    '....CCCC....',
+  ],
+  clock: [
+    '....KKKK....',
+    '..KKCCCCKK..',
+    '.KCCCKCCCCK.',
+    '.KCCCKCCCCK.',
+    'KCCCCKCCCCCK',
+    'KCCCCKKKKCCK',
+    'KCCCCCCCCCCK',
+    'KCCCCCCCCCCK',
+    '.KCCCCCCCCK.',
+    '.KCCCCCCCCK.',
+    '..KKCCCCKK..',
+    '....KKKK....',
+  ],
+  lantern: [
+    '.....KK.....',
+    '....K..K....',
+    '...KKKKKK...',
+    '...KaaaaK...',
+    '..KaaCCaaK..',
+    '..KaCCCCaK..',
+    '..KaCCCCaK..',
+    '..KaaCCaaK..',
+    '...KaaaaK...',
+    '...KKKKKK...',
+    '....KKKK....',
+    '............',
+  ],
+  crystal: [
+    '.....p......',
+    '....pPp.....',
+    '...pPPPp....',
+    '..pPPpPPp...',
+    '.pPPpppPPp..',
+    'pPPpppppPPp.',
+    '.PPPpppPPP..',
+    '..PPPpPPP...',
+    '...PPPPP....',
+    '....PPP.....',
+    '.....P......',
+    '............',
+  ],
+  locked: [
+    '............',
+    '....KKKK....',
+    '...K....K...',
+    '...K....K...',
+    '..ZZZZZZZZ..',
+    '..ZzzzzzzZ..',
+    '..ZzzKKzzZ..',
+    '..ZzzKKzzZ..',
+    '..ZzzzKzzZ..',
+    '..ZzzzzzzZ..',
+    '..ZZZZZZZZ..',
+    '............',
+  ],
+}
+
+export const ICON_IDS = Object.keys(ICONS) as IconId[]
+
+const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`
+
+/** The sprite's rows, checked: every row 12 wide, every letter in the palette. */
+export function iconRows(id: IconId): readonly string[] {
+  return ICONS[id]
+}
+
+export const PALETTE_KEYS = new Set(Object.keys(PALETTE))
+
+const cache = new Map<string, string>()
+
+/** An icon as an SVG document `size` CSS pixels square; `dim` greys it out. */
+export function iconSvg(id: IconId, size = 24, dim = false): string {
+  const key = `${id}:${size}:${dim ? 1 : 0}`
+  const hit = cache.get(key)
+  if (hit !== undefined) return hit
+  const runs = new Map<number, string[]>()
+  ICONS[id].forEach((row, y) => {
+    let x = 0
+    while (x < row.length) {
+      const color = PALETTE[row[x] ?? '.']
+      if (color === undefined) {
+        x += 1
+        continue
+      }
+      let len = 1
+      while (x + len < row.length && PALETTE[row[x + len] ?? '.'] === color) len += 1
+      const list = runs.get(color) ?? []
+      list.push(`M${x} ${y}h${len}v1h-${len}z`)
+      runs.set(color, list)
+      x += len
+    }
+  })
+  const body = [...runs].map(([color, d]) => `<path fill="${hex(color)}" d="${d.join('')}"/>`).join('')
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" width="${size}" height="${size}" shape-rendering="crispEdges">` +
+    (dim ? `<g opacity=".3">${body}</g>` : body) +
+    '</svg>'
+  cache.set(key, svg)
+  return svg
+}

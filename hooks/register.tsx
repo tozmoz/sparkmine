@@ -3,38 +3,82 @@
 import { atom, read, update } from 'claude-code'
 import type { RenderElement, Register, Timer } from 'claude-code'
 
+import type { HudProps } from '../types'
 import { newMine } from './game.ts'
-import { H, ROWS, W, frameAt, type Frame } from './scene.ts'
+import { iconSvg } from './icons.ts'
+import { EMPTY_HUD, EMPTY_SHOP, hudProps } from './model.ts'
+import { H, ROWS, W, momentAt, momentKey, sceneCells, sceneSvg, type SceneSpec } from './scene.ts'
 import * as state from './state.ts'
-import { INITIAL_VIEW, type Io } from './state.ts'
+import { INITIAL_BAND, INITIAL_VIEW, type Io } from './state.ts'
 import * as ui from './ui.tsx'
 
-// The session's values: the mine (its save and what this session changed),
-// the band's view, and the spinner word the mine has unlocked.
+// The session's values. The band draws from BAND and the shop from SHOP alone:
+// both change rarely, so a click or a tick never redraws the scene. The live
+// numbers reach the screen through the HUD Clients instead.
 const MINE = atom({ plugin: 'sparkmine', key: 'mine' } as const, newMine('unloaded'))
 const VIEW = atom({ plugin: 'sparkmine', key: 'view' } as const, INITIAL_VIEW)
+const BAND = atom({ plugin: 'sparkmine', key: 'band' } as const, INITIAL_BAND)
+const SHOP = atom({ plugin: 'sparkmine', key: 'shop' } as const, EMPTY_SHOP)
 const REWARD = atom({ plugin: 'sparkmine', key: 'reward' } as const, null)
 
 /** The shop pane's id. */
 const PANE = 'sparkmine'
+/** CSS pixels per scene pixel: the band's scene, and the smaller one atop the shop. */
+const SCALE = 3
+const HEADER_SCALE = 2
+/** Columns the HUD and the Shop button need beside the terminal scene. */
+const HUD_COLUMNS = 36
+/** Clicks one post may carry: a held key or a script gets no more than this. */
+const MAX_BURST = 10
 
 /** Tools that wait on the person, so the miner rests while they decide. */
 const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
-/** The Raster the terminal shows now, which a timer repaints frame by frame. */
-type LiveScene = {
-  requestId: string
-  cells: readonly string[]
-  frames: readonly Frame[]
-  ms: number
-  shown: number
+const specKey = (spec: SceneSpec) => `${spec.mode}:${spec.carts}:${spec.goblins}`
+const svgs = new Map<string, string>()
+
+function svgFor(spec: SceneSpec, scale: number): string {
+  const key = `${specKey(spec)}@${scale}`
+  let svg = svgs.get(key)
+  if (svg === undefined) {
+    svg = sceneSvg(spec, scale)
+    svgs.set(key, svg)
+  }
+  return svg
+}
+
+const cells = new Map<string, string>()
+
+function cellsFor(spec: SceneSpec, ms: number): { key: string; cells: string } {
+  const m = momentAt(spec.mode, ms)
+  const key = `${specKey(spec)}|${momentKey(m)}`
+  let hit = cells.get(key)
+  if (hit === undefined) {
+    if (cells.size > 256) cells.clear()
+    hit = sceneCells(spec, m)
+    cells.set(key, hit)
+  }
+  return { key, cells: hit }
+}
+
+function readPost(data: unknown): { instance: string; total: number } | null {
+  if (data === null || typeof data !== 'object') return null
+  const { instance, total } = data as Record<string, unknown>
+  if (typeof instance !== 'string' || instance.length === 0 || instance.length > 64) return null
+  if (typeof total !== 'number' || !Number.isInteger(total) || total < 0) return null
+  return { instance, total }
 }
 
 export const register: Register = on => {
   let io: Io | null = null
-  let live: LiveScene | null = null
-  let animation: Timer | null = null
   let isRunning = false
+  /** The last numbers the HUD was handed, so a redraw of the band starts from them. */
+  let lastHud: HudProps = EMPTY_HUD
+  /** Clicks already counted, per HUD instance: each post carries its running total. */
+  const counted = new Map<string, number>()
+  /** The terminal's scene, which a timer repaints moment by moment. */
+  let live: { requestId: string; spec: SceneSpec; shown: string } | null = null
+  let animation: Timer | null = null
 
   on('session.start', async ($, e, next) => {
     const engine: Io = {
@@ -45,9 +89,13 @@ export const register: Register = on => {
       ask: (question, options) => $.ui.ask(question, options),
       mine: change => update($, MINE, change),
       view: change => update($, VIEW, change),
+      band: change => update($, BAND, change),
+      shop: change => update($, SHOP, change),
       reward: change => update($, REWARD, change),
       readMine: () => read($, MINE),
       readView: () => read($, VIEW),
+      readBand: () => read($, BAND),
+      readShop: () => read($, SHOP),
       readReward: () => read($, REWARD),
     }
     io = engine
@@ -62,21 +110,20 @@ export const register: Register = on => {
 
     if (!isRunning) {
       isRunning = true
-      // The terminal scene moves by repainting its Raster; the desktop's SVG animates itself.
       const step = async () => {
         const scene = live
         if (scene === null) return
-        const index = frameAt(scene.frames, scene.ms, await $.clock.now())
-        if (index === scene.shown) return
-        scene.shown = index
-        const painted = await $.ui.blit({ requestId: scene.requestId, key: 'scene', cells: scene.cells[index] ?? '', columns: W, rows: ROWS })
+        const frame = cellsFor(scene.spec, await $.clock.now())
+        if (frame.key === scene.shown) return
+        scene.shown = frame.key
+        const painted = await $.ui.blit({ requestId: scene.requestId, key: 'scene', cells: frame.cells, columns: W, rows: ROWS })
         if ('deny' in painted && painted.deny !== undefined) live = null
       }
       $.clock.every(state.TICK_MS, () => {
         void state
           .tick(engine)
           .then(() => {
-            const wanted = live !== null && live.frames.length > 1
+            const wanted = live !== null && live.spec.mode !== 'pause'
             if (wanted && animation === null) animation = $.clock.every(100, () => void step().catch(() => (live = null)))
             if (!wanted && animation !== null) {
               animation.cancel()
@@ -137,55 +184,89 @@ export const register: Register = on => {
     return verdict
   }).catch(($, e, next) => next(e))
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  // The HUD Clients ask for fresh numbers a few times a second, and bring the clicks.
+  on('ui.message', { element: ['hud', 'shophud'] }, async ($, e) => {
+    const post = readPost(e.data)
+    if (post !== null && e.element === 'hud' && io !== null) {
+      const before = counted.get(post.instance) ?? 0
+      if (post.total > before) {
+        counted.set(post.instance, post.total)
+        const fresh = Math.min(MAX_BURST, post.total - before)
+        for (let i = 0; i < fresh; i += 1) await state.click(io)
+      }
+    }
     const mine = await read($, MINE)
     const view = await read($, VIEW)
-    if (e.props.hasSurvey || !mine.isLoaded || view.isHidden) {
+    const band = await read($, BAND)
+    const props = hudProps(mine.save, view, band.mode, e.element === 'shophud' ? 'shop' : 'band')
+    if (e.element === 'hud') lastHud = props
+    return { props }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const band = await read($, BAND)
+    if (e.props.hasSurvey || !band.isLoaded || band.isHidden) {
       live = null
       return next(e)
     }
-    const act: ui.BandActions = {
-      mine: () => (io === null ? 0 : state.click(io)),
-      shop: () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true }),
-    }
+    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode }
+    const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins }
+    const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
     let ours: RenderElement
-    if (view.mode === 'idle') {
+
+    if (e.surface === 'desktop') {
       live = null
-      ours = ui.idleBand($.ui.resolve(e), mine, view, act)
-    } else {
-      const hud = ui.hud($.ui.resolve(e), mine, view, act)
-      const spec = ui.specOf(mine.save, view)
-      if (e.surface === 'desktop') {
-        live = null
-        const { Box, Svg } = $.ui.resolve(e)
-        ours = (
+      const { Box, Button, Client, Svg } = $.ui.resolve(e)
+      const hud = <Client key="hud" module="./hud.ts" props={props} />
+      const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
+      ours =
+        band.mode === 'idle' ? (
           <Box flexDirection="row" columnGap={2} alignItems="center">
+            {hud}
+            {shop}
+          </Box>
+        ) : (
+          <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d" paddingX={1}>
             <Svg
-              source={ui.svgFor(spec)}
-              alt="A pixel miner swings a pickaxe at a rock wall"
-              width={W * ui.SCALE}
-              height={H * ui.SCALE}
+              source={svgFor(spec, SCALE)}
+              alt="A pixel miner digs into a rock wall"
+              width={W * SCALE}
+              height={H * SCALE}
               isInteractive
             />
             {hud}
+            {shop}
           </Box>
         )
-      } else if (e.surface === 'terminal' && e.props.bodyColumns >= W + ui.HUD_COLUMNS && e.props.maxRows >= ROWS) {
-        const { Box, Raster } = $.ui.resolve(e)
-        const scene = ui.cellsFor(spec)
-        const shown = frameAt(scene.frames, scene.ms, await $.clock.now())
-        live = { requestId: e.requestId, cells: scene.cells, frames: scene.frames, ms: scene.ms, shown }
+    } else if (e.surface === 'terminal') {
+      const { Box, Button, Client, Raster } = $.ui.resolve(e)
+      const hud = <Client key="hud" module="./hud.ts" props={props} />
+      const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
+      const hasRoom = e.props.bodyColumns >= W + HUD_COLUMNS && e.props.maxRows >= ROWS + 2
+      if (band.mode === 'idle' || !hasRoom) {
+        live = null
         ours = (
           <Box flexDirection="row" columnGap={2}>
-            <Raster key="scene" columns={W} rows={ROWS} cells={scene.cells[shown] ?? ''} />
             {hud}
+            {shop}
           </Box>
         )
       } else {
-        live = null
-        ours = hud
+        const frame = cellsFor(spec, await $.clock.now())
+        live = { requestId: e.requestId, spec, shown: frame.key }
+        ours = (
+          <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d">
+            <Raster key="scene" columns={W} rows={ROWS} cells={frame.cells} />
+            {hud}
+            {shop}
+          </Box>
+        )
       }
+    } else {
+      live = null
+      return next(e)
     }
+
     // Other mods share the band: keep what they draw under ours.
     const theirs = await next(e)
     if (theirs.type === 'engine') return ours
@@ -199,14 +280,36 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: 'sparkmine' }, async ($, e) => {
-    const mine = await read($, MINE)
-    const view = await read($, VIEW)
-    return ui.shopTree($.ui.resolve(e), mine, view, {
+    const shop = await read($, SHOP)
+    const band = await read($, BAND)
+    const act: ui.ShopActions = {
       buy: id => (io === null ? 0 : state.buyProducer(io, id)),
       upgrade: id => (io === null ? false : state.buyUpgrade(io, id)),
       amount: n => (io === null ? undefined : state.setAmount(io, n)),
       collapse: () => (io === null ? false : state.collapseMine(io)),
-    })
+    }
+    const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode }
+    if (e.surface === 'desktop') {
+      const { Client, Svg } = $.ui.resolve(e)
+      const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins }
+      return ui.shopTree($.ui.resolve(e), shop, {
+        icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
+        header: <Svg source={svgFor(header, HEADER_SCALE)} alt="The mine" width={W * HEADER_SCALE} height={H * HEADER_SCALE} />,
+        live: <Client key="shophud" module="./hud.ts" props={props} />,
+        isRoomy: true,
+      }, act)
+    }
+    if (e.surface === 'terminal') {
+      const { Client } = $.ui.resolve(e)
+      return ui.shopTree($.ui.resolve(e), shop, {
+        icon: () => null,
+        header: null,
+        live: <Client key="shophud" module="./hud.ts" props={props} />,
+        isRoomy: false,
+      }, act)
+    }
+    const { Text } = $.ui.resolve(e)
+    return ui.shopTree($.ui.resolve(e), shop, { icon: () => null, header: null, live: <Text bold>{`✻ ${Math.floor(lastHud.sparks)}`}</Text>, isRoomy: false }, act)
   })
 
   // The spinner says what the mine has unlocked. On the desktop its word names
