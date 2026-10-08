@@ -5,6 +5,7 @@ import type { Counts, Delta, Mine, ProducerId, Save, ToolKind } from '../types'
 import {
   CRYSTAL_BONUS,
   CRYSTAL_UNIT,
+  GEM_WORTH,
   GROWTH,
   PRODUCERS,
   REWARDS,
@@ -134,6 +135,11 @@ export type Multipliers = {
   global: number
   click: number
   clickRate: number
+  /** Sparks a click adds for every producer owned. */
+  clickCrew: number
+  /** The chance a click strikes a gem, and how many clicks a gem is worth. */
+  gemChance: number
+  gemWorth: number
   producer: Record<ProducerId, number>
   tool: Record<ToolKind, number>
   ore: number
@@ -146,6 +152,9 @@ export function multipliers(save: Save): Multipliers {
     global: 1 + CRYSTAL_BONUS * save.crystals,
     click: 1,
     clickRate: 0,
+    clickCrew: 0,
+    gemChance: 0,
+    gemWorth: GEM_WORTH,
     producer: Object.fromEntries(PRODUCERS.map(p => [p.id, 1])) as Record<ProducerId, number>,
     tool: Object.fromEntries(TOOL_KINDS.map(k => [k, 1])) as Record<ToolKind, number>,
     ore: 0,
@@ -161,6 +170,15 @@ export function multipliers(save: Save): Multipliers {
         break
       case 'clickRate':
         m.clickRate += effect.pct / 100
+        break
+      case 'clickCrew':
+        m.clickCrew += effect.per
+        break
+      case 'gem':
+        m.gemChance += effect.chance
+        break
+      case 'gemWorth':
+        m.gemWorth *= effect.mult
         break
       case 'producer':
         m.producer[effect.id] *= effect.mult
@@ -195,8 +213,36 @@ export function rate(save: Save, m = multipliers(save)): number {
   return PRODUCERS.reduce((sum, p) => sum + owned(save, p.id) * unitRate(save, p.id, m), 0)
 }
 
+/** What one click mines, gems aside. The crew's share is not doubled by the picks. */
 export function clickValue(save: Save, m = multipliers(save)): number {
-  return m.click * m.global + rate(save, m) * m.clickRate
+  return (m.click + m.clickCrew * crewSize(save)) * m.global + rate(save, m) * m.clickRate
+}
+
+function mix(h: number): number {
+  let x = h
+  x ^= x >>> 16
+  x = Math.imul(x, 0x85ebca6b)
+  x ^= x >>> 13
+  x = Math.imul(x, 0xc2b2ae35)
+  x ^= x >>> 16
+  return x >>> 0
+}
+
+/**
+ * Where the next click lands in [0, 1). The run and the click count decide it,
+ * so a save always strikes the same gems and nothing rerolls a miss.
+ */
+export function clickRoll(save: Save): number {
+  let seed = 2166136261
+  for (let i = 0; i < save.runId.length; i += 1) seed = Math.imul(seed ^ save.runId.charCodeAt(i), 16777619)
+  return mix(seed ^ Math.imul(save.clicks + 1, 0x9e3779b9)) / 2 ** 32
+}
+
+/** What the next click mines, and whether it strikes a gem. */
+export function strike(save: Save, m = multipliers(save)): { value: number; isGem: boolean } {
+  const value = clickValue(save, m)
+  const isGem = m.gemChance > 0 && clickRoll(save) < m.gemChance
+  return { value: isGem ? value * m.gemWorth : value, isGem }
 }
 
 export function toolValue(save: Save, kind: ToolKind, m = multipliers(save)): number {

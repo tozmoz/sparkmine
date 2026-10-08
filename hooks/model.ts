@@ -22,10 +22,17 @@ const TOOL_ICONS: Readonly<Record<ToolKind, IconId>> = {
 export function upgradeIcon(u: Upgrade): IconId {
   if (u.id === 'pick-3') return 'pickDiamond'
   if (u.id === 'pick-6') return 'pickObsidian'
+  if (u.id === 'grip-1') return 'glove'
   switch (u.effect.kind) {
     case 'click':
-    case 'clickRate':
       return 'pick'
+    case 'clickRate':
+      return 'bolt'
+    case 'clickCrew':
+      return 'whistle'
+    case 'gem':
+    case 'gemWorth':
+      return 'gem'
     case 'producer':
       return u.effect.id
     case 'tool':
@@ -128,10 +135,13 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
 export const EMPTY_HUD: HudProps = {
   variant: 'band',
   mode: 'idle',
+  surface: 'other',
   sparks: 0,
   rate: 0,
   click: 1,
   clicks: 0,
+  acked: 0,
+  gem: null,
   idle: 0,
   turn: 0,
   lastTurn: 0,
@@ -149,10 +159,13 @@ export function hudProps(save: Save, view: View, mode: Mode, variant: HudProps['
   return {
     variant,
     mode,
+    surface: 'other',
     sparks: save.sparks,
     rate: game.rate(save, m),
     click: game.clickValue(save, m),
     clicks: save.clicks,
+    acked: 0,
+    gem: view.gem ?? null,
     idle: m.idle,
     turn: Math.max(0, save.lifetime - view.turnStart),
     lastTurn: view.lastTurn,
