@@ -266,20 +266,20 @@ export async function endTurn(io: Io): Promise<number> {
   return bonus
 }
 
+/** Buys the amount the shop is set to, all of it or none: a short purse says how short. */
 export async function buyProducer(io: Io, id: ProducerId): Promise<number> {
   const { amount } = await io.readView()
   let bought = 0
   await io.mine(mine => {
     bought = 0
-    const n = game.affordable(mine.save, id, amount)
-    const next = n > 0 ? game.buyProducer(mine, id, n) : null
+    const next = game.buyProducer(mine, id, amount)
     if (next === null) return mine
-    bought = n
+    bought = amount
     return next
   })
   if (bought === 0) {
     const { save } = await io.readMine()
-    const short = game.priceOf(game.producer(id), game.owned(save, id)) - save.sparks
+    const short = game.priceOf(game.producer(id), game.owned(save, id), amount) - save.sparks
     io.toast(`Need ${fmt(Math.max(1, short))} more ✻`)
   } else {
     await showPurchase(io)

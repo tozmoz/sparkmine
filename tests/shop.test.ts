@@ -44,6 +44,25 @@ test('a purchase shows at once, and a run of quick presses all land', async ($, 
   expect(await ui.find({ type: 'Text', text: 'Apprentice ×3' })).toBeDefined()
 })
 
+test('×100 buys a hundred or none, and its button lights only when all of it is affordable', async ($, on) => {
+  const w = world(on, { save: seeded({ sparks: 2_000 }) })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  await ui.press({ key: 'amount-100' })
+  const button = await ui.find({ key: 'buy-apprentice' })
+  expect(button?.props).toMatchObject({ dimColor: true })
+  expect(button?.props.variant).toBeUndefined()
+  await ui.press({ key: 'buy-apprentice' })
+  expect(w.toasts).toHaveLength(1)
+  expect(w.toasts[0]).toMatch(/^Need [\d.,]+[KMB]? more ✻$/)
+  expect(await ui.find({ type: 'Text', text: 'Apprentice' })).toBeDefined()
+  // ×10 fits the purse, so it lights and buys all ten.
+  await ui.press({ key: 'amount-10' })
+  expect((await ui.find({ key: 'buy-apprentice' }))?.props.variant).toBe('primary')
+  await ui.press({ key: 'buy-apprentice' })
+  expect(await ui.find({ type: 'Text', text: 'Apprentice ×10' })).toBeDefined()
+})
+
 test('a short purse says how much is missing', async ($, on) => {
   const w = world(on)
   await start($)
@@ -89,7 +108,7 @@ test('what a session mines reaches the store', async ($, on) => {
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
-  await ui.press({ key: 'mine' })
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'hud' })
   await ui.advance(250)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   await finishTurn($, 't1')

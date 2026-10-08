@@ -18,11 +18,6 @@ describe('prices', () => {
     expect(game.priceOf(apprentice, 10)).toBe(73)
     expect(game.priceOf(apprentice, 0, 10)).toBe(341)
   })
-
-  test('affordable counts what the sparks on hand buy', () => {
-    expect(game.affordable(saveWith({ sparks: 100 }), 'apprentice', 100)).toBe(4)
-    expect(game.affordable(saveWith({ sparks: 14 }), 'apprentice', 10)).toBe(0)
-  })
 })
 
 describe('income', () => {

@@ -97,7 +97,8 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
       detail: `${fmtRate(game.unitRate(save, p.id, m))}/s each · ${p.blurb}`,
       owned,
       price: game.priceOf(p, owned, amount),
-      canBuy: save.sparks >= game.priceOf(p, owned),
+      // Lit only when the whole amount is affordable: ×100 buys a hundred or none.
+      canBuy: save.sparks >= game.priceOf(p, owned, amount),
     }
   })
   const { onSale, next } = game.shopUpgrades(save)

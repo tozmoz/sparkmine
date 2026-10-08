@@ -1,6 +1,8 @@
 // The live numbers in the band and the shop, and the band's Mine button. A
 // Client draws them, so they change without the band being redrawn and the
-// scene never flickers.
+// scene never flickers. On the desktop the button is a gold sign the HUD draws
+// itself, since a desktop draws every Button as its own native one; the
+// terminal keeps a Button, for its hotkey.
 //
 // The Mine button lives here so a press answers at once: the HUD counts it,
 // adds it to the counter and pops what it mined before the hooks have heard of
@@ -8,9 +10,9 @@
 // one even when a frame's posts merge into one, and the props they answer say
 // how many they have counted.
 //
-// A press reaches the HUD two ways: the pointer going down over its region,
-// at once and whatever was redrawn since, and the button's own press after.
-// The pointer counts it; the button's press it already counted is let go.
+// A press reaches the HUD the moment the pointer goes down over its region,
+// whatever was redrawn since. On the terminal the Button's own press (a click,
+// or its hotkey) may come after: one the pointer already counted is let go.
 //
 // Its height is fixed and its width follows its text, which changes only when
 // new numbers arrive: a surface unmounts a Client whose size changes frame
@@ -35,6 +37,8 @@ type State = {
   unmatched: number[]
   gemSeq: number
   pop: Pop | null
+  /** Frames the gold sign stays pressed in after a press. */
+  pressed: number
 }
 
 const POLL_MS = 100
@@ -52,6 +56,11 @@ const MAX_PER_SECOND = 20
 const MATCH_MS = 1_000
 const GEM_COLOR = '#5dcaa5'
 const BAR = 10
+const PRESS_FRAMES = 2
+
+/** The desktop's Mine sign: gold ore while Claude works, dull while it waits. */
+const GOLD = { face: '#f2b632', lit: '#ffcd52', pressed: '#d9951f', edge: '#a8691a', ink: '#3a2410' }
+const DULL = { face: '#5c4d2e', edge: '#463a22', ink: '#a8987a' }
 
 function commas(n: number): string {
   const whole = Math.floor(Math.abs(n)).toString()
@@ -91,19 +100,23 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
   const acked = props.acked ?? 0
 
   // A HUD an older version drew keeps other state: this one starts afresh.
-  let s = surface.state !== undefined && Array.isArray(surface.state.unmatched) ? surface.state : undefined
+  const old = surface.state
+  let s = old !== undefined && Array.isArray(old.unmatched) && typeof old.pressed === 'number' ? old : undefined
   if (s === undefined) {
     const instance = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`
-    s = { instance, total: 0, recent: [], unmatched: [], gemSeq: gem?.seq ?? 0, pop: null }
+    s = { instance, total: 0, recent: [], unmatched: [], gemSeq: gem?.seq ?? 0, pop: null, pressed: 0 }
     surface.setState(s)
     surface.every(POLL_MS, () => surface.post({ instance, total: surface.state?.total ?? 0 }))
-    // Ages the pop; does nothing at all while there is none.
+    // Ages the pop and lets the sign back up; does nothing at all while neither is showing.
     surface.every(FRAME_MS, () => {
       const now = surface.state
-      if (now === undefined || now.pop === null) return
-      const age = now.pop.age + 1
-      const life = now.pop.isGem ? GEM_FRAMES : POP_FRAMES
-      surface.setState({ ...now, pop: age >= life ? null : { ...now.pop, age } })
+      if (now === undefined || (now.pop === null && now.pressed === 0)) return
+      let pop = now.pop
+      if (pop !== null) {
+        const age = pop.age + 1
+        pop = age >= (pop.isGem ? GEM_FRAMES : POP_FRAMES) ? null : { ...pop, age }
+      }
+      surface.setState({ ...now, pop, pressed: Math.max(0, now.pressed - 1) })
     })
     surface.post({ instance, total: 0 })
   } else if (gem !== null && gem.seq > s.gemSeq) {
@@ -131,7 +144,7 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
     const total = now.total + 1
     const keep = now.pop !== null && now.pop.age < (now.pop.isGem ? GEM_FRAMES : POP_FRAMES)
     const pop = { value: (keep ? (now.pop?.value ?? 0) : 0) + props.click, age: 0, isGem: keep && now.pop?.isGem === true }
-    surface.setState({ ...now, total, recent: [...recent, at], unmatched, pop })
+    surface.setState({ ...now, total, recent: [...recent, at], unmatched, pop, pressed: PRESS_FRAMES })
     surface.post({ instance: now.instance, total })
   }
   // Set on every draw, so it presses with the latest numbers.
@@ -167,14 +180,11 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
     return box([line([count, dim(`· ${notes.join(' · ')}`)])])
   }
 
+  // The band leaves the next goal to the shop, where its numbers explain it.
   const second =
     props.mode === 'pause'
       ? Text({ color: 'warning', wrap: 'truncate-end', children: ['Claude is waiting for you'] })
       : dim(props.last ?? `this turn +${short(props.turn)}`)
-  const third =
-    props.goal === null
-      ? Text({ children: [' '] })
-      : line([dim(goal ?? ''), Text({ color: 'claude', children: [bar(props.goal.have, props.goal.need)] })])
   const pop = s.pop
   const isBright = pop !== null && pop.age < (pop.isGem ? GEM_BRIGHT : POP_BRIGHT)
   const popText =
@@ -190,19 +200,25 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
           }),
         ]
   const slot = Box({ key: 'pop', width: POP_WIDTH, flexShrink: 0, children: popText as never[] })
-  const mine = Button({
-    key: 'mine',
-    label: props.surface === 'terminal' ? 'Mine' : '⛏ Mine',
-    ...(props.surface === 'terminal' ? { hotkey: 'm' } : {}),
-    ...(isWorking ? {} : { dimColor: true }),
-    onPress: () => press('button'),
-  })
+  const mine =
+    props.surface === 'terminal'
+      ? Button({ key: 'mine', label: 'Mine', hotkey: 'm', ...(isWorking ? {} : { dimColor: true }), onPress: () => press('button') })
+      : Box({
+          key: 'mine',
+          borderStyle: 'round',
+          borderColor: isWorking ? GOLD.edge : DULL.edge,
+          backgroundColor: !isWorking ? DULL.face : s.pressed > 0 ? GOLD.pressed : GOLD.face,
+          ...(isWorking ? { hover: { backgroundColor: GOLD.lit } } : {}),
+          paddingX: 1,
+          flexShrink: 0,
+          children: [Text({ bold: true, color: isWorking ? GOLD.ink : DULL.ink, children: ['⛏ Mine'] })],
+        })
   return Box({
     height: props.height,
     flexDirection: 'row',
     columnGap: 2,
     alignItems: 'center',
-    children: [mine, box([line([count, dim(`${perSecond(props.rate)}/s`), slot]), second, third])],
+    children: [mine, box([line([count, dim(`${perSecond(props.rate)}/s`), slot]), second])],
   })
 }
 
