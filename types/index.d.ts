@@ -76,6 +76,8 @@ export type Band = {
   isHidden: boolean
   carts: number
   goblins: number
+  /** The producers owned, in shop order: the crew the band shows on its right. */
+  crew: { id: ProducerId; owned: number }[]
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */
@@ -84,11 +86,22 @@ export type HudProps = {
   mode: Mode
   sparks: number
   rate: number
+  /** What one click mines now. */
   click: number
+  /** Clicks counted so far: when it grows, the HUD shakes and pops what they earned. */
+  clicks: number
   idle: number
   turn: number
   lastTurn: number
   last: string | null
+  /** The upgrade closest to unlocking, and how close. */
+  goal: { name: string; have: number; need: number } | null
+}
+
+/** What the clickable layer over the scene is handed. */
+export type TapProps = {
+  mode: Mode
+  click: number
 }
 
 export type IconId =

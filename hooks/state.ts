@@ -3,6 +3,7 @@
 // store sync and the actions the hooks and buttons call.
 
 import type { Band, Mine, Mode, ProducerId, Save, ShopModel, View } from '../types'
+import { PRODUCERS } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
 import * as model from './model.ts'
@@ -46,7 +47,7 @@ export const INITIAL_VIEW: View = {
   amount: 1,
 }
 
-export const INITIAL_BAND: Band = { isLoaded: false, mode: 'idle', isHidden: false, carts: 0, goblins: 0 }
+export const INITIAL_BAND: Band = { isLoaded: false, mode: 'idle', isHidden: false, carts: 0, goblins: 0, crew: [] }
 
 export const newRunId = (): string =>
   `${Date.now().toString(36)}-${Math.floor(Math.random() * 36 ** 6).toString(36)}`
@@ -78,6 +79,7 @@ export async function refresh(io: Io, now?: number): Promise<Band> {
     mode: modeOf(view, at),
     carts: Math.min(6, game.owned(mine.save, 'cart')),
     goblins: Math.min(1, game.owned(mine.save, 'goblin')),
+    crew: PRODUCERS.filter(p => game.owned(mine.save, p.id) > 0).map(p => ({ id: p.id, owned: game.owned(mine.save, p.id) })),
   }))
   await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, mine.isLoaded))
   return band

@@ -135,23 +135,32 @@ export const EMPTY_HUD: HudProps = {
   sparks: 0,
   rate: 0,
   click: 1,
+  clicks: 0,
   idle: 0,
   turn: 0,
   lastTurn: 0,
   last: null,
+  goal: null,
 }
 
 export function hudProps(save: Save, view: View, mode: Mode, variant: HudProps['variant']): HudProps {
   const m = game.multipliers(save)
+  const { next } = game.shopUpgrades(save)
+  const progress = next === null ? null : game.progress(save, next)
   return {
     variant,
     mode,
     sparks: save.sparks,
     rate: game.rate(save, m),
     click: game.clickValue(save, m),
+    clicks: save.clicks,
     idle: m.idle,
     turn: Math.max(0, save.lifetime - view.turnStart),
     lastTurn: view.lastTurn,
     last: view.last === null ? null : `${view.last.label} +${fmt(view.last.value)} ✻`,
+    goal:
+      next === null || progress === null
+        ? null
+        : { name: next.name, have: Math.min(progress.have, progress.need), need: progress.need },
   }
 }

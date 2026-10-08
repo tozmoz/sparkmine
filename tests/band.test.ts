@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { band, command, finishTurn, seeded, start, world } from './kit.ts'
 
 /** Lets the HUD Client poll once, so it holds fresh numbers. */
-const POLL = 250
+const POLL = 200
 
 test('the band keeps one line while Claude is idle', async ($, on) => {
   world(on)
@@ -14,12 +14,12 @@ test('the band keeps one line while Claude is idle', async ($, on) => {
     expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 0' })).toBeDefined()
     expect(await ui.find({ in: 'hud', type: 'Text', text: '· mines while Claude works' })).toBeDefined()
     expect(await ui.find({ key: 'shop' })).toBeDefined()
-    expect(await ui.find({ in: 'hud', key: 'mine' })).toBeUndefined()
+    expect(await ui.find({ key: 'mine' })).toBeUndefined()
     await ui.unmount()
   }
 })
 
-test('while Claude works, clicks and tool calls are mined', async ($, on) => {
+test('while Claude works, the Mine button and tool calls mine', async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'fix the bug', turnId: 't1' })
@@ -37,34 +37,74 @@ test('while Claude works, clicks and tool calls are mined', async ($, on) => {
   await ui.redraw()
   await ui.advance(POLL)
   expect(await ui.find({ type: 'Svg' })).toBeUndefined()
-  expect(await ui.find({ in: 'hud', key: 'mine' })).toBeUndefined()
+  expect(await ui.find({ key: 'mine' })).toBeUndefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: '· last turn +3' })).toBeDefined()
 })
 
-test('a click shakes the counter and pops its value, without redrawing the scene', async ($, on) => {
+test('a tap on the scene mines, and pops what it earned where it landed', async ($, on) => {
+  world(on, { save: seeded({ upgrades: ['pick-1', 'pick-2'], clicks: 100 }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  await ui.pointer({ type: 'down', x: 6, y: 2, button: 'left', in: 'tap' })
+  await ui.pointer({ type: 'up', x: 6, y: 2, button: 'left', in: 'tap' })
+  expect(await ui.find({ in: 'tap', type: 'Text', text: '+4' })).toBeDefined()
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 4' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeDefined()
+  await ui.advance(1_000)
+  expect(await ui.find({ in: 'tap', type: 'Text', text: '+4' })).toBeUndefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeUndefined()
+})
+
+test('the pointer over the scene shows how to mine', async ($, on) => {
+  world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  expect(await ui.find({ in: 'tap', type: 'Text', text: '⛏ click to mine' })).toBeUndefined()
+  await ui.pointer({ type: 'enter', x: 3, y: 1, in: 'tap' })
+  expect(await ui.find({ in: 'tap', type: 'Text', text: '⛏ click to mine' })).toBeDefined()
+  await ui.pointer({ type: 'leave', x: 3, y: 1, in: 'tap' })
+  expect(await ui.find({ in: 'tap', type: 'Text', text: '⛏ click to mine' })).toBeUndefined()
+})
+
+test('clicks never redraw the scene', async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   const scene = await ui.find({ type: 'Svg' })
   await ui.press({ key: 'mine' })
-  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+1$/ })).toBeDefined()
-  expect((await ui.find({ in: 'hud', type: 'Box' }))?.children.length).toBeGreaterThan(0)
-  await ui.advance(1_000)
-  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+1$/ })).toBeUndefined()
+  await ui.pointer({ type: 'down', x: 2, y: 1, button: 'left', in: 'tap' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+2$/ })).toBeDefined()
   expect(await ui.find({ type: 'Svg' })).toEqual(scene)
+})
+
+test('the crew and the next goal fill the rest of the band', async ($, on) => {
+  world(on, { save: seeded({ clicks: 30, producers: { apprentice: 17, cart: 6 } }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  expect(await ui.find({ type: 'Text', text: '×17' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '×6' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: 'Next: Union contract' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '▰▰▰▰▰▰▱▱▱▱' })).toBeDefined()
 })
 
 test('the terminal draws the scene when it has room, and the HUD alone when not', async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  const wide = await $.ui.mount(band('terminal'))
+  const wide = await $.ui.mount(band('terminal', { bodyColumns: 140 }))
   expect(await wide.find({ type: 'Raster' })).toBeDefined()
   await wide.unmount()
   const narrow = await $.ui.mount(band('terminal', { bodyColumns: 80 }))
   expect(await narrow.find({ type: 'Raster' })).toBeUndefined()
-  expect(await narrow.find({ in: 'hud', key: 'mine' })).toBeDefined()
+  expect(await narrow.find({ key: 'mine' })).toBeDefined()
 })
 
 test('a permission prompt pauses the miner until the turn moves on', async ($, on) => {
@@ -76,7 +116,7 @@ test('a permission prompt pauses the miner until the turn moves on', async ($, o
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeDefined()
-  expect(await ui.find({ in: 'hud', key: 'mine' })).toBeUndefined()
+  expect(await ui.find({ key: 'mine' })).toBeUndefined()
   await finishTurn($, 't1')
   await ui.redraw()
   await ui.advance(POLL)

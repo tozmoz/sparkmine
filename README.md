@@ -8,8 +8,9 @@ Claude works. You click.
 While Claude works, a miner digs in the band above your prompt. He cuts into
 the wall swing by swing, the dirt piles up behind him, and when the vein is
 done the wall grows back for the next one. Every tool call Claude makes is
-ore. Press **Mine** to dig faster, spend your sparks in the shop, and grow a
-crew. When the turn ends, the band shrinks to one line.
+ore. Click the mine, or press **Mine**, to dig faster. Spend your sparks in
+the shop and your crew lines up on the right of the band. When the turn
+ends, the band shrinks to one line.
 
 ## Install
 
@@ -52,9 +53,9 @@ and the last of them takes weeks.
 
 ## Where it draws
 
-- **Desktop app:** the scene is an SVG that animates itself with CSS. The
-  counter and the Mine button are a separate Client, so a click updates them
-  without redrawing the scene.
+- **Desktop app:** the scene is an SVG that animates itself with CSS. A
+  Client lies over it to take your clicks, and another draws the counter, so
+  a click updates the numbers without redrawing the scene.
 - **Terminal:** the same pixels become a Raster of half-block cells, repainted
   by a timer. The scene needs about 94 columns; a narrower terminal gets the
   text and buttons alone.
