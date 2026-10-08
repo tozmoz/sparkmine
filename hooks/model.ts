@@ -20,6 +20,8 @@ const TOOL_ICONS: Readonly<Record<ToolKind, IconId>> = {
 }
 
 export function upgradeIcon(u: Upgrade): IconId {
+  if (u.id === 'pick-3') return 'pickDiamond'
+  if (u.id === 'pick-6') return 'pickObsidian'
   switch (u.effect.kind) {
     case 'click':
     case 'clickRate':

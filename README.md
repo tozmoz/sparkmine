@@ -31,7 +31,8 @@ scope, it also runs in the Code tab of the Claude Desktop app.
 - **Producers** mine every second Claude works. There are eight, from the
   Apprentice to the Context core, and each one costs 17% more than the last.
 - **Upgrades** unlock at milestones: clicks, tool calls of a kind, producers
-  owned, turns finished. There are 53 of them.
+  owned, turns finished. There are 53 of them. The pick upgrades change the
+  pick in the miner's hands, from worn iron to steel, diamond and obsidian.
 - **Collapse the mine** to trade a run for ◆ crystals. Each crystal adds 2% to
   everything, for good.
 - **Spinner words** unlock as your all-time sparks grow: Mining, Tunneling,

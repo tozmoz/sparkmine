@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { band, command, finishTurn, seeded, start, world } from './kit.ts'
+import { band, command, finishTurn, pane, seeded, start, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
 const POLL = 200
@@ -107,7 +107,11 @@ test('the tap layer says how big it was laid out', async ($, on) => {
   const ui = await $.ui.mount(band('desktop'))
   await ui.resize({ columns: 24, rows: 4, in: 'tap' })
   await ui.advance(TAP_POLL)
-  expect(w.store.get('tap-report')).toMatchObject({ surface: 'desktop', columns: 24, rows: 4 })
+  expect(w.store.get('tap-report')).toMatchObject({ surface: 'desktop', columns: 24, rows: 4, pointer: 0 })
+  await ui.pointer({ type: 'enter', x: 2, y: 1, in: 'tap' })
+  await ui.pointer(tapAt(2, 1))
+  await ui.advance(TAP_POLL)
+  expect(w.store.get('tap-report')).toMatchObject({ pointer: 2, clicks: 1 })
 })
 
 test('the crew and the next goal fill the rest of the band', async ($, on) => {
@@ -120,6 +124,20 @@ test('the crew and the next goal fill the rest of the band', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: '×6' })).toBeDefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: 'Next: Union contract' })).toBeDefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: '▰▰▰▰▰▰▱▱▱▱' })).toBeDefined()
+})
+
+test('buying the Diamond pick puts it in the miner\'s hands', async ($, on) => {
+  const w = world(on, { save: seeded({ sparks: 20_000, clicks: 600, upgrades: ['pick-1', 'pick-2'] }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  const before = String((await ui.find({ type: 'Svg' }))?.props.source)
+  expect(before).not.toContain('#5fd4e8')
+  const shop = await $.ui.mount(pane('desktop'))
+  await shop.press({ key: 'up-pick-3' })
+  await w.clock.advance(1_000)
+  await ui.redraw()
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain('#5fd4e8')
 })
 
 test('the terminal keeps a Mine button, and draws the scene when it has room', async ($, on) => {

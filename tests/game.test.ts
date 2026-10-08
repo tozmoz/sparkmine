@@ -128,6 +128,13 @@ describe('sync', () => {
   })
 })
 
+test('the pick tier follows the pick upgrades', () => {
+  expect(game.pickTier(saveWith({}))).toBe(0)
+  expect(game.pickTier(saveWith({ upgrades: ['pick-1'] }))).toBe(1)
+  expect(game.pickTier(saveWith({ upgrades: ['pick-1', 'pick-2', 'pick-3'] }))).toBe(3)
+  expect(game.pickTier(saveWith({ upgrades: ['pick-4', 'pick-6'] }))).toBe(4)
+})
+
 test('tools are sorted into kinds', () => {
   expect(game.classifyTool('Grep')).toBe('read')
   expect(game.classifyTool('Write')).toBe('edit')

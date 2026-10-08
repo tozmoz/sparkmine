@@ -18,7 +18,8 @@ export const ROWS = H / 2
 
 const CLEAR = -1
 
-export type SceneSpec = { mode: Mode; carts: number; goblins: number }
+/** `pick` is the miner's pick, 0 worn iron to 4 obsidian, as the pick upgrades make it. */
+export type SceneSpec = { mode: Mode; carts: number; goblins: number; pick: number }
 
 /** One pose of the miner: `t` runs from the strike (0) to the raised pick (1); null rests. */
 export type Frame = { at: number; t: number | null; bob: number; chips: boolean }
@@ -274,6 +275,26 @@ const ORES: readonly (readonly [number, number, 0 | 1])[] = [
   [28, 3, 0],
 ]
 
+/** How each pick looks: its handle, the wrap where he holds it, its head, and what flies when it strikes. */
+type PickLook = { handle: number; grip: number | null; head: number; edge: number; shade: number; sparks: readonly number[] }
+
+const ROCK_SPARKS = [GOLD[1], ROCK[2], 0x8a7a6e, ROCK[1], GOLD[0], 0x8a7a6e] as const
+
+const PICKS: readonly PickLook[] = [
+  // Worn iron, the pick he starts with.
+  { handle: HANDLE, grip: null, head: 0x8a8f96, edge: 0xb7bcc2, shade: 0x5c6168, sparks: ROCK_SPARKS },
+  // Sharpened: the same iron, its points bright.
+  { handle: HANDLE, grip: null, head: 0x9aa1a9, edge: 0xffffff, shade: 0x5c6168, sparks: ROCK_SPARKS },
+  // Steel, with a red wrap on the handle.
+  { handle: 0x7a4a26, grip: SHIRT, head: STEEL, edge: STEEL_LIGHT, shade: STEEL_DARK, sparks: ROCK_SPARKS },
+  // Diamond, on a dark handle with a gold wrap: it throws diamond glints.
+  { handle: 0x5e3b1d, grip: GOLD[0], head: 0x5fd4e8, edge: 0xd8fbff, shade: 0x2a8fa8, sparks: [0xd8fbff, 0x5fd4e8, 0xffffff, 0x2a8fa8, 0xd8fbff, 0x5fd4e8] },
+  // Obsidian, black and violet.
+  { handle: 0x2b2440, grip: 0x7f77dd, head: 0x3a2f5a, edge: 0xb6a6ff, shade: 0x151021, sparks: [0xb6a6ff, 0x7f77dd, 0xe0d8ff, 0x3a2f5a, 0xb6a6ff, 0x7f77dd] },
+]
+
+const lookOf = (pick: number): PickLook => PICKS[Math.max(0, Math.min(PICKS.length - 1, pick))] ?? (PICKS[0] as PickLook)
+
 const CHIPS = [
   { x: 51, y: 11, dx1: -3, dy1: -4, dx2: -6, dy2: 1, color: GOLD[1] },
   { x: 51, y: 13, dx1: -4, dy1: -2, dx2: -8, dy2: 3, color: ROCK[2] },
@@ -446,11 +467,15 @@ function pose(frame: Frame): Pose {
   }
 }
 
-function pickaxe(px: Pixels, hx: number, hy: number, angle: number): void {
+function pickaxe(px: Pixels, hx: number, hy: number, angle: number, look: PickLook): void {
   const a = (angle * Math.PI) / 180
   const dx = Math.cos(a)
   const dy = Math.sin(a)
-  px.line(hx - dx, hy - dy, hx + dx * 8, hy + dy * 8, HANDLE)
+  px.line(hx - dx, hy - dy, hx + dx * 8, hy + dy * 8, look.handle)
+  if (look.grip !== null) {
+    px.set(hx + dx * 2, hy + dy * 2, look.grip)
+    px.set(hx + dx * 3, hy + dy * 3, look.grip)
+  }
   const ex = hx + dx * 8
   const ey = hy + dy * 8
   const nx = -dy
@@ -460,30 +485,31 @@ function pickaxe(px: Pixels, hx: number, hy: number, angle: number): void {
     const bend = 0.08 * t * t
     const x = ex + nx * t - dx * bend
     const y = ey + ny * t - dy * bend
-    const color = Math.abs(t) >= 3 ? STEEL_LIGHT : STEEL
+    const color = Math.abs(t) >= 3 ? look.edge : look.head
     if (prev) px.line(prev[0], prev[1], x, y, color)
     else px.set(x, y, color)
-    if (Math.abs(t) <= 2) px.set(x - dx, y - dy, STEEL_DARK)
+    if (Math.abs(t) <= 2) px.set(x - dx, y - dy, look.shade)
     prev = [x, y]
   }
 }
 
-function miner(px: Pixels, frame: Frame): void {
+function miner(px: Pixels, frame: Frame, look: PickLook): void {
   const p = pose(frame)
   const hx = SX + p.hx
   const hy = SY + p.hy + frame.bob
-  pickaxe(px, hx, hy, p.angle)
+  pickaxe(px, hx, hy, p.angle, look)
   px.sprite(MINER, MINER_PALETTE, SX, SY + frame.bob)
   px.line(SX + 9, SY + 11 + frame.bob, hx, hy, SHIRT)
   px.set(hx, hy, SKIN)
 }
 
-function chips(px: Pixels): void {
-  for (const chip of CHIPS) px.set(chip.x + chip.dx1, chip.y + chip.dy1, chip.color)
+function chips(px: Pixels, look: PickLook): void {
+  CHIPS.forEach((chip, i) => px.set(chip.x + chip.dx1, chip.y + chip.dy1, look.sparks[i] ?? chip.color))
 }
 
-function sparkle(px: Pixels): void {
-  for (const [dx, dy] of [[0, -2], [0, -1], [0, 1], [0, 2], [-2, 0], [-1, 0], [1, 0], [2, 0]] as const) px.set(53 + dx, 11 + dy, GOLD[0])
+function sparkle(px: Pixels, look: PickLook): void {
+  const ray = look.sparks === ROCK_SPARKS ? GOLD[0] : (look.sparks[1] ?? GOLD[0])
+  for (const [dx, dy] of [[0, -2], [0, -1], [0, 1], [0, 2], [-2, 0], [-1, 0], [1, 0], [2, 0]] as const) px.set(53 + dx, 11 + dy, ray)
   px.set(53, 11, LAMP)
 }
 
@@ -542,6 +568,7 @@ function windowKeyframes(name: string, from: number, to: number): string {
  */
 export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string {
   const { tunnel, rock } = world(false)
+  const look = lookOf(spec.pick)
   const { frames, ms } = framesFor(spec.mode)
   const isDigging = spec.mode === 'work'
   const css: string[] = [
@@ -598,13 +625,13 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
 
   if (frames.length === 1) {
     const layer = new Pixels()
-    miner(layer, frames[0] as Frame)
+    miner(layer, frames[0] as Frame, look)
     body.push(paths(layer))
   } else {
     css.push(`.m{opacity:0;animation-duration:${ms}ms;animation-timing-function:step-end;animation-iteration-count:infinite}`)
     frames.forEach((frame, i) => {
       const layer = new Pixels()
-      miner(layer, frame)
+      miner(layer, frame, look)
       const to = frames[i + 1]?.at ?? 1
       css.push(`.m${i}{animation-name:m${i}}`, windowKeyframes(`m${i}`, frame.at, to))
       body.push(`<g class="m m${i}">${paths(layer)}</g>`)
@@ -622,13 +649,13 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
           `${pct(a + 0.12)}{opacity:1;transform:translate(${chip.dx1}px,${chip.dy1}px)}` +
           `${pct(a + 0.3)}{opacity:0;transform:translate(${chip.dx2}px,${chip.dy2}px)}100%{opacity:0}}`,
       )
-      body.push(`<rect class="c c${i}" x="${chip.x}" y="${chip.y}" width="1" height="1" fill="${hex(chip.color)}"/>`)
+      body.push(`<rect class="c c${i}" x="${chip.x}" y="${chip.y}" width="1" height="1" fill="${hex(look.sparks[i] ?? chip.color)}"/>`)
     })
     // Every few strikes the pick finds ore.
     const sparks: (readonly [number, string])[] = []
     for (let k = SPARK_EVERY - 1; k < CUTS; k += SPARK_EVERY) sparks.push([cutAt(k), '1'], [(k + IMPACT_AT + SPARK_FOR) / CUTS, '0'])
     const layer = new Pixels()
-    sparkle(layer)
+    sparkle(layer, look)
     css.push(`.sp{opacity:0;animation:sp ${LOOP_MS}ms step-end infinite}`, stepKeyframes('sp', 'opacity', '0', sparks))
     body.push(`<g class="sp">${paths(layer)}</g>`)
   }
@@ -652,13 +679,14 @@ export function compose(spec: SceneSpec, m: Moment): Pixels {
   px.stamp(faceEdge())
   if (spec.carts > 0) cart(px, spec.carts, m.wheel)
   if (spec.goblins > 0) goblin(px, 0)
+  const look = lookOf(spec.pick)
   const { frames } = framesFor(spec.mode)
   const frame = frames[m.frame] ?? frames[0]
   if (frame !== undefined) {
-    miner(px, frame)
-    if (frame.chips) chips(px)
+    miner(px, frame, look)
+    if (frame.chips) chips(px, look)
   }
-  if (m.spark) sparkle(px)
+  if (m.spark) sparkle(px, look)
   return px
 }
 

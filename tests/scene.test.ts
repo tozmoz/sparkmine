@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { CUT, CUTS, LOOP_MS, PERIOD, SWING_MS, compose, momentAt, sceneCells, sceneSvg, type SceneSpec } from '../hooks/scene.ts'
 import { ICON_IDS, iconSvg } from '../hooks/icons.ts'
 
-const WORK: SceneSpec = { mode: 'work', carts: 6, goblins: 1 }
+const WORK: SceneSpec = { mode: 'work', carts: 6, goblins: 1, pick: 0 }
 const pixels = (ms: number) => compose(WORK, momentAt('work', ms)).data.join(',')
 
 describe('the endless tunnel', () => {
@@ -41,13 +41,21 @@ describe('the endless tunnel', () => {
 test('every scene fits the size an Svg may have', () => {
   for (const mode of ['work', 'idle', 'pause'] as const) {
     for (const carts of [0, 6]) {
-      const svg = sceneSvg({ mode, carts, goblins: 1 }, 3)
+      const svg = sceneSvg({ mode, carts, goblins: 1, pick: 4 }, 3)
       expect(svg.length).toBeLessThan(131_072)
       expect(svg.startsWith('<svg')).toBe(true)
     }
   }
   expect(sceneSvg(WORK, 3)).toContain('@keyframes slide')
   expect(sceneSvg({ ...WORK, mode: 'idle' }, 3)).not.toContain('@keyframes slide')
+})
+
+test('the pick the miner holds is the one the upgrades bought', () => {
+  const strike = momentAt('work', (3 + 0.66) * SWING_MS)
+  const looks = [0, 1, 2, 3, 4].map(pick => compose({ ...WORK, pick }, strike).data.join(','))
+  expect(new Set(looks).size).toBe(5)
+  expect(sceneSvg({ ...WORK, pick: 3 }, 3)).toContain('#5fd4e8')
+  expect(sceneSvg({ ...WORK, pick: 0 }, 3)).not.toContain('#5fd4e8')
 })
 
 test('every icon draws', () => {

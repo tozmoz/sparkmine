@@ -236,6 +236,18 @@ export const isUnlocked = (save: Save, u: Upgrade): boolean => have(save, u.unlo
 
 export const hasUpgrade = (save: Save, id: string): boolean => save.upgrades.includes(id)
 
+/** The pick upgrades, in the order the miner's pick gets better. */
+export const PICK_TIERS = ['pick-1', 'pick-2', 'pick-3', 'pick-6'] as const
+
+/** Which pick the miner holds: 0 for the worn iron one he starts with. */
+export function pickTier(save: Save): number {
+  let tier = 0
+  PICK_TIERS.forEach((id, i) => {
+    if (hasUpgrade(save, id)) tier = Math.max(tier, i + 1)
+  })
+  return tier
+}
+
 /** What the shop lists: the upgrades on sale, cheapest first, and the next one to unlock. */
 export function shopUpgrades(save: Save): { onSale: Upgrade[]; next: Upgrade | null } {
   const left = UPGRADES.filter(u => !hasUpgrade(save, u.id))

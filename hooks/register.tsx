@@ -30,6 +30,12 @@ const HEADER_SCALE = 2
 const HUD_COLUMNS = 44
 /** Clicks one post may carry: a held key or a script gets no more than this. */
 const MAX_BURST = 10
+/**
+ * Rows the tap layer takes over the scene. The desktop lays a percentage of
+ * height out as one row, so the layer asks for rows; a little more than the
+ * scene is fine, since the band clips it.
+ */
+const TAP_ROWS = 4
 /** The HUD's fixed size in cells: a Client that changes its own size is unmounted. */
 const HUD_WORK = { width: 34, height: 3 } as const
 const HUD_IDLE = { width: 46, height: 1 } as const
@@ -38,7 +44,7 @@ const HUD_SHOP = { width: 56, height: 4 } as const
 /** Tools that wait on the person, so the miner rests while they decide. */
 const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
-const specKey = (spec: SceneSpec) => `${spec.mode}:${spec.carts}:${spec.goblins}`
+const specKey = (spec: SceneSpec) => `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}`
 const svgs = new Map<string, string>()
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
@@ -202,8 +208,8 @@ export const register: Register = on => {
         const fresh = Math.min(MAX_BURST, post.total - before)
         for (let i = 0; i < fresh; i += 1) await state.click(io)
       }
-      const { columns, rows } = e.data as { columns?: unknown; rows?: unknown }
-      const report = JSON.stringify({ surface: e.surface, columns, rows, clicks: post.total })
+      const { columns, rows, pointer } = e.data as { columns?: unknown; rows?: unknown; pointer?: unknown }
+      const report = JSON.stringify({ surface: e.surface, columns, rows, pointer, clicks: post.total })
       if (report !== tapReport) {
         tapReport = report
         await $.store.set('tap-report', { ...JSON.parse(report), at: await $.clock.now() })
@@ -229,7 +235,7 @@ export const register: Register = on => {
     }
     const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode }
     const tapProps: TapProps = { mode: band.mode, click: lastHud.click, feed: recentFeed() }
-    const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins }
+    const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick }
     const hudSize = band.mode === 'idle' ? HUD_IDLE : HUD_WORK
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
     let ours: RenderElement
@@ -272,8 +278,8 @@ export const register: Register = on => {
                   isInteractive
                 />
                 {band.mode === 'work' ? (
-                  <Box position="absolute" top={0} left={0} right={0} bottom={0}>
-                    <Client key="tap" module="./tap.ts" width="100%" height="100%" props={tapProps} />
+                  <Box position="absolute" top={0} left={0} width="100%">
+                    <Client key="tap" module="./tap.ts" width="100%" height={TAP_ROWS} props={tapProps} />
                   </Box>
                 ) : null}
               </Box>
@@ -354,7 +360,7 @@ export const register: Register = on => {
     const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode }
     if (e.surface === 'desktop') {
       const { Client, Svg } = $.ui.resolve(e)
-      const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins }
+      const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins, pick: band.pick }
       return ui.shopTree($.ui.resolve(e), shop, {
         icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
         header: <Svg source={svgFor(header, HEADER_SCALE)} alt="The mine" width={W * HEADER_SCALE} height={H * HEADER_SCALE} />,

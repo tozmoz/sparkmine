@@ -10,8 +10,11 @@ test('/mine opens the shop pane', async ($, on) => {
   expect(w.opened).toEqual(['sparkmine'])
 })
 
+/** Past the moment the shop holds still after a purchase, so it redraws. */
+const SETTLE = 1_000
+
 test('producers cost sparks, one or ten at a time', async ($, on) => {
-  world(on, { save: seeded({ sparks: 1_000 }) })
+  const w = world(on, { save: seeded({ sparks: 1_000 }) })
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount(pane(surface))
@@ -22,13 +25,28 @@ test('producers cost sparks, one or ten at a time', async ($, on) => {
   const ui = await $.ui.mount(pane('desktop'))
   expect(await ui.find({ type: 'Svg' })).toBeDefined()
   await ui.press({ key: 'buy-apprentice' })
+  await w.clock.advance(SETTLE)
   await ui.advance(250)
   expect(await ui.find({ type: 'Text', text: 'Apprentice ×1' })).toBeDefined()
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 985' })).toBeDefined()
   await ui.press({ key: 'amount-10' })
   expect((await ui.find({ key: 'buy-apprentice' }))?.props.label).toBe('×10 399 ✻')
   await ui.press({ key: 'buy-apprentice' })
+  await w.clock.advance(SETTLE)
   expect(await ui.find({ type: 'Text', text: 'Apprentice ×11' })).toBeDefined()
+})
+
+test('a run of quick presses all land, and the shop redraws once after', async ($, on) => {
+  const w = world(on, { save: seeded({ sparks: 1_000 }) })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  const first = await ui.find({ key: 'buy-apprentice' })
+  await ui.press({ key: 'buy-apprentice' })
+  await ui.press({ key: 'buy-apprentice' })
+  await ui.press({ key: 'buy-apprentice' })
+  expect(await ui.find({ key: 'buy-apprentice' })).toEqual(first)
+  await w.clock.advance(SETTLE)
+  expect(await ui.find({ type: 'Text', text: 'Apprentice ×3' })).toBeDefined()
 })
 
 test('a short purse says how much is missing', async ($, on) => {
@@ -41,7 +59,7 @@ test('a short purse says how much is missing', async ($, on) => {
 })
 
 test('an upgrade goes on sale at its unlock', async ($, on) => {
-  world(on, { save: seeded({ sparks: 500, clicks: 25 }) })
+  const w = world(on, { save: seeded({ sparks: 500, clicks: 25 }) })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
   await ui.advance(250)
@@ -49,6 +67,7 @@ test('an upgrade goes on sale at its unlock', async ($, on) => {
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '▰▰▱▱▱▱▱▱▱▱ 25/100' })).toBeDefined()
   expect(await ui.find({ in: 'shophud', type: 'Text', text: 'Clicks 25 · Tool calls 0 · Turns 0' })).toBeDefined()
   await ui.press({ key: 'up-pick-1' })
+  await w.clock.advance(SETTLE)
   await ui.advance(250)
   expect(await ui.find({ key: 'up-pick-1' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: 'Click +2 · Read +1 · Edit +4' })).toBeDefined()

@@ -76,6 +76,8 @@ export type Band = {
   isHidden: boolean
   carts: number
   goblins: number
+  /** Which pick the miner holds: 0 worn iron, up to 4 obsidian. */
+  pick: number
   /** The producers owned, in shop order: the crew the band shows on its right. */
   crew: { id: ProducerId; owned: number }[]
 }
@@ -114,6 +116,8 @@ export type TapProps = {
 export type IconId =
   | ProducerId
   | 'pick'
+  | 'pickDiamond'
+  | 'pickObsidian'
   | 'glasses'
   | 'dynamite'
   | 'terminal'

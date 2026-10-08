@@ -36,6 +36,14 @@ export const SYNC_MS = 5_000
 /** A tool call this recent keeps the miner busy, so background agents count as work. */
 export const RECENT_MS = 4_000
 export const MAX_CLICKS_PER_SECOND = 20
+/**
+ * After a purchase the shop and the band hold still this long. A redraw hands
+ * every button a new handle, so a quick second press on the old drawing was
+ * lost; held still, a run of presses all land, and the drawing catches up once.
+ */
+export const HOLD_MS = 600
+
+let heldUntil = 0
 
 export const INITIAL_VIEW: View = {
   isTurn: false,
@@ -47,7 +55,7 @@ export const INITIAL_VIEW: View = {
   amount: 1,
 }
 
-export const INITIAL_BAND: Band = { isLoaded: false, mode: 'idle', isHidden: false, carts: 0, goblins: 0, crew: [] }
+export const INITIAL_BAND: Band = { isLoaded: false, mode: 'idle', isHidden: false, carts: 0, goblins: 0, pick: 0, crew: [] }
 
 /** The latest earnings, for the scene to float up from the rock face. Lives with the module. */
 const feed: FeedItem[] = []
@@ -81,21 +89,33 @@ async function patch<T>(read: () => Promise<T>, write: (change: (value: T) => T)
 
 export const patchView = (io: Io, change: (view: View) => View): Promise<View> => patch(io.readView, io.view, change)
 
-/** Brings the band and the shop in line with the mine. Each is written only when it changed. */
-export async function refresh(io: Io, now?: number): Promise<Band> {
+/**
+ * Brings the band and the shop in line with the mine. Each is written only
+ * when it changed, and right after a purchase only the band's mode is.
+ */
+export async function refresh(io: Io, now?: number, force = false): Promise<Band> {
   const at = now ?? (await io.now())
+  const isHeld = !force && at < heldUntil
   const mine = await io.readMine()
   const view = await io.readView()
-  const band = await patch(io.readBand, io.band, current => ({
-    ...current,
-    isLoaded: mine.isLoaded,
-    mode: modeOf(view, at),
-    carts: Math.min(6, game.owned(mine.save, 'cart')),
-    goblins: Math.min(1, game.owned(mine.save, 'goblin')),
-    crew: PRODUCERS.filter(p => game.owned(mine.save, p.id) > 0).map(p => ({ id: p.id, owned: game.owned(mine.save, p.id) })),
-  }))
-  await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, mine.isLoaded))
+  const band = await patch(io.readBand, io.band, current => {
+    const mode = { ...current, isLoaded: mine.isLoaded, mode: modeOf(view, at) }
+    if (isHeld) return mode
+    return {
+      ...mode,
+      carts: Math.min(6, game.owned(mine.save, 'cart')),
+      goblins: Math.min(1, game.owned(mine.save, 'goblin')),
+      pick: game.pickTier(mine.save),
+      crew: PRODUCERS.filter(p => game.owned(mine.save, p.id) > 0).map(p => ({ id: p.id, owned: game.owned(mine.save, p.id) })),
+    }
+  })
+  if (!isHeld) await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, mine.isLoaded))
   return band
+}
+
+/** Holds the shop and the band still for a moment: see HOLD_MS. */
+async function hold(io: Io): Promise<void> {
+  heldUntil = (await io.now()) + HOLD_MS
 }
 
 let loading: Promise<void> | null = null
@@ -254,6 +274,8 @@ export async function buyProducer(io: Io, id: ProducerId): Promise<number> {
     const { save } = await io.readMine()
     const short = game.priceOf(game.producer(id), game.owned(save, id)) - save.sparks
     io.toast(`Need ${fmt(Math.max(1, short))} more ✻`)
+  } else {
+    await hold(io)
   }
   await refresh(io)
   return bought
@@ -270,6 +292,8 @@ export async function buyUpgrade(io: Io, id: string): Promise<boolean> {
     const { save } = await io.readMine()
     const u = game.upgrade(id)
     if (u !== undefined) io.toast(`Need ${fmt(Math.max(1, u.cost - save.sparks))} more ✻`)
+  } else {
+    await hold(io)
   }
   await refresh(io)
   return isBought
@@ -277,7 +301,7 @@ export async function buyUpgrade(io: Io, id: string): Promise<boolean> {
 
 export async function setAmount(io: Io, amount: number): Promise<void> {
   await patchView(io, view => (view.amount === amount ? view : { ...view, amount }))
-  await refresh(io)
+  await refresh(io, undefined, true)
 }
 
 export async function setHidden(io: Io, isHidden: boolean): Promise<void> {
@@ -312,7 +336,7 @@ export async function collapseMine(io: Io): Promise<boolean> {
   if (next === null) return false
   await io.put(SAVE_KEY, next)
   await io.mine(() => ({ save: next, pending: game.emptyDelta(next.runId), isLoaded: true }))
-  await refresh(io)
+  await refresh(io, undefined, true)
   io.toast(`The mine collapsed. You hold ${next.crystals} ◆.`)
   return true
 }
@@ -324,6 +348,6 @@ export async function resetMine(io: Io): Promise<boolean> {
   await io.put(SAVE_KEY, save)
   await io.mine(() => ({ save, pending: game.emptyDelta(save.runId), isLoaded: true }))
   await io.reward(() => null)
-  await refresh(io)
+  await refresh(io, undefined, true)
   return true
 }
