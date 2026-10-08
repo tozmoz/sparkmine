@@ -1,52 +1,37 @@
 # sparkmine
 
-A pixel-art mining clicker that lives above your Claude Code prompt.
+An idle clicker game for Claude Code, built as a
+[Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview).
 Claude works. You click.
 
-![A pixel miner swings a pickaxe at a rock wall](docs/miner.svg)
+![The band above the prompt: a pixel miner digs while Claude works](docs/band.png)
 
-While Claude works, a miner digs an endless tunnel in the band above your
-prompt. Each swing takes him deeper: fresh rock comes in from the right, and
-the timbers, lanterns and spoil heaps he leaves behind slide away. Every tool
-call Claude makes is ore. Press **Mine** to dig faster: the counter and a
-small pop answer the moment you press. Spend your sparks in the shop, and your crew
-lines up on the right of the band. When the turn ends, the band shrinks to
-one line.
+While Claude works, a pixel miner digs in the band above your prompt. Every
+tool call Claude makes mines sparks ✻, and each press of **Mine** mines more.
+Spend them in the shop on a crew that keeps digging, and on upgrades.
+
+<img src="docs/shop.png" alt="The shop: producers and upgrades with pixel icons" width="420">
 
 ## Install
 
-Sparkmine is a [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview).
-It needs Claude Code v2.1.287 or later. In a terminal session, run:
+Needs Claude Code v2.1.287 or later. In Claude Code, run:
 
 ```
 /plugin install sparkmine --marketplace tozmoz/sparkmine
 ```
 
-Answer `y` to add the marketplace, then pick a scope. Installed at the user
-scope, it also runs in the Code tab of the Claude Desktop app.
+Pick the user scope to have it in every session, including the Code tab of
+the Claude Desktop app.
 
 ## Play
 
-- **Sparks ✻** are the currency. You mine them by pressing Mine while Claude
-  works, and Claude mines them with every tool call it makes.
-- **Producers** mine every second Claude works. There are eight, from the
-  Apprentice to the Context core, and each one costs 17% more than the last.
-- **Upgrades** unlock at milestones: clicks, tool calls of a kind, producers
-  owned, turns finished. There are 63 of them. The pick upgrades change the
-  pick in the miner's hands, from worn iron to steel, diamond and obsidian.
-- **Click upgrades** keep your presses worth making: picks and gloves double
-  them, the foreman's line adds a share for every producer you own, strikes
-  add a share of your rate, and now and then a press strikes a gem worth ten.
-- **Collapse the mine** to trade a run for ◆ crystals. Each crystal adds 2% to
-  everything, for good.
-- **Spinner words** unlock as your all-time sparks grow: Mining, Tunneling,
-  Prospecting, Smelting and Excavating.
+- Press **Mine** while Claude works. Clicks count only then.
+- Open the shop with **Shop** or `/mine`. Producers mine every second Claude
+  works; upgrades make clicks, tool calls and the crew stronger.
+- **Collapse the mine** in the shop to trade a run for ◆ crystals, which add
+  2% to everything for good.
 
-The miner waits with you: while a permission prompt or a question waits on
-your answer, the band says so and the Mine button dims.
-
-It is a slow game on purpose. A busy day of work buys a handful of producers,
-and the last of them takes weeks.
+All your sessions share one save, so they mine into the same mine.
 
 | Command | What it does |
 | :- | :- |
@@ -54,41 +39,14 @@ and the last of them takes weeks.
 | `/mine hide`, `/mine show` | Hides the band, and brings it back |
 | `/mine reset` | Deletes your save, after asking |
 
-`Ctrl+X Ctrl+A` collapses the band, as it does for every mod.
-
-## Where it draws
-
-- **Desktop app:** the scene is an SVG that animates itself with CSS. The
-  counter and the Mine button are a Client of a fixed size: a press shows on
-  the counter at once, before the hooks hear of it, and the scene is never
-  redrawn.
-- **Terminal:** the same pixels become a Raster of half-block cells, repainted
-  by a timer. The scene needs about 120 columns; a narrower terminal gets the
-  text and buttons alone.
+To stop it entirely, disable or uninstall it from `/plugin`. Your save stays
+until you reset it.
 
 ## What it touches
 
-A mod runs inside Claude Code with your permissions, so here is all of it:
-
-- It watches tool calls, permission checks, turns and sessions, and changes
-  none of them. It only counts them.
-- It draws the band above the prompt, a shop pane, and the spinner's word.
-- It never calls a model, the network or a process.
-- It keeps one save in its own store, which every session on the machine
-  shares, so two sessions mine into one mine.
-
-`claude plugin validate` prints the same list from the source.
-
-## Develop
-
-```bash
-claude --plugin-dir ./sparkmine
-claude plugin validate ./sparkmine
-claude plugin test ./sparkmine
-```
-
-The economy is plain functions in `hooks/game.ts`, priced in `hooks/data.ts`.
-The pixel art is `hooks/scene.ts`, and the hooks are `hooks/register.tsx`.
+It counts tool calls, turns and permission prompts, and changes none of them.
+It never calls a model, the network or a process, so it costs no tokens. It
+keeps one small save on your machine.
 
 ## License
 
