@@ -109,6 +109,8 @@ export type FeedItem = { id: number; text: string }
 export type TapProps = {
   mode: Mode
   click: number
+  /** Rows to fill: the desktop sizes a Client by what it draws, so the layer draws this tall. */
+  rows: number
   /** The latest earnings, newest last: the layer pops the ones it has not shown. */
   feed: FeedItem[]
 }

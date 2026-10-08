@@ -76,7 +76,7 @@ const Tap: ClientModule<TapProps, State> = (props, surface) => {
     const fresh = props.feed.filter(item => item.id > (s?.seenFeed ?? 0))
     if (fresh.length > 0) {
       const faceX = Math.max(0, Math.round(surface.columns * 0.7))
-      const faceY = Math.max(0, Math.round(surface.rows * 0.5))
+      const faceY = Math.max(0, Math.round(Math.max(surface.rows, props.rows) * 0.5))
       const pops = fresh.map((item, i) => ({
         id: `f${item.id}`,
         x: Math.max(0, faceX - (item.id % 3) * 2),
@@ -101,7 +101,8 @@ const Tap: ClientModule<TapProps, State> = (props, surface) => {
   if (s.isHover && s.pops.length === 0 && props.mode === 'work') {
     children.push(Box({ position: 'absolute', bottom: 0, left: 1, children: [Text({ color: CLICK_COLOR, children: ['⛏ click to mine'] })] }))
   }
-  return Box({ width: '100%', height: '100%', children })
+  // As tall as the scene: the desktop lays a Client out at the size of what it draws.
+  return Box({ width: '100%', height: Math.max(1, props.rows), children })
 }
 
 export default Tap

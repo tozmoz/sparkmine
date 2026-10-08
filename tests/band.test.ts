@@ -100,11 +100,12 @@ test('clicks never redraw the scene', async ($, on) => {
   expect(await ui.find({ type: 'Svg' })).toEqual(scene)
 })
 
-test('the tap layer says how big it was laid out', async ($, on) => {
+test('the tap layer draws itself as tall as the scene, and says how big it was laid out', async ($, on) => {
   const w = world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
+  expect((await ui.find({ in: 'tap', type: 'Box' }))?.props.height).toBe(4)
   await ui.resize({ columns: 24, rows: 4, in: 'tap' })
   await ui.advance(TAP_POLL)
   expect(w.store.get('tap-report')).toMatchObject({ surface: 'desktop', columns: 24, rows: 4, pointer: 0 })

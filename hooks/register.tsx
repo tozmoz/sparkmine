@@ -220,7 +220,7 @@ export const register: Register = on => {
     const band = await read($, BAND)
     const props = hudProps(mine.save, view, band.mode, e.element === 'shophud' ? 'shop' : 'band')
     if (e.element === 'tap') {
-      const tap: TapProps = { mode: band.mode, click: props.click, feed: recentFeed() }
+      const tap: TapProps = { mode: band.mode, click: props.click, rows: TAP_ROWS, feed: recentFeed() }
       return { props: tap }
     }
     if (e.element === 'hud') lastHud = props
@@ -234,7 +234,7 @@ export const register: Register = on => {
       return next(e)
     }
     const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode }
-    const tapProps: TapProps = { mode: band.mode, click: lastHud.click, feed: recentFeed() }
+    const tapProps: TapProps = { mode: band.mode, click: lastHud.click, rows: TAP_ROWS, feed: recentFeed() }
     const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick }
     const hudSize = band.mode === 'idle' ? HUD_IDLE : HUD_WORK
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
