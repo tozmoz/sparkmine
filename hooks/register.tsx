@@ -26,8 +26,8 @@ const PANE = 'sparkmine'
 /** CSS pixels per scene pixel: the band's scene, and the smaller one atop the shop. */
 const SCALE = 3
 const HEADER_SCALE = 2
-/** Columns the HUD and the buttons need beside the terminal scene. */
-const HUD_COLUMNS = 44
+/** Columns the HUD, with its Mine button, and the Shop button need beside the terminal scene. */
+const HUD_COLUMNS = 54
 /**
  * The HUD's fixed height in rows. Its width follows its text: a desktop draws
  * a width in cells much wider than the text.
@@ -66,11 +66,38 @@ function cellsFor(spec: SceneSpec, ms: number): { key: string; cells: string } {
   return { key, cells: hit }
 }
 
+/** The most presses one post is counted for, should a HUD send something odd. */
+const MAX_PRESSES_PER_POST = state.MAX_CLICKS_PER_SECOND
+/** HUD instances whose press totals are remembered: a band remounts now and then. */
+const MAX_HUDS = 16
+
 export const register: Register = on => {
   let io: Io | null = null
   let isRunning = false
-  /** The last numbers the HUD was handed, so a redraw of the band starts from them. */
+  /** The last numbers a HUD was handed, so a redraw of the band or the shop starts from them. */
   let lastHud: HudProps = EMPTY_HUD
+  /** The presses the band's HUD was last told were counted: the shop's HUD has none. */
+  let lastAcked = 0
+  /** Presses each band HUD has posted so far, by instance. */
+  const totals = new Map<string, number>()
+
+  /**
+   * Counts the presses a band HUD reports. Each post carries its running
+   * total, so presses whose posts merged in one frame all count. An instance
+   * heard for the first time (a new HUD, or this module reloaded under a
+   * running one) is counted from there on. Answers how many are counted.
+   */
+  const countPresses = async (engine: Io, data: unknown): Promise<number> => {
+    if (data === null || typeof data !== 'object') return 0
+    const { instance, total } = data as { instance?: unknown; total?: unknown }
+    if (typeof instance !== 'string' || typeof total !== 'number' || !Number.isFinite(total)) return 0
+    const seen = totals.get(instance)
+    totals.delete(instance)
+    totals.set(instance, Math.max(total, seen ?? 0))
+    if (totals.size > MAX_HUDS) totals.delete(totals.keys().next().value ?? instance)
+    if (seen !== undefined && total > seen) await state.clicks(engine, Math.min(total - seen, MAX_PRESSES_PER_POST))
+    return total
+  }
   /** The terminal's scene, which a timer repaints moment by moment. */
   let live: { requestId: string; spec: SceneSpec; shown: string } | null = null
   let animation: Timer | null = null
@@ -179,14 +206,23 @@ export const register: Register = on => {
     return verdict
   }).catch(($, e, next) => next(e))
 
-  // The HUD Clients ask for fresh numbers a few times a second.
+  // The HUD Clients ask for fresh numbers ten times a second, and the band's
+  // reports the presses of its Mine button.
   on('ui.message', { element: ['hud', 'shophud'] }, async ($, e) => {
+    const isBand = e.element === 'hud'
+    const acked = isBand && io !== null ? await countPresses(io, e.data) : 0
     const mine = await read($, MINE)
     const view = await read($, VIEW)
     const band = await read($, BAND)
-    const size = e.element === 'shophud' ? HUD_SHOP : band.mode === 'idle' ? HUD_IDLE : HUD_WORK
-    const props: HudProps = { ...hudProps(mine.save, view, band.mode, e.element === 'shophud' ? 'shop' : 'band'), ...size }
-    if (e.element === 'hud') lastHud = props
+    const size = isBand ? (band.mode === 'idle' ? HUD_IDLE : HUD_WORK) : HUD_SHOP
+    const props: HudProps = {
+      ...hudProps(mine.save, view, band.mode, isBand ? 'band' : 'shop'),
+      ...size,
+      surface: e.surface === 'terminal' || e.surface === 'desktop' ? e.surface : 'other',
+      acked,
+    }
+    lastHud = props
+    if (isBand) lastAcked = acked
     return { props }
   })
 
@@ -197,10 +233,11 @@ export const register: Register = on => {
       return next(e)
     }
     const hudSize = band.mode === 'idle' ? HUD_IDLE : HUD_WORK
-    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, ...hudSize }
+    const surface = e.surface === 'terminal' || e.surface === 'desktop' ? e.surface : 'other'
+    // The Mine button is the HUD's own, so a press answers without a round trip.
+    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, ...hudSize }
     const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick }
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
-    const mine = () => (io === null ? 0 : state.click(io))
     let ours: RenderElement
 
     if (e.surface === 'desktop') {
@@ -239,10 +276,7 @@ export const register: Register = on => {
               isInteractive
             />
             {hud}
-            <Box flexDirection="column" rowGap={1} flexShrink={0}>
-              {band.mode === 'work' ? <Button key="mine" label="⛏ Mine" onPress={mine} /> : null}
-              {shop}
-            </Box>
+            <Box flexShrink={0}>{shop}</Box>
             {crew === null ? null : (
               <Box flexShrink={1} overflow="hidden" marginLeft={2}>
                 {crew}
@@ -255,22 +289,13 @@ export const register: Register = on => {
       const { Box, Button, Client, Raster } = $.ui.resolve(e)
       const hud = <Client key="hud" module="./hud.ts" props={props} height={hudSize.height} />
       const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
-      const buttons =
-        band.mode === 'work' ? (
-          <Box flexDirection="column">
-            <Button key="mine" label="Mine" hotkey="m" onPress={mine} />
-            {shop}
-          </Box>
-        ) : (
-          shop
-        )
       const hasRoom = e.props.bodyColumns >= W + HUD_COLUMNS && e.props.maxRows >= ROWS + 2
       if (band.mode === 'idle' || !hasRoom) {
         live = null
         ours = (
           <Box flexDirection="row" columnGap={2}>
             {hud}
-            {buttons}
+            {shop}
           </Box>
         )
       } else {
@@ -280,7 +305,7 @@ export const register: Register = on => {
           <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d">
             <Raster key="scene" columns={W} rows={ROWS} cells={frame.cells} />
             {hud}
-            {buttons}
+            {shop}
           </Box>
         )
       }
@@ -310,7 +335,7 @@ export const register: Register = on => {
       amount: n => (io === null ? undefined : state.setAmount(io, n)),
       collapse: () => (io === null ? false : state.collapseMine(io)),
     }
-    const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, ...HUD_SHOP }
+    const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, acked: 0, ...HUD_SHOP }
     if (e.surface === 'desktop') {
       const { Client, Svg } = $.ui.resolve(e)
       const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins, pick: band.pick }

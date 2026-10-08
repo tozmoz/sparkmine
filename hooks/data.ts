@@ -51,6 +51,12 @@ export type Effect =
   | { kind: 'click'; mult: number }
   /** Each click also mines this percent of the per-second rate. */
   | { kind: 'clickRate'; pct: number }
+  /** Each click also mines this many sparks for every producer owned. */
+  | { kind: 'clickCrew'; per: number }
+  /** Adds this chance that a click strikes a gem. */
+  | { kind: 'gem'; chance: number }
+  /** Gems are worth this many times more. */
+  | { kind: 'gemWorth'; mult: number }
   | { kind: 'producer'; id: ProducerId; mult: number }
   | { kind: 'tool'; tool: ToolKind; mult: number }
   /** Each tool call also mines this many seconds of the rate. */
@@ -69,6 +75,9 @@ export type Unlock =
   | { kind: 'owned'; id: ProducerId; n: number }
   | { kind: 'crew'; n: number }
   | { kind: 'earned'; n: number }
+
+/** What a gem is worth, in clicks, before any upgrade. */
+export const GEM_WORTH = 10
 
 export type Upgrade = {
   id: string
@@ -111,10 +120,24 @@ const producerUpgrades: Upgrade[] = PRODUCERS.flatMap(p =>
 const otherUpgrades: Upgrade[] = [
   { id: 'pick-1', name: 'Sharpened pick', blurb: 'Clicks mine twice as much.', cost: 100, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 25 } },
   { id: 'pick-2', name: 'Steel pick', blurb: 'Clicks mine twice as much.', cost: 500, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 100 } },
+  { id: 'grip-1', name: 'Work gloves', blurb: 'Clicks mine twice as much.', cost: 3_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 250 } },
   { id: 'pick-3', name: 'Diamond pick', blurb: 'Clicks mine twice as much.', cost: 10_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 500 } },
   { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 1% of your rate.', cost: 50_000, effect: { kind: 'clickRate', pct: 1 }, unlock: { kind: 'clicks', n: 1_000 } },
   { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 2% of your rate.', cost: 5_000_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 3_000 } },
   { id: 'pick-6', name: 'Obsidian edge', blurb: 'Clicks mine twice as much.', cost: 500_000_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 10_000 } },
+  { id: 'strike-1', name: 'Seismic tap', blurb: 'Each click mines another 3% of your rate.', cost: 50_000_000, effect: { kind: 'clickRate', pct: 3 }, unlock: { kind: 'clicks', n: 6_000 } },
+  { id: 'strike-2', name: 'Fault line', blurb: 'Each click mines another 5% of your rate.', cost: 10_000_000_000, effect: { kind: 'clickRate', pct: 5 }, unlock: { kind: 'clicks', n: 15_000 } },
+
+  // The crew cheers you on: clicks grow with every producer owned.
+  { id: 'foreman-1', name: "Foreman's whistle", blurb: 'Each click also mines 0.2 for every producer you own.', cost: 10_000, effect: { kind: 'clickCrew', per: 0.2 }, unlock: { kind: 'crew', n: 25 } },
+  { id: 'foreman-2', name: 'Work song', blurb: 'Each click mines another 1 per producer.', cost: 500_000, effect: { kind: 'clickCrew', per: 1 }, unlock: { kind: 'crew', n: 80 } },
+  { id: 'foreman-3', name: 'Drill sergeant', blurb: 'Each click mines another 5 per producer.', cost: 50_000_000, effect: { kind: 'clickCrew', per: 5 }, unlock: { kind: 'crew', n: 160 } },
+  { id: 'foreman-4', name: 'Hive mind', blurb: 'Each click mines another 30 per producer.', cost: 10_000_000_000, effect: { kind: 'clickCrew', per: 30 }, unlock: { kind: 'crew', n: 300 } },
+
+  // Now and then a click strikes a gem, worth many clicks at once.
+  { id: 'gem-1', name: "Prospector's luck", blurb: `1 click in 25 strikes a gem worth ${GEM_WORTH} clicks.`, cost: 25_000, effect: { kind: 'gem', chance: 0.04 }, unlock: { kind: 'clicks', n: 1_500 } },
+  { id: 'gem-2', name: "Jeweler's loupe", blurb: 'Gems are worth twice as much.', cost: 5_000_000, effect: { kind: 'gemWorth', mult: 2 }, unlock: { kind: 'clicks', n: 4_000 } },
+  { id: 'gem-3', name: 'Geode sense', blurb: 'Gems turn up twice as often.', cost: 1_000_000_000, effect: { kind: 'gem', chance: 0.04 }, unlock: { kind: 'clicks', n: 8_000 } },
 
   { id: 'tool-read', name: 'Reading glasses', blurb: 'Read, Grep and Glob calls mine 3x.', cost: 300, effect: { kind: 'tool', tool: 'read', mult: 3 }, unlock: { kind: 'mined', tool: 'read', n: 50 } },
   { id: 'tool-bash', name: 'Blasting caps', blurb: 'Bash calls mine 3x.', cost: 1_500, effect: { kind: 'tool', tool: 'bash', mult: 3 }, unlock: { kind: 'mined', tool: 'bash', n: 25 } },

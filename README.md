@@ -8,8 +8,8 @@ Claude works. You click.
 While Claude works, a miner digs an endless tunnel in the band above your
 prompt. Each swing takes him deeper: fresh rock comes in from the right, and
 the timbers, lanterns and spoil heaps he leaves behind slide away. Every tool
-call Claude makes is ore. Press **Mine** to dig faster: each press pops what
-it earned beside the counter. Spend your sparks in the shop, and your crew
+call Claude makes is ore. Press **Mine** to dig faster: the counter and a
+small pop answer the moment you press. Spend your sparks in the shop, and your crew
 lines up on the right of the band. When the turn ends, the band shrinks to
 one line.
 
@@ -32,15 +32,18 @@ scope, it also runs in the Code tab of the Claude Desktop app.
 - **Producers** mine every second Claude works. There are eight, from the
   Apprentice to the Context core, and each one costs 17% more than the last.
 - **Upgrades** unlock at milestones: clicks, tool calls of a kind, producers
-  owned, turns finished. There are 53 of them. The pick upgrades change the
+  owned, turns finished. There are 63 of them. The pick upgrades change the
   pick in the miner's hands, from worn iron to steel, diamond and obsidian.
+- **Click upgrades** keep your presses worth making: picks and gloves double
+  them, the foreman's line adds a share for every producer you own, strikes
+  add a share of your rate, and now and then a press strikes a gem worth ten.
 - **Collapse the mine** to trade a run for ◆ crystals. Each crystal adds 2% to
   everything, for good.
 - **Spinner words** unlock as your all-time sparks grow: Mining, Tunneling,
   Prospecting, Smelting and Excavating.
 
 The miner waits with you: while a permission prompt or a question waits on
-your answer, the band says so and the Mine button steps aside.
+your answer, the band says so and the Mine button dims.
 
 It is a slow game on purpose. A busy day of work buys a handful of producers,
 and the last of them takes weeks.
@@ -56,10 +59,11 @@ and the last of them takes weeks.
 ## Where it draws
 
 - **Desktop app:** the scene is an SVG that animates itself with CSS. The
-  counter is a Client of a fixed size, so a press updates the numbers without
-  redrawing the scene.
+  counter and the Mine button are a Client of a fixed size: a press shows on
+  the counter at once, before the hooks hear of it, and the scene is never
+  redrawn.
 - **Terminal:** the same pixels become a Raster of half-block cells, repainted
-  by a timer. The scene needs about 94 columns; a narrower terminal gets the
+  by a timer. The scene needs about 120 columns; a narrower terminal gets the
   text and buttons alone.
 
 ## What it touches

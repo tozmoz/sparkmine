@@ -31,15 +31,16 @@ export type Io = {
 }
 
 export const SAVE_KEY = 'save'
-export const TICK_MS = 250
+export const TICK_MS = 100
 export const SYNC_MS = 5_000
 /** A tool call this recent keeps the miner busy, so background agents count as work. */
 export const RECENT_MS = 4_000
 export const MAX_CLICKS_PER_SECOND = 20
 /**
- * After a purchase the shop and the band hold still this long. A redraw hands
- * every button a new handle, so a quick second press on the old drawing was
- * lost; held still, a run of presses all land, and the drawing catches up once.
+ * A purchase redraws the shop at once, right after the press, when the next
+ * press is furthest away. Then the band and the shop's other changes wait
+ * this long after the last purchase: a redraw hands every button a new handle,
+ * and a redraw landing mid-run would lose the press that crossed it.
  */
 export const HOLD_MS = 600
 
@@ -53,6 +54,7 @@ export const INITIAL_VIEW: View = {
   turnStart: 0,
   lastTurn: 0,
   amount: 1,
+  gem: null,
 }
 
 export const INITIAL_BAND: Band = { isLoaded: false, mode: 'idle', isHidden: false, carts: 0, goblins: 0, pick: 0, crew: [] }
@@ -100,9 +102,12 @@ export async function refresh(io: Io, now?: number, force = false): Promise<Band
   return band
 }
 
-/** Holds the shop and the band still for a moment: see HOLD_MS. */
-async function hold(io: Io): Promise<void> {
+/** Shows a purchase in the shop now, and holds everything else still: see HOLD_MS. */
+async function showPurchase(io: Io): Promise<void> {
   heldUntil = (await io.now()) + HOLD_MS
+  const mine = await io.readMine()
+  const view = await io.readView()
+  await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, mine.isLoaded))
 }
 
 let loading: Promise<void> | null = null
@@ -171,24 +176,41 @@ export async function tick(io: Io): Promise<void> {
   if (amount > 0) await io.mine(m => game.earn(m, amount, { kind: 'crew' }))
 }
 
-let clicks: number[] = []
+let pressed: number[] = []
 
-/** A press of the Mine button. Counts only while Claude works. */
-export async function click(io: Io): Promise<number> {
+/**
+ * Presses of the Mine button, counted while Claude works and at most
+ * MAX_CLICKS_PER_SECOND. Each may strike a gem; the view keeps the latest,
+ * so the HUD can pop it.
+ */
+export async function clicks(io: Io, n: number): Promise<{ counted: number; gems: number }> {
   const now = await io.now()
-  clicks = clicks.filter(at => now - at < 1000)
-  if (clicks.length >= MAX_CLICKS_PER_SECOND) return 0
+  pressed = pressed.filter(at => now - at < 1000)
   const band = await io.readBand()
   const mine = await io.readMine()
-  if (!mine.isLoaded || band.mode !== 'work') return 0
-  clicks.push(now)
-  let value = 0
+  const counted = Math.max(0, Math.min(Math.floor(n), MAX_CLICKS_PER_SECOND - pressed.length))
+  if (!mine.isLoaded || band.mode !== 'work' || counted === 0) return { counted: 0, gems: 0 }
+  for (let i = 0; i < counted; i += 1) pressed.push(now)
+  let gems = 0
+  let bonus = 0
   await io.mine(m => {
-    value = game.clickValue(m.save)
-    return game.earn(m, value, { kind: 'click' })
+    gems = 0
+    bonus = 0
+    const mult = game.multipliers(m.save)
+    let next = m
+    for (let i = 0; i < counted; i += 1) {
+      const hit = game.strike(next.save, mult)
+      if (hit.isGem) {
+        gems += 1
+        bonus += hit.value - game.clickValue(next.save, mult)
+      }
+      next = game.earn(next, hit.value, { kind: 'click' })
+    }
+    return next
   })
+  if (gems > 0) await io.view(view => ({ ...view, gem: { seq: (view.gem?.seq ?? 0) + gems, bonus } }))
   await refresh(io, now)
-  return value
+  return { counted, gems }
 }
 
 /** A tool call Claude finished: the miner mines it. */
@@ -260,7 +282,7 @@ export async function buyProducer(io: Io, id: ProducerId): Promise<number> {
     const short = game.priceOf(game.producer(id), game.owned(save, id)) - save.sparks
     io.toast(`Need ${fmt(Math.max(1, short))} more ✻`)
   } else {
-    await hold(io)
+    await showPurchase(io)
   }
   await refresh(io)
   return bought
@@ -278,7 +300,7 @@ export async function buyUpgrade(io: Io, id: string): Promise<boolean> {
     const u = game.upgrade(id)
     if (u !== undefined) io.toast(`Need ${fmt(Math.max(1, u.cost - save.sparks))} more ✻`)
   } else {
-    await hold(io)
+    await showPurchase(io)
   }
   await refresh(io)
   return isBought

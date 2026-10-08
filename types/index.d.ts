@@ -67,6 +67,8 @@ export type View = {
   lastTurn: number
   /** How many producers one press of a buy button buys. */
   amount: number
+  /** Gems struck so far this session, and what the latest ones added beyond their clicks. */
+  gem: { seq: number; bonus: number } | null
 }
 
 /** What the band's drawing depends on. It changes rarely, so the scene is not redrawn on every click. */
@@ -86,12 +88,21 @@ export type Band = {
 export type HudProps = {
   variant: 'band' | 'shop'
   mode: Mode
+  /** Where it draws: the terminal's Mine button takes a hotkey, the desktop's a pick. */
+  surface: 'terminal' | 'desktop' | 'other'
   sparks: number
   rate: number
-  /** What one click mines now. */
+  /** What one click mines now, gems aside. */
   click: number
-  /** Clicks counted so far: when it grows, the HUD shakes and pops what they earned. */
+  /** Clicks counted in the save, for the shop's stats. */
   clicks: number
+  /**
+   * Presses of this HUD's Mine button the hooks have counted. The HUD shows
+   * the ones still on their way at once, so a press never waits for a poll.
+   */
+  acked: number
+  /** The latest gems struck: the HUD pops them when `seq` grows. */
+  gem: { seq: number; bonus: number } | null
   idle: number
   turn: number
   lastTurn: number
@@ -122,6 +133,10 @@ export type IconId =
   | 'lantern'
   | 'crystal'
   | 'locked'
+  | 'glove'
+  | 'whistle'
+  | 'bolt'
+  | 'gem'
 
 export type ShopItem = {
   id: string

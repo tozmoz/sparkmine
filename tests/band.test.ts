@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import * as game from '../hooks/game.ts'
 import { band, command, finishTurn, pane, seeded, start, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
@@ -14,7 +15,7 @@ test('the band keeps one line while Claude is idle', async ($, on) => {
     expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 0' })).toBeDefined()
     expect(await ui.find({ in: 'hud', type: 'Text', text: '· mines while Claude works' })).toBeDefined()
     expect(await ui.find({ key: 'shop' })).toBeDefined()
-    expect(await ui.find({ key: 'mine' })).toBeUndefined()
+    expect(await ui.find({ in: 'hud', key: 'mine' })).toBeUndefined()
     await ui.unmount()
   }
 })
@@ -25,7 +26,7 @@ test('while Claude works, the Mine button and tool calls mine', async ($, on) =>
   await $.turn.start({ text: 'fix the bug', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   expect(await ui.find({ type: 'Svg' })).toBeDefined()
-  expect((await ui.find({ key: 'mine' }))?.props).toMatchObject({ label: '⛏ Mine' })
+  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ label: '⛏ Mine' })
   await ui.press({ key: 'mine' })
   await ui.press({ key: 'mine' })
   await ui.advance(POLL)
@@ -38,21 +39,61 @@ test('while Claude works, the Mine button and tool calls mine', async ($, on) =>
   await ui.redraw()
   await ui.advance(POLL)
   expect(await ui.find({ type: 'Svg' })).toBeUndefined()
-  expect(await ui.find({ key: 'mine' })).toBeUndefined()
+  expect(await ui.find({ in: 'hud', key: 'mine' })).toBeUndefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: '· last turn +3' })).toBeDefined()
 })
 
-test('a press pops what it earned beside the counter, then it fades', async ($, on) => {
+test('a press shows on the counter and pops at once, before the hooks answer', async ($, on) => {
   world(on, { save: seeded({ upgrades: ['pick-1', 'pick-2'], clicks: 100 }) })
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
   await ui.press({ key: 'mine' })
-  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 4' })).toBeDefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeDefined()
+  // A run of presses adds up in one pop.
+  await ui.press({ key: 'mine' })
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+8$/ })).toBeDefined()
+  // The hooks count each press once, and the counter agrees.
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 8' })).toBeDefined()
   await ui.advance(1_000)
-  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+4$/ })).toBeUndefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /^\+\d/ })).toBeUndefined()
+})
+
+test('the pointer mines at once, and the button press after it is not counted twice', async ($, on) => {
+  world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  await ui.pointer({ type: 'down', x: 2, y: 1, button: 'left', in: 'hud' })
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
+  await ui.pointer({ type: 'up', x: 2, y: 1, button: 'left', in: 'hud' })
+  await ui.press({ key: 'mine' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
+  // A press with no pointer before it, from the keyboard, counts.
+  await ui.press({ key: 'mine' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 2' })).toBeDefined()
+})
+
+test('a click that strikes a gem pops it in green', async ($, on) => {
+  // The first click count from 2,000 on whose roll strikes a gem, for the kit's run.
+  let clicks = 2_000
+  while (game.clickRoll(seeded({ clicks })) >= 0.04) clicks += 1
+  world(on, { save: seeded({ clicks, upgrades: ['pick-1', 'pick-2', 'gem-1'] }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  await ui.press({ key: 'mine' })
+  await ui.advance(POLL)
+  const pop = await ui.find({ in: 'hud', type: 'Text', text: '◆ +40' })
+  expect(pop?.props).toMatchObject({ color: '#5dcaa5' })
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 40' })).toBeDefined()
 })
 
 test('the HUD keeps one size while the pop fades, and the scene is never redrawn', async ($, on) => {
@@ -64,16 +105,23 @@ test('the HUD keeps one size while the pop fades, and the scene is never redrawn
   await ui.press({ key: 'mine' })
   await ui.press({ key: 'mine' })
   await ui.advance(150)
-  // What lays out in the flow (not the pop, which is placed absolutely) stays put frame after frame.
-  const flow = async () => {
-    const root = await ui.find({ in: 'hud', type: 'Box' })
-    return JSON.stringify({ props: root?.props, rows: root?.children.filter(child => JSON.stringify(child).includes('"position":"absolute"') === false) })
+  // The boxes and their sizes stay put frame after frame, the pop's slot
+  // whether or not a pop is in it; only the words and their colors change.
+  type Node = { type?: string; props?: Record<string, unknown>; children?: unknown[] }
+  const shape = (node: unknown): unknown => {
+    if (node === null || typeof node !== 'object') return 'text'
+    const { type, props = {}, children = [] } = node as Node
+    if (type === 'Text') return 'text'
+    const { key, width, height, flexDirection, label } = props
+    return { type, width, height, flexDirection, label, children: key === 'pop' ? [] : children.map(shape) }
   }
-  const first = await flow()
+  const layout = async () => JSON.stringify(shape(await ui.find({ in: 'hud', type: 'Box' })))
+  const first = await layout()
   expect(first).toContain('"height":3')
+  expect(first).toContain('"width":10')
   for (let frame = 0; frame < 12; frame += 1) {
     await ui.advance(60)
-    expect(await flow()).toBe(first)
+    expect(await layout()).toBe(first)
   }
   expect(await ui.find({ type: 'Svg' })).toEqual(scene)
 })
@@ -86,8 +134,8 @@ test('the crew and the next goal fill the rest of the band', async ($, on) => {
   await ui.advance(POLL)
   expect(await ui.find({ type: 'Text', text: '×17' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '×6' })).toBeDefined()
-  expect(await ui.find({ in: 'hud', type: 'Text', text: 'Next: Union contract' })).toBeDefined()
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '▰▰▰▰▰▰▱▱▱▱' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: "Next: Foreman's whistle" })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '▰▰▰▰▰▰▰▰▰▱' })).toBeDefined()
 })
 
 test('buying the Diamond pick puts it in the miner\'s hands', async ($, on) => {
@@ -116,7 +164,7 @@ test('the terminal draws the scene when it has room, and the HUD alone when not'
   await wide.unmount()
   const narrow = await $.ui.mount(band('terminal', { bodyColumns: 80 }))
   expect(await narrow.find({ type: 'Raster' })).toBeUndefined()
-  expect(await narrow.find({ key: 'mine' })).toBeDefined()
+  expect((await narrow.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ label: 'Mine', hotkey: 'm' })
 })
 
 test('a permission prompt pauses the miner until the turn moves on', async ($, on) => {
@@ -128,7 +176,11 @@ test('a permission prompt pauses the miner until the turn moves on', async ($, o
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeDefined()
-  expect(await ui.find({ key: 'mine' })).toBeUndefined()
+  // The button stays, dimmed, so nothing moves; a press does nothing until Claude works again.
+  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ dimColor: true })
+  await ui.press({ key: 'mine' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 0' })).toBeDefined()
   await finishTurn($, 't1')
   await ui.redraw()
   await ui.advance(POLL)
