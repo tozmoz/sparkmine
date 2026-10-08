@@ -1,10 +1,12 @@
 // The session's state and everything that changes it. The economy's rules
-// live in game.ts; this file holds the atoms, the store sync and the actions
-// the hooks and buttons call.
+// live in game.ts and what the drawings show in model.ts; this file holds the
+// store sync and the actions the hooks and buttons call.
 
-import type { Mine, Mode, ProducerId, Save, View } from '../types'
+import type { Band, Mine, Mode, ProducerId, Save, ShopModel, View } from '../types'
+import { PRODUCERS } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
+import * as model from './model.ts'
 
 /**
  * What the actions need from the engine. The hooks module builds it from `$`
@@ -18,9 +20,13 @@ export type Io = {
   ask: (question: string, options: readonly string[]) => Promise<string>
   mine: (change: (mine: Mine) => Mine) => Promise<Mine>
   view: (change: (view: View) => View) => Promise<View>
+  band: (change: (band: Band) => Band) => Promise<Band>
+  shop: (change: (shop: ShopModel) => ShopModel) => Promise<ShopModel>
   reward: (change: (word: string | null) => string | null) => Promise<string | null>
   readMine: () => Promise<Mine>
   readView: () => Promise<View>
+  readBand: () => Promise<Band>
+  readShop: () => Promise<ShopModel>
   readReward: () => Promise<string | null>
 }
 
@@ -30,19 +36,26 @@ export const SYNC_MS = 5_000
 /** A tool call this recent keeps the miner busy, so background agents count as work. */
 export const RECENT_MS = 4_000
 export const MAX_CLICKS_PER_SECOND = 20
+/**
+ * After a purchase the shop and the band hold still this long. A redraw hands
+ * every button a new handle, so a quick second press on the old drawing was
+ * lost; held still, a run of presses all land, and the drawing catches up once.
+ */
+export const HOLD_MS = 600
+
+let heldUntil = 0
 
 export const INITIAL_VIEW: View = {
-  mode: 'idle',
   isTurn: false,
   lastToolAt: 0,
   waiting: [],
   last: null,
   turnStart: 0,
   lastTurn: 0,
-  isHidden: false,
   amount: 1,
 }
 
+export const INITIAL_BAND: Band = { isLoaded: false, mode: 'idle', isHidden: false, carts: 0, goblins: 0, pick: 0, crew: [] }
 
 export const newRunId = (): string =>
   `${Date.now().toString(36)}-${Math.floor(Math.random() * 36 ** 6).toString(36)}`
@@ -53,20 +66,43 @@ export function modeOf(view: View, now: number): Mode {
   return 'idle'
 }
 
-/** Writes the view only when it changed, so idle ticks redraw nothing. */
-export async function patchView(io: Io, change: (view: View) => View): Promise<View> {
-  const before = await io.readView()
+/** Writes a value only when it changed, so nothing that reads it redraws for nothing. */
+async function patch<T>(read: () => Promise<T>, write: (change: (value: T) => T) => Promise<T>, change: (value: T) => T): Promise<T> {
+  const before = await read()
   const after = change(before)
   if (JSON.stringify(after) === JSON.stringify(before)) return before
-  return io.view(change)
+  return write(change)
 }
 
-export async function refreshMode(io: Io, now?: number): Promise<View> {
+export const patchView = (io: Io, change: (view: View) => View): Promise<View> => patch(io.readView, io.view, change)
+
+/**
+ * Brings the band and the shop in line with the mine. Each is written only
+ * when it changed, and right after a purchase only the band's mode is.
+ */
+export async function refresh(io: Io, now?: number, force = false): Promise<Band> {
   const at = now ?? (await io.now())
-  return patchView(io, view => {
-    const mode = modeOf(view, at)
-    return mode === view.mode ? view : { ...view, mode }
+  const isHeld = !force && at < heldUntil
+  const mine = await io.readMine()
+  const view = await io.readView()
+  const band = await patch(io.readBand, io.band, current => {
+    const mode = { ...current, isLoaded: mine.isLoaded, mode: modeOf(view, at) }
+    if (isHeld) return mode
+    return {
+      ...mode,
+      carts: Math.min(6, game.owned(mine.save, 'cart')),
+      goblins: Math.min(1, game.owned(mine.save, 'goblin')),
+      pick: game.pickTier(mine.save),
+      crew: PRODUCERS.filter(p => game.owned(mine.save, p.id) > 0).map(p => ({ id: p.id, owned: game.owned(mine.save, p.id) })),
+    }
   })
+  if (!isHeld) await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, mine.isLoaded))
+  return band
+}
+
+/** Holds the shop and the band still for a moment: see HOLD_MS. */
+async function hold(io: Io): Promise<void> {
+  heldUntil = (await io.now()) + HOLD_MS
 }
 
 let loading: Promise<void> | null = null
@@ -77,11 +113,10 @@ export async function ensureLoaded(io: Io): Promise<void> {
   loading ??= (async () => {
     const stored = game.normalize(await io.get(SAVE_KEY))
     const save = stored ?? game.fresh(newRunId())
-    await io.mine(mine =>
-      mine.isLoaded ? mine : { save, pending: game.emptyDelta(save.runId), isLoaded: true },
-    )
+    await io.mine(mine => (mine.isLoaded ? mine : { save, pending: game.emptyDelta(save.runId), isLoaded: true }))
     if (stored === null) await io.put(SAVE_KEY, save)
     await refreshReward(io, false)
+    await refresh(io)
   })().finally(() => {
     loading = null
   })
@@ -104,6 +139,7 @@ export async function sync(io: Io): Promise<void> {
     })
     if (merged !== null && (changed || stored === null)) await io.put(SAVE_KEY, merged)
     await refreshReward(io, true)
+    await refresh(io)
   })().finally(() => {
     syncing = null
   })
@@ -129,8 +165,8 @@ export async function tick(io: Io): Promise<void> {
   lastTick = now
   const mine = await io.readMine()
   if (!mine.isLoaded) return
-  const view = await refreshMode(io, now)
-  const share = view.mode === 'idle' ? game.idleShare(mine.save) : 1
+  const band = await refresh(io, now)
+  const share = band.mode === 'idle' ? game.idleShare(mine.save) : 1
   const amount = game.rate(mine.save) * share * seconds
   if (amount > 0) await io.mine(m => game.earn(m, amount, { kind: 'crew' }))
 }
@@ -142,15 +178,16 @@ export async function click(io: Io): Promise<number> {
   const now = await io.now()
   clicks = clicks.filter(at => now - at < 1000)
   if (clicks.length >= MAX_CLICKS_PER_SECOND) return 0
-  const view = await io.readView()
+  const band = await io.readBand()
   const mine = await io.readMine()
-  if (!mine.isLoaded || view.mode !== 'work') return 0
+  if (!mine.isLoaded || band.mode !== 'work') return 0
   clicks.push(now)
   let value = 0
   await io.mine(m => {
     value = game.clickValue(m.save)
     return game.earn(m, value, { kind: 'click' })
   })
+  await refresh(io, now)
   return value
 }
 
@@ -165,32 +202,26 @@ export async function minedTool(io: Io, tool: string): Promise<number> {
   })
   const now = await io.now()
   const label = kind === 'mcp' ? 'MCP' : tool
-  await io.view(view => {
-    const next = { ...view, last: { label, value }, lastToolAt: now }
-    return { ...next, mode: modeOf(next, now) }
-  })
+  await io.view(view => ({ ...view, last: { label, value }, lastToolAt: now }))
+  await refresh(io, now)
   return value
 }
 
 /** Marks a tool call that waits on the person (a permission prompt, a question), or clears it. */
 export async function setWaiting(io: Io, id: string, isWaiting: boolean): Promise<void> {
-  const now = await io.now()
-  await patchView(io, view => {
-    if (view.waiting.includes(id) === isWaiting) return view
-    const waiting = isWaiting ? [...view.waiting, id] : view.waiting.filter(other => other !== id)
-    const next = { ...view, waiting }
-    return { ...next, mode: modeOf(next, now) }
+  const view = await patchView(io, current => {
+    if (current.waiting.includes(id) === isWaiting) return current
+    const waiting = isWaiting ? [...current.waiting, id] : current.waiting.filter(other => other !== id)
+    return { ...current, waiting }
   })
+  if (view.waiting.includes(id) === isWaiting) await refresh(io)
 }
 
 export async function startTurn(io: Io): Promise<void> {
   await ensureLoaded(io)
   const mine = await io.readMine()
-  const now = await io.now()
-  await io.view(view => {
-    const next = { ...view, isTurn: true, turnStart: mine.save.lifetime }
-    return { ...next, mode: modeOf(next, now) }
-  })
+  await io.view(view => ({ ...view, isTurn: true, turnStart: mine.save.lifetime }))
+  await refresh(io)
 }
 
 export async function endTurn(io: Io): Promise<number> {
@@ -201,17 +232,14 @@ export async function endTurn(io: Io): Promise<number> {
     return game.earn(m, bonus, { kind: 'turn' })
   })
   const mine = await io.readMine()
-  const now = await io.now()
-  await io.view(view => {
-    const next = {
-      ...view,
-      isTurn: false,
-      waiting: [],
-      lastToolAt: 0,
-      lastTurn: Math.max(0, mine.save.lifetime - view.turnStart),
-    }
-    return { ...next, mode: modeOf(next, now) }
-  })
+  await io.view(view => ({
+    ...view,
+    isTurn: false,
+    waiting: [],
+    lastToolAt: 0,
+    lastTurn: Math.max(0, mine.save.lifetime - view.turnStart),
+  }))
+  await refresh(io)
   void sync(io).catch(() => undefined)
   return bonus
 }
@@ -231,7 +259,10 @@ export async function buyProducer(io: Io, id: ProducerId): Promise<number> {
     const { save } = await io.readMine()
     const short = game.priceOf(game.producer(id), game.owned(save, id)) - save.sparks
     io.toast(`Need ${fmt(Math.max(1, short))} more ✻`)
+  } else {
+    await hold(io)
   }
+  await refresh(io)
   return bought
 }
 
@@ -246,18 +277,21 @@ export async function buyUpgrade(io: Io, id: string): Promise<boolean> {
     const { save } = await io.readMine()
     const u = game.upgrade(id)
     if (u !== undefined) io.toast(`Need ${fmt(Math.max(1, u.cost - save.sparks))} more ✻`)
+  } else {
+    await hold(io)
   }
+  await refresh(io)
   return isBought
 }
 
 export async function setAmount(io: Io, amount: number): Promise<void> {
   await patchView(io, view => (view.amount === amount ? view : { ...view, amount }))
+  await refresh(io, undefined, true)
 }
 
 export async function setHidden(io: Io, isHidden: boolean): Promise<void> {
-  await patchView(io, view => (view.isHidden === isHidden ? view : { ...view, isHidden }))
+  await patch(io.readBand, io.band, band => (band.isHidden === isHidden ? band : { ...band, isHidden }))
 }
-
 
 async function confirm(io: Io, question: string, yes: string, no: string): Promise<boolean> {
   try {
@@ -287,21 +321,18 @@ export async function collapseMine(io: Io): Promise<boolean> {
   if (next === null) return false
   await io.put(SAVE_KEY, next)
   await io.mine(() => ({ save: next, pending: game.emptyDelta(next.runId), isLoaded: true }))
+  await refresh(io, undefined, true)
   io.toast(`The mine collapsed. You hold ${next.crystals} ◆.`)
   return true
 }
 
 export async function resetMine(io: Io): Promise<boolean> {
-  const isSure = await confirm(
-    io,
-    'Reset Sparkmine? This deletes every spark, producer, upgrade and crystal.',
-    'Reset',
-    'Keep it',
-  )
+  const isSure = await confirm(io, 'Reset Sparkmine? This deletes every spark, producer, upgrade and crystal.', 'Reset', 'Keep it')
   if (!isSure) return false
   const save = game.fresh(newRunId())
   await io.put(SAVE_KEY, save)
   await io.mine(() => ({ save, pending: game.emptyDelta(save.runId), isLoaded: true }))
   await io.reward(() => null)
+  await refresh(io, undefined, true)
   return true
 }

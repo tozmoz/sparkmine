@@ -10,8 +10,11 @@ test('/mine opens the shop pane', async ($, on) => {
   expect(w.opened).toEqual(['sparkmine'])
 })
 
+/** Past the moment the shop holds still after a purchase, so it redraws. */
+const SETTLE = 1_000
+
 test('producers cost sparks, one or ten at a time', async ($, on) => {
-  world(on, { save: seeded({ sparks: 1_000 }) })
+  const w = world(on, { save: seeded({ sparks: 1_000 }) })
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount(pane(surface))
@@ -20,13 +23,30 @@ test('producers cost sparks, one or ten at a time', async ($, on) => {
     await ui.unmount()
   }
   const ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Svg' })).toBeDefined()
   await ui.press({ key: 'buy-apprentice' })
+  await w.clock.advance(SETTLE)
+  await ui.advance(250)
   expect(await ui.find({ type: 'Text', text: 'Apprentice ×1' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '✻ 985' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 985' })).toBeDefined()
   await ui.press({ key: 'amount-10' })
   expect((await ui.find({ key: 'buy-apprentice' }))?.props.label).toBe('×10 399 ✻')
   await ui.press({ key: 'buy-apprentice' })
+  await w.clock.advance(SETTLE)
   expect(await ui.find({ type: 'Text', text: 'Apprentice ×11' })).toBeDefined()
+})
+
+test('a run of quick presses all land, and the shop redraws once after', async ($, on) => {
+  const w = world(on, { save: seeded({ sparks: 1_000 }) })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  const first = await ui.find({ key: 'buy-apprentice' })
+  await ui.press({ key: 'buy-apprentice' })
+  await ui.press({ key: 'buy-apprentice' })
+  await ui.press({ key: 'buy-apprentice' })
+  expect(await ui.find({ key: 'buy-apprentice' })).toEqual(first)
+  await w.clock.advance(SETTLE)
+  expect(await ui.find({ type: 'Text', text: 'Apprentice ×3' })).toBeDefined()
 })
 
 test('a short purse says how much is missing', async ($, on) => {
@@ -39,14 +59,19 @@ test('a short purse says how much is missing', async ($, on) => {
 })
 
 test('an upgrade goes on sale at its unlock', async ($, on) => {
-  world(on, { save: seeded({ sparks: 500, clicks: 25 }) })
+  const w = world(on, { save: seeded({ sparks: 500, clicks: 25 }) })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
-  expect(await ui.find({ type: 'Text', text: 'Next: Steel pick, after 100 clicks (25/100)' })).toBeDefined()
+  await ui.advance(250)
+  expect(await ui.find({ type: 'Text', text: 'Next: Steel pick, after 100 clicks' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: '▰▰▱▱▱▱▱▱▱▱ 25/100' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: 'Clicks 25 · Tool calls 0 · Turns 0' })).toBeDefined()
   await ui.press({ key: 'up-pick-1' })
+  await w.clock.advance(SETTLE)
+  await ui.advance(250)
   expect(await ui.find({ key: 'up-pick-1' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: 'Click +2 · Read +1 · Edit +4' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '✻ 400' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 400' })).toBeDefined()
 })
 
 test('collapsing the mine trades the run for crystals', async ($, on) => {
@@ -59,8 +84,9 @@ test('collapsing the mine trades the run for crystals', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: 'Mine cart ×3' })).toBeDefined()
   w.answers.push('Collapse')
   await ui.press({ key: 'collapse' })
-  expect(await ui.find({ type: 'Text', text: '◆ 2 · +4%' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '✻ 0' })).toBeDefined()
+  await ui.advance(250)
+  expect(await ui.find({ type: 'Text', text: '◆ 2 · +4% to everything' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 0' })).toBeDefined()
   expect(w.store.get('save')).toMatchObject({ crystals: 2, sparks: 0, allTime: 8e6, producers: {} })
 })
 
@@ -70,6 +96,7 @@ test('what a session mines reaches the store', async ($, on) => {
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   await ui.press({ key: 'mine' })
+  await ui.advance(250)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   await finishTurn($, 't1')
   await endSession($)

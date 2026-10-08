@@ -5,9 +5,13 @@ Claude works. You click.
 
 ![A pixel miner swings a pickaxe at a rock wall](docs/miner.svg)
 
-While Claude works, a miner digs in the band above your prompt. Every tool
-call Claude makes is ore. Press **Mine** to dig faster, spend your sparks in
-the shop, and grow a crew. When the turn ends, the band shrinks to one line.
+While Claude works, a miner digs an endless tunnel in the band above your
+prompt. Each swing takes him deeper: fresh rock comes in from the right, and
+the timbers, lanterns and spoil heaps he leaves behind slide away. Every tool
+call Claude makes is ore. Press **Mine** to dig faster: each press pops what
+it earned beside the counter. Spend your sparks in the shop, and your crew
+lines up on the right of the band. When the turn ends, the band shrinks to
+one line.
 
 ## Install
 
@@ -28,7 +32,8 @@ scope, it also runs in the Code tab of the Claude Desktop app.
 - **Producers** mine every second Claude works. There are eight, from the
   Apprentice to the Context core, and each one costs 17% more than the last.
 - **Upgrades** unlock at milestones: clicks, tool calls of a kind, producers
-  owned, turns finished. There are 53 of them.
+  owned, turns finished. There are 53 of them. The pick upgrades change the
+  pick in the miner's hands, from worn iron to steel, diamond and obsidian.
 - **Collapse the mine** to trade a run for ◆ crystals. Each crystal adds 2% to
   everything, for good.
 - **Spinner words** unlock as your all-time sparks grow: Mining, Tunneling,
@@ -50,7 +55,9 @@ and the last of them takes weeks.
 
 ## Where it draws
 
-- **Desktop app:** the scene is an SVG that animates itself with CSS.
+- **Desktop app:** the scene is an SVG that animates itself with CSS. The
+  counter is a Client of a fixed size, so a press updates the numbers without
+  redrawing the scene.
 - **Terminal:** the same pixels become a Raster of half-block cells, repainted
   by a timer. The scene needs about 94 columns; a narrower terminal gets the
   text and buttons alone.

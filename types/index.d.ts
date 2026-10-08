@@ -55,8 +55,8 @@ export type Mine = {
 
 export type Mode = 'idle' | 'work' | 'pause'
 
+/** What changes while Claude works. Nothing draws from it directly, so it can change often. */
 export type View = {
-  mode: Mode
   isTurn: boolean
   lastToolAt: number
   /** Tool calls waiting on the person: a permission dialog or a question. */
@@ -65,9 +65,90 @@ export type View = {
   /** Lifetime sparks when the turn started, so the band can say what it earned. */
   turnStart: number
   lastTurn: number
-  isHidden: boolean
   /** How many producers one press of a buy button buys. */
   amount: number
+}
+
+/** What the band's drawing depends on. It changes rarely, so the scene is not redrawn on every click. */
+export type Band = {
+  isLoaded: boolean
+  mode: Mode
+  isHidden: boolean
+  carts: number
+  goblins: number
+  /** Which pick the miner holds: 0 worn iron, up to 4 obsidian. */
+  pick: number
+  /** The producers owned, in shop order: the crew the band shows on its right. */
+  crew: { id: ProducerId; owned: number }[]
+}
+
+/** The live numbers the band's and the shop's Client draw, answered to their polls. */
+export type HudProps = {
+  variant: 'band' | 'shop'
+  mode: Mode
+  sparks: number
+  rate: number
+  /** What one click mines now. */
+  click: number
+  /** Clicks counted so far: when it grows, the HUD shakes and pops what they earned. */
+  clicks: number
+  idle: number
+  turn: number
+  lastTurn: number
+  last: string | null
+  /** The upgrade closest to unlocking, and how close. */
+  goal: { name: string; have: number; need: number } | null
+  tools: number
+  turns: number
+  /** The HUD's fixed height in rows: a surface unmounts a Client whose size keeps changing. */
+  height: number
+}
+
+
+
+export type IconId =
+  | ProducerId
+  | 'pick'
+  | 'pickDiamond'
+  | 'pickObsidian'
+  | 'glasses'
+  | 'dynamite'
+  | 'terminal'
+  | 'globe'
+  | 'plug'
+  | 'nugget'
+  | 'moon'
+  | 'clock'
+  | 'lantern'
+  | 'crystal'
+  | 'locked'
+
+export type ShopItem = {
+  id: string
+  icon: IconId
+  name: string
+  detail: string
+  owned: number
+  price: number
+  canBuy: boolean
+}
+
+/** What the shop pane draws. Rebuilt on every change, written only when it differs. */
+export type ShopModel = {
+  isLoaded: boolean
+  amount: number
+  producers: ShopItem[]
+  /** The price of the next producer, still hidden. */
+  teaser: number | null
+  upgrades: ShopItem[]
+  more: number
+  /** The next unlock; how close it is lives in the live counter, so clicks do not redraw the pane. */
+  next: { name: string; icon: IconId; text: string } | null
+  values: { click: number; read: number; edit: number }
+  crystals: number
+  gain: number
+  nextCrystalAt: number
+  showCollapse: boolean
 }
 
 declare module 'claude-code' {
@@ -75,6 +156,8 @@ declare module 'claude-code' {
     sparkmine: {
       mine: Mine
       view: View
+      band: Band
+      shop: ShopModel
       reward: string | null
     }
   }
