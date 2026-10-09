@@ -162,9 +162,14 @@ export const register: Register = on => {
           })
           .catch(() => undefined)
       })
-      $.clock.every(state.SYNC_MS, () => {
-        void state.sync(engine).catch(() => undefined)
-      })
+      const syncLater = () =>
+        $.clock.after(state.SYNC_MS + Math.floor(Math.random() * state.SYNC_JITTER_MS), () => {
+          void state
+            .sync(engine)
+            .catch(() => undefined)
+            .finally(syncLater)
+        })
+      syncLater()
     }
     return next(e)
   })

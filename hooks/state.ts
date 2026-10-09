@@ -36,6 +36,12 @@ export const COMPACT_KEY = 'compact'
 export const STOPPED_KEY = 'stopped'
 export const TICK_MS = 100
 export const SYNC_MS = 5_000
+/**
+ * Each sync waits up to this much longer, at random. Sessions an update
+ * reloaded together would otherwise sync together for good, and two syncs at
+ * once write over each other.
+ */
+export const SYNC_JITTER_MS = 1_000
 /** A tool call this recent keeps the miner busy, so background agents count as work. */
 export const RECENT_MS = 4_000
 export const MAX_CLICKS_PER_SECOND = 20
@@ -146,7 +152,7 @@ export async function ensureLoaded(io: Io): Promise<void> {
   loading ??= (async () => {
     const stored = game.normalize(await io.get(SAVE_KEY))
     const save = stored ?? game.fresh(newRunId())
-    await io.mine(mine => (mine.isLoaded ? mine : { save, pending: game.emptyDelta(save.runId), isLoaded: true }))
+    await io.mine(mine => (mine.isLoaded ? mine : { ...game.newMine(save.runId), save, isLoaded: true, writer: newRunId() }))
     if (stored === null) await io.put(SAVE_KEY, save)
     await readSettings(io)
     await refreshReward(io, false)
@@ -159,19 +165,22 @@ export async function ensureLoaded(io: Io): Promise<void> {
 
 let syncing: Promise<void> | null = null
 
-/** Merges this session's changes into the store, and takes in what other sessions mined. */
+/**
+ * Merges this session's changes into the store, and takes in what other
+ * sessions mined. Changes another session wrote over go in again: see game.syncMine.
+ */
 export async function sync(io: Io): Promise<void> {
   syncing ??= (async () => {
     if (!(await io.readMine()).isLoaded) return
     const stored = game.normalize(await io.get(SAVE_KEY))
-    let merged: Save | null = null
-    let changed = false
+    const writer = newRunId()
+    const out: { write: Save | null } = { write: null }
     await io.mine(mine => {
-      changed = !game.isEmptyDelta(mine.pending)
-      merged = stored === null ? mine.save : game.applyDelta(stored, mine.pending)
-      return { save: merged, pending: game.emptyDelta(merged.runId), isLoaded: true }
+      const next = game.syncMine(stored, mine, writer)
+      out.write = next.isWrite ? next.save : null
+      return next.mine
     })
-    if (merged !== null && (changed || stored === null)) await io.put(SAVE_KEY, merged)
+    if (out.write !== null) await io.put(SAVE_KEY, out.write)
     await readSettings(io)
     await refreshReward(io, true)
     await refresh(io)
@@ -472,7 +481,7 @@ export async function collapseMine(io: Io): Promise<boolean> {
   const next = game.collapse((await io.readMine()).save, newRunId())
   if (next === null) return false
   await io.put(SAVE_KEY, next)
-  await io.mine(() => ({ save: next, pending: game.emptyDelta(next.runId), isLoaded: true }))
+  await io.mine(mine => ({ ...mine, save: next, pending: game.emptyDelta(next.runId), inflight: [], isLoaded: true }))
   await refresh(io, undefined, true)
   io.toast(`The mine collapsed. You hold ${next.crystals} ◆.`)
   return true
@@ -483,7 +492,7 @@ export async function resetMine(io: Io): Promise<boolean> {
   if (!isSure) return false
   const save = game.fresh(newRunId())
   await io.put(SAVE_KEY, save)
-  await io.mine(() => ({ save, pending: game.emptyDelta(save.runId), isLoaded: true }))
+  await io.mine(mine => ({ ...mine, save, pending: game.emptyDelta(save.runId), inflight: [], isLoaded: true }))
   await io.reward(() => null)
   await refresh(io, undefined, true)
   return true

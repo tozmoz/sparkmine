@@ -47,6 +47,11 @@ export type Save = {
   gems: number
   veins: number
   events: Counts<EventKind>
+  /**
+   * The number of each session's last write this save holds, newest last. A
+   * session whose write is missing knows another wrote over it.
+   */
+  writes: Record<string, number>
 }
 
 /** What this session changed since it last synced with the store. */
@@ -71,6 +76,12 @@ export type Mine = {
   save: Save
   pending: Delta
   isLoaded: boolean
+  /** This session's name in the save's `writes`; empty until its first sync. */
+  writer: string
+  /** The number of this session's last write. */
+  seq: number
+  /** The changes that write carried, kept until the store is seen to hold them. */
+  inflight: Delta[]
 }
 
 export type Mode = 'idle' | 'work' | 'pause'
