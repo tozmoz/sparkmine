@@ -1,18 +1,19 @@
-// The live numbers in the band and the shop, and the band's Mine button. A
-// Client draws them, so they change without the band being redrawn and the
-// scene never flickers. On the desktop the button is a gold sign the HUD draws
-// itself, since a desktop draws every Button as its own native one; the
-// terminal keeps a Button, for its hotkey.
+// The live numbers in the band and the shop, and on the desktop the band's
+// Mine button. A Client draws them, so they change without the band being
+// redrawn and the scene never flickers.
 //
-// The Mine button lives here so a press answers at once: the HUD counts it,
-// adds it to the counter and pops what it mined before the hooks have heard of
-// it. Each post carries the running total of presses, so the hooks count every
-// one even when a frame's posts merge into one, and the props they answer say
-// how many they have counted.
+// On the desktop the button is a gold sign the HUD draws itself, since a
+// desktop draws every Button as its own native one, and it lives here so a
+// press answers at once: the HUD counts it, adds it to the counter and pops
+// what it mined before the hooks have heard of it. A press reaches the HUD the
+// moment the pointer goes down over its region, whatever was redrawn since.
+// Each post carries the running total of presses, so the hooks count every one
+// even when a frame's posts merge into one, and the props they answer say how
+// many they have counted.
 //
-// A press reaches the HUD the moment the pointer goes down over its region,
-// whatever was redrawn since. On the terminal the Button's own press (a click,
-// or its hotkey) may come after: one the pointer already counted is let go.
+// On the terminal Mine is the band's own Button: a Client's Buttons take no
+// hotkey there, and its `m` is how a terminal mines fast. The hooks count its
+// presses and say how many, and the HUD pops what they mined.
 //
 // Its height is fixed and its width follows its text, which changes only when
 // new numbers arrive: a surface unmounts a Client whose size changes frame
@@ -33,8 +34,8 @@ type State = {
   total: number
   /** When the last second's presses came, to keep under MAX_PER_SECOND. */
   recent: number[]
-  /** Pointer presses whose button press has not come yet. */
-  unmatched: number[]
+  /** The band's own Mine presses the hooks had counted when the HUD last drew. */
+  taps: number
   gemSeq: number
   pop: Pop | null
   /** Frames the gold sign stays pressed in after a press. */
@@ -52,8 +53,6 @@ const GEM_BRIGHT = 12
 const POP_WIDTH = 10
 /** The hooks count no more presses than this a second, so the HUD shows no more. */
 const MAX_PER_SECOND = 20
-/** How long after the pointer's press the button's own press can still come. */
-const MATCH_MS = 1_000
 const GEM_COLOR = '#5dcaa5'
 /** A reward or a frenzy reads in warm gold. */
 const REWARD_COLOR = '#ffd36e'
@@ -97,16 +96,18 @@ function bar(have: number, need: number): string {
 }
 
 const Hud: ClientModule<HudProps, State> = (props, surface) => {
-  const { Box, Button, Text } = surface.elements
+  const { Box, Text } = surface.elements
   const gem = props.gem ?? null
   const acked = props.acked ?? 0
 
+  const taps = props.taps ?? 0
+
   // A HUD an older version drew keeps other state: this one starts afresh.
   const old = surface.state
-  let s = old !== undefined && Array.isArray(old.unmatched) && typeof old.pressed === 'number' ? old : undefined
+  let s = old !== undefined && typeof old.taps === 'number' && typeof old.pressed === 'number' ? old : undefined
   if (s === undefined) {
     const instance = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`
-    s = { instance, total: 0, recent: [], unmatched: [], gemSeq: gem?.seq ?? 0, pop: null, pressed: 0 }
+    s = { instance, total: 0, recent: [], taps, gemSeq: gem?.seq ?? 0, pop: null, pressed: 0 }
     surface.setState(s)
     surface.every(POLL_MS, () => surface.post({ instance, total: surface.state?.total ?? 0 }))
     // Ages the pop and lets the sign back up; does nothing at all while neither is showing.
@@ -121,38 +122,36 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
       surface.setState({ ...now, pop, pressed: Math.max(0, now.pressed - 1) })
     })
     surface.post({ instance, total: 0 })
-  } else if (gem !== null && gem.seq > s.gemSeq) {
-    // The hooks struck a gem among the presses they counted: the pop takes its worth.
-    const pop = props.variant === 'band' ? { value: (s.pop?.value ?? 0) + gem.bonus, age: 0, isGem: true } : s.pop
-    s = { ...s, gemSeq: gem.seq, pop }
-    surface.setState(s)
+  } else {
+    const isGem = gem !== null && gem.seq > s.gemSeq
+    if (isGem || taps !== s.taps) {
+      // Presses of the band's own Mine button, and gems among the presses the
+      // hooks counted: the pop takes what they mined. Fewer taps than before is
+      // the hooks starting over (an update), and pops nothing.
+      const mined = Math.max(0, taps - s.taps) * props.click + (isGem ? gem.bonus : 0)
+      const pop = props.variant === 'band' && mined > 0 ? { value: (s.pop?.value ?? 0) + mined, age: 0, isGem: isGem || s.pop?.isGem === true } : s.pop
+      s = { ...s, taps, gemSeq: isGem ? gem.seq : s.gemSeq, pop }
+      surface.setState(s)
+    }
   }
 
   const isWorking = props.variant === 'band' && props.mode === 'work'
-  const press = (source: 'pointer' | 'button') => {
+  /** A press of the desktop's gold sign: counted here at once, and posted to the hooks. */
+  const press = () => {
     const now = surface.state ?? s
     const at = Date.now()
-    let unmatched = now.unmatched.filter(t => at - t < MATCH_MS)
-    if (source === 'button' && unmatched.length > 0) {
-      surface.setState({ ...now, unmatched: unmatched.slice(1) })
-      return
-    }
-    if (source === 'pointer') unmatched = [...unmatched, at]
     const recent = now.recent.filter(t => at - t < 1000)
-    if (!isWorking || recent.length >= MAX_PER_SECOND) {
-      if (source === 'pointer') surface.setState({ ...now, unmatched })
-      return
-    }
+    if (!isWorking || recent.length >= MAX_PER_SECOND) return
     const total = now.total + 1
     const keep = now.pop !== null && now.pop.age < (now.pop.isGem ? GEM_FRAMES : POP_FRAMES)
     const pop = { value: (keep ? (now.pop?.value ?? 0) : 0) + props.click, age: 0, isGem: keep && now.pop?.isGem === true }
-    surface.setState({ ...now, total, recent: [...recent, at], unmatched, pop, pressed: PRESS_FRAMES })
+    surface.setState({ ...now, total, recent: [...recent, at], pop, pressed: PRESS_FRAMES })
     surface.post({ instance: now.instance, total })
   }
-  // Set on every draw, so it presses with the latest numbers.
-  if (props.variant === 'band') {
+  // Set on every draw, so it presses with the latest numbers. On the terminal the band's Button mines.
+  if (props.variant === 'band' && props.surface !== 'terminal') {
     surface.onPointer(event => {
-      if (event.type === 'down' && (event.button === undefined || event.button === 'left')) press('pointer')
+      if (event.type === 'down' && (event.button === undefined || event.button === 'left')) press()
     })
   }
 
@@ -218,7 +217,7 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
   const slot = Box({ key: 'pop', width: POP_WIDTH, flexShrink: 0, children: popText as never[] })
   const mine =
     props.surface === 'terminal'
-      ? Button({ key: 'mine', label: 'Mine', hotkey: 'm', ...(isWorking ? {} : { dimColor: true }), onPress: () => press('button') })
+      ? null
       : Box({
           key: 'mine',
           borderStyle: 'round',
@@ -236,7 +235,7 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
     flexDirection: 'row',
     columnGap: 2,
     alignItems: 'center',
-    children: [mine, text],
+    children: mine === null ? [text] : [mine, text],
   })
 }
 

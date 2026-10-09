@@ -160,6 +160,12 @@ export type HudProps = {
    * the ones still on their way at once, so a press never waits for a poll.
    */
   acked: number
+  /**
+   * Presses of the band's own Mine button the hooks have counted: the
+   * terminal's, whose `m` a Client's Button cannot take. The HUD pops what
+   * the new ones mined.
+   */
+  taps: number
   /** The latest gems struck: the HUD pops them when `seq` grows. */
   gem: { seq: number; bonus: number } | null
   /** How deep the mine is, in metres, and the layer it is in. */

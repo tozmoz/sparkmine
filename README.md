@@ -4,6 +4,9 @@ An idle clicker game for Claude Code, built as a
 [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview).
 Claude works. You click.
 
+Plays in the Code tab of the **Claude Desktop app** and in Claude Code in the
+terminal.
+
 ![The band above the prompt: a pixel miner digs while Claude works](docs/band.png)
 
 While Claude works, a pixel miner digs in the band above your prompt. Every
@@ -35,7 +38,10 @@ claude plugin update sparkmine@sparkmine
 
 ## Play
 
-- Press **Mine** while Claude works. Clicks count only then.
+- Press **Mine** while Claude works. Clicks count only then. In the
+  terminal, give the band the keyboard (click it, or press ctrl+x then Tab)
+  and press `m`: every press counts, while quick clicks on one spot count as
+  one.
 - Open the shop with **Shop** or `/mine`. Producers mine every second Claude
   works; upgrades make clicks, tool calls and the crew stronger. The shop's
   stats show where your sparks came from.
@@ -71,10 +77,13 @@ you reset it.
 
 ## What it touches
 
-It counts tool calls, turns and permission prompts, and reads whether a test
-run passed or a commit landed. It changes none of them. It never calls a
-model, the network or a process, so it costs no tokens. It keeps one small
-save on your machine.
+- It **DOES NOT** use tokens: it never calls a model and adds nothing to your
+  prompts.
+- It **DOES NOT** make network requests or run commands. Nothing leaves your
+  machine.
+- It counts tool calls, turns and permission prompts, and reads whether a
+  test run passed or a commit landed, but changes none of them.
+- It keeps one small save on your machine.
 
 ## License
 
