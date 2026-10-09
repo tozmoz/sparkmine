@@ -41,7 +41,13 @@ const HUD_SHOP = { height: 4 } as const
 /** Where the band draws, as the Clients' props say it. */
 const surfaceOf = (surface: string): HudProps['surface'] => (surface === 'terminal' || surface === 'desktop' ? surface : 'other')
 
-/** Tools that wait on the person, so the miner rests while they decide. */
+/**
+ * Tools whose whole call waits on the person, so the miner rests while they
+ * decide: a question, a plan to approve. A permission check's `ask` is not one:
+ * the mode settles most (auto mode's classifier) without asking anyone, and a
+ * dialog it does show leaves nothing a mod can read, nor does its answer, so
+ * resting on every ask stopped the miner for each command and while it ran.
+ */
 const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
 const specKey = (spec: SceneSpec) => `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}`
@@ -232,26 +238,19 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     const tool = String(e.tool)
-    const asks = ASKS_PERSON.has(tool)
-    if (io !== null && asks) await state.setWaiting(io, e.tool_use_id, true)
+    const isQuestion = ASKS_PERSON.has(tool)
+    // Claude's own question waits on the person; another plugin's is not Claude waiting (this one's own never comes here).
+    const waits = isQuestion && next.origin.plugin === 'engine'
+    if (io !== null && waits) await state.setWaiting(io, e.tool_use_id, true)
     let result
     try {
       result = await next(e)
     } finally {
-      if (io !== null) await state.setWaiting(io, e.tool_use_id, false)
+      if (io !== null && waits) await state.setWaiting(io, e.tool_use_id, false)
     }
     // Read only: the outcome says whether tests passed or a commit landed, and the call goes on unchanged.
-    if (io !== null && result.deny === undefined && !asks) await state.minedTool(io, outcomeOf(tool, e, result))
+    if (io !== null && result.deny === undefined && !isQuestion) await state.minedTool(io, outcomeOf(tool, e, result))
     return result
-  }).catch(($, e, next) => next(e))
-
-  // A permission prompt is about to wait on the person: the miner waits with them.
-  on('tool.check', async ($, e, next) => {
-    const verdict = await next(e)
-    if (io !== null && verdict.decision === 'ask' && e.tool_use_id !== undefined) {
-      await state.setWaiting(io, e.tool_use_id, true)
-    }
-    return verdict
   }).catch(($, e, next) => next(e))
 
   // The desktop's wooden Shop sign is a Client of its own: a press posts, and the shop opens.
