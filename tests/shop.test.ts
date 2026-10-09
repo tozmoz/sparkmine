@@ -185,6 +185,23 @@ test('a purchase stays when another session writes over it', async ($, on) => {
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 95' })).toBeDefined()
 })
 
+test('/mine share puts a card of the mine in the conversation, and on the clipboard', async ($, on) => {
+  const w = world(on, {
+    save: seeded({ lifetime: 34_132_372, allTime: 224_510_497, deepest: 528, stones: 5, shafts: 1, bestTurn: 75_467_611, gems: 543, veins: 8, clicks: 17_739, events: { longShift: 10 } }),
+  })
+  await start($)
+  const card = [
+    '⛏️ Sparkmine · 453 m in the Crystal caves',
+    '🟫⬜🟪🟧⬛⬛⬛ deepest 528 m',
+    '✻ 224.5M mined · ◈ 5 stones · ★ 9/23',
+    'Best turn +75.47M · 543 gems · 8 veins',
+    'github.com/tozmoz/sparkmine',
+  ].join('\n')
+  expect((await command($, 'share')).text).toBe(`Your mine, ready to paste:\n\`\`\`\n${card}\n\`\`\``)
+  expect(w.copied).toEqual([card])
+  expect(w.toasts).toContain('Copied to the clipboard')
+})
+
 test('/mine reset asks first', async ($, on) => {
   const w = world(on, { save: seeded({ sparks: 77 }) })
   await start($)

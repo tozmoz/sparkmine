@@ -69,6 +69,7 @@ All your sessions share one save, so they mine into the same mine.
 | Command | What it does |
 | :- | :- |
 | `/mine` | Opens the shop |
+| `/mine share` | Puts a card of your mine in the conversation to paste anywhere (in the terminal, on the clipboard too) |
 | `/mine stop`, `/mine start` | Stops the game in every session, and starts it again |
 | `/mine compact` | Keeps the band to one line, even while Claude works |
 | `/mine hide`, `/mine show` | Hides the band in this session, and brings it back |

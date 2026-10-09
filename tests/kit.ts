@@ -11,6 +11,8 @@ export type World = {
   /** The plugin's store, as the engine would keep it. */
   store: Map<string, unknown>
   toasts: string[]
+  /** What the mod put on the clipboard. */
+  copied: string[]
   opened: string[]
   /** What the person picks, in order, when the mod asks a question. */
   answers: string[]
@@ -31,6 +33,7 @@ export function world(on: On, store: Record<string, unknown> = {}): World {
     clock: mock.clock(on, { now: 1_000_000 }),
     store: new Map(Object.entries(store)),
     toasts: [],
+    copied: [],
     opened: [],
     answers: [],
     asked: [],
@@ -57,6 +60,10 @@ export function world(on: On, store: Record<string, unknown> = {}): World {
   on('ui.toast', ($, e) => {
     w.toasts.push(e.text)
     return { value: undefined }
+  })
+  on('ui.copy', ($, e) => {
+    w.copied.push(e.text)
+    return { value: { isCopied: true } }
   })
   on('ui.open', ($, e) => {
     w.opened.push(e.id)

@@ -4,6 +4,7 @@ import type { Mine, Save } from '../types'
 import { ACHIEVEMENTS, PRODUCERS, UPGRADES } from '../hooks/data.ts'
 import { fmt, fmtRate } from '../hooks/format.ts'
 import * as game from '../hooks/game.ts'
+import * as model from '../hooks/model.ts'
 
 const saveWith = (patch: Partial<Save>): Save => ({ ...game.fresh('run'), ...patch })
 /** Rounds away float noise, since the kit's expect has no toBeCloseTo. */
@@ -180,6 +181,14 @@ describe('layers', () => {
     expect(near(at(1e13).global)).toBe(1.4)
     expect(near(game.idleShare(saveWith({ lifetime: 1e10, upgrades: ['idle-1'] })))).toBe(0.125)
     expect(game.veinAfter('run', 1, 2).seconds).toBe(Math.round(game.veinAfter('run', 1).seconds / 2))
+  })
+})
+
+describe('the shared card', () => {
+  test('leaves out what is not done yet, and names the core as a place', () => {
+    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/23', 'github.com/tozmoz/sparkmine'].join('\n'))
+    const core = model.shareCard(saveWith({ lifetime: 1e13, allTime: 3e13, stones: 1, veins: 1 }))
+    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥', '✻ 30.00T mined · ◈ 1 stone · ★ 9/23', '1 vein'])
   })
 })
 

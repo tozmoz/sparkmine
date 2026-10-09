@@ -6,7 +6,7 @@ import type { RenderElement, Register, Timer } from 'claude-code'
 import type { HudProps, StatsProps } from '../types'
 import { newMine, normalizeMine, outcomeOf, producer } from './game.ts'
 import { iconSvg } from './icons.ts'
-import { EMPTY_HUD, EMPTY_SHOP, EMPTY_STATS, hudProps, statsProps, veinProps } from './model.ts'
+import { EMPTY_HUD, EMPTY_SHOP, EMPTY_STATS, hudProps, shareCard, statsProps, veinProps } from './model.ts'
 import { H, ROWS, W, momentAt, momentKey, sceneCells, sceneSvg, type SceneSpec } from './scene.ts'
 import * as state from './state.ts'
 import { INITIAL_BAND, INITIAL_VIEW, type Io } from './state.ts'
@@ -173,7 +173,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'mine',
       description: 'Open the Sparkmine shop',
-      argumentHint: '[stop|start|compact|hide|show|reset]',
+      argumentHint: '[share|stop|start|compact|hide|show|reset]',
       immediate: true,
     })
     await state.ensureLoaded(engine)
@@ -516,10 +516,21 @@ export const register: Register = on => {
       case 'show':
         await state.setHidden(io, false)
         return { text: (await io.readBand()).isStopped ? 'Sparkmine is stopped. /mine start sets it going again.' : 'Sparkmine is back above the prompt.' }
+      case 'share': {
+        // Every session's latest mining, then the card: in a code block, so its
+        // lines stay lines and the surface offers to copy it; on the clipboard
+        // where the surface has one (the terminal; a desktop has none yet).
+        await state.sync(io)
+        const card = shareCard((await io.readMine()).save)
+        const copy = await $.ui.copy({ text: card }).catch(() => ({ isCopied: false }))
+        if (copy.isCopied) $.ui.toast('Copied to the clipboard')
+        // The row puts the plugin's name before the text: the block starts on a line of its own.
+        return { text: ['Your mine, ready to paste:', '```', card, '```'].join('\n') }
+      }
       case 'reset':
         return { text: (await state.resetMine(io)) ? 'Sparkmine was reset.' : 'Nothing was reset.' }
       default:
-        return { text: 'Usage: /mine [shop|stop|start|compact|hide|show|reset]' }
+        return { text: 'Usage: /mine [shop|share|stop|start|compact|hide|show|reset]' }
     }
   })
 }

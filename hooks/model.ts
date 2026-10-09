@@ -145,6 +145,39 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
   }
 }
 
+/** Where a shared card sends people. */
+const HOME = 'github.com/tozmoz/sparkmine'
+
+const plural = (n: number, one: string, many: string) => `${commas(n)} ${n === 1 ? one : many}`
+
+/**
+ * A card of the mine to paste anywhere, Wordle-style: how deep this shaft is
+ * and where, the layers reached in squares of their colors, what was mined
+ * and earned, and where the game is. A record not made yet is left out.
+ */
+export function shareCard(save: Save): string {
+  const metres = game.depth(save)
+  const deepest = game.deepestOf(save)
+  const here = BIOMES[game.biomeAt(metres)] ?? BIOMES[0]
+  const name = here?.name ?? 'Topsoil'
+  const place = name.startsWith('The ') ? `at ${name.toLowerCase()}` : `in the ${name}`
+  const reached = game.biomeAt(deepest)
+  const squares = BIOMES.map((b, i) => (i <= reached ? b.square : '⬛')).join('')
+  const stones = save.stones > 0 ? [`◈ ${plural(save.stones, 'stone', 'stones')}`] : []
+  const records = [
+    ...(save.bestTurn > 0 ? [`Best turn +${fmt(save.bestTurn)}`] : []),
+    ...(save.gems > 0 ? [plural(save.gems, 'gem', 'gems')] : []),
+    ...(save.veins > 0 ? [plural(save.veins, 'vein', 'veins')] : []),
+  ]
+  return [
+    `⛏️ Sparkmine · ${commas(metres)} m ${place}`,
+    deepest > metres ? `${squares} deepest ${commas(deepest)} m` : squares,
+    [`✻ ${fmt(save.allTime)} mined`, ...stones, `★ ${game.achievements(save).length}/${ACHIEVEMENTS.length}`].join(' · '),
+    ...(records.length > 0 ? [records.join(' · ')] : []),
+    HOME,
+  ].join('\n')
+}
+
 /** The layer a depth is in, by name and color, for the drawings. */
 export function layerAt(metres: number): { name: string; color: string } {
   const b = BIOMES[game.biomeAt(metres)] ?? BIOMES[0]
