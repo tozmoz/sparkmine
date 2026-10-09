@@ -28,7 +28,7 @@ const SCALE = 3
 const HEADER_SCALE = 2
 /** CSS pixels of each producer in the band's crew rack. */
 const CREW_ICON = 20
-/** Columns the HUD, with its Mine button, the Shop button and a vein need beside the terminal scene. */
+/** Columns the Mine button, the HUD, the Shop button and a vein need beside the terminal scene. */
 const HUD_COLUMNS = 64
 /**
  * The HUD's fixed height in rows. Its width follows its text: a desktop draws
@@ -87,6 +87,30 @@ export const register: Register = on => {
   let lastStats: StatsProps = EMPTY_STATS
   /** Presses each band HUD has posted so far, by instance. */
   const totals = new Map<string, number>()
+  /** Presses of the terminal band's own Mine button the hooks have counted: see HudProps `taps`. */
+  let taps = 0
+  /** Presses of that button not yet counted, and the run counting them. */
+  let queued = 0
+  let counting: Promise<void> | null = null
+  /**
+   * A press of the terminal's Mine button. It returns at once: presses that
+   * come while one is still being counted were lost, so `m` held down or tapped
+   * fast mined once. They queue, and each round counts all that came.
+   */
+  const tap = () => {
+    queued += 1
+    counting ??= (async () => {
+      while (queued > 0 && io !== null) {
+        const n = queued
+        queued = 0
+        taps += (await state.clicks(io, n)).counted
+      }
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        counting = null
+      })
+  }
   /** The shop's Button handles, by surface and then key: see ui.keepHandles. */
   const shopHandles = new Map<string, Map<string, ui.Press>>()
   const handlesOn = (surface: string): Map<string, ui.Press> => {
@@ -271,6 +295,7 @@ export const register: Register = on => {
       ...size,
       surface: surfaceOf(e.surface),
       acked,
+      taps: isBand ? taps : 0,
     }
     lastHud = props
     if (isBand) lastAcked = acked
@@ -287,7 +312,7 @@ export const register: Register = on => {
     const hudSize = isOneLine ? HUD_IDLE : HUD_WORK
     const surface = surfaceOf(e.surface)
     // The Mine button is the HUD's own, so a press answers without a round trip.
-    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, isCompact: band.isCompact, ...hudSize }
+    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, taps, isCompact: band.isCompact, ...hudSize }
     const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick, biome: band.biome }
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
     let ours: RenderElement
@@ -349,6 +374,18 @@ export const register: Register = on => {
       }
     } else if (e.surface === 'terminal') {
       const { Box, Button, Client, Raster } = $.ui.resolve(e)
+      // Mine is the band's own Button here, so its hotkey works: a press of `m`
+      // while the band has the keyboard, which a quick run of clicks on one cell is not.
+      const mine =
+        band.mode === 'idle' ? null : (
+          <Button
+            key="mine"
+            label="Mine"
+            hotkey="m"
+            dimColor={band.mode !== 'work'}
+            onPress={tap}
+          />
+        )
       const hud = <Client key="hud" module="./hud.ts" props={props} height={hudSize.height} />
       const shop = <Button key="shop" label="Shop" dimColor={band.mode === 'idle'} onPress={openShop} />
       const vein = <Client key="vein" module="./vein.ts" props={{ vein: null, frenzy: null, surface }} />
@@ -357,6 +394,7 @@ export const register: Register = on => {
         live = null
         ours = (
           <Box flexDirection="row" columnGap={2}>
+            {mine}
             {hud}
             {shop}
             {vein}
@@ -368,6 +406,7 @@ export const register: Register = on => {
         ours = (
           <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d">
             <Raster key="scene" columns={W} rows={ROWS} cells={frame.cells} />
+            {mine}
             {hud}
             {shop}
             {vein}

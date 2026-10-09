@@ -74,22 +74,22 @@ test('a press shows on the counter and pops at once, before the hooks answer', a
   expect((await ui.find({ in: 'hud', key: 'mine' }))?.props.backgroundColor).toBe('#f2b632')
 })
 
-test('on the terminal the pointer mines at once, and the button press after it is not counted twice', async ($, on) => {
+test("on the terminal Mine is the band's own button: each press of it or its m mines, and the HUD pops it", async ($, on) => {
   world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('terminal', { bodyColumns: 140 }))
   await ui.advance(POLL)
-  await ui.pointer({ type: 'down', x: 2, y: 1, button: 'left', in: 'hud' })
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
-  await ui.pointer({ type: 'up', x: 2, y: 1, button: 'left', in: 'hud' })
-  await ui.press({ key: 'mine' })
+  expect((await ui.find({ key: 'mine' }))?.props).toMatchObject({ label: 'Mine', hotkey: 'm' })
+  expect(await ui.find({ in: 'hud', key: 'mine' })).toBeUndefined()
+  for (let i = 0; i < 3; i += 1) await ui.press({ key: 'mine' })
   await ui.advance(POLL)
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
-  // A press with no pointer before it, from its hotkey, counts.
-  await ui.press({ key: 'mine' })
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 3' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '+3' })).toBeDefined()
+  // The numbers are no button on the terminal.
+  await ui.pointer({ type: 'down', x: 2, y: 0, button: 'left', in: 'hud' })
   await ui.advance(POLL)
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 2' })).toBeDefined()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 3' })).toBeDefined()
 })
 
 test('a click that strikes a gem pops it in green', async ($, on) => {
@@ -193,7 +193,7 @@ test('the terminal draws the scene when it has room, and the HUD alone when not'
   await wide.unmount()
   const narrow = await $.ui.mount(band('terminal', { bodyColumns: 80 }))
   expect(await narrow.find({ type: 'Raster' })).toBeUndefined()
-  expect((await narrow.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ label: 'Mine', hotkey: 'm' })
+  expect((await narrow.find({ key: 'mine' }))?.props).toMatchObject({ label: 'Mine', hotkey: 'm' })
 })
 
 test('a permission prompt pauses the miner until the turn moves on', async ($, on) => {
