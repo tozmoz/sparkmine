@@ -44,12 +44,17 @@ claude plugin update sparkmine@sparkmine
 - **Veins:** now and then a gold vein shows beside the Shop sign for ten
   seconds. Catch it for two minutes of income, or a ×5 frenzy for thirty.
 - **Depth:** the mine goes a hundred metres deeper with every tenfold of
-  sparks, through topsoil, stone, crystal caves and magma.
+  sparks, through seven layers. Each layer you reach adds its perk for the
+  rest of the run.
 
-  ![The four layers: topsoil, stone, crystal caves and magma](docs/layers.png)
+  ![The seven layers, where each starts and what it adds](docs/layers.png)
 
-- **Collapse the mine** in the shop to trade a run for ◆ crystals, which add
-  2% to everything for good. The mine starts again at the surface.
+- **New shaft:** from 500 m down, open a new shaft in the shop to start over
+  for ◈ ancient stones. Each adds 10% to everything for good, and a deeper run
+  pays more of them.
+- **Achievements:** 20 badges for records such as your first vein, 100
+  commits or reaching the magma. Each adds 2% to everything, and they stay
+  through new shafts.
 
 All your sessions share one save, so they mine into the same mine.
 

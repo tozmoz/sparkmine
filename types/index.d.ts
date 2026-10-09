@@ -26,21 +26,26 @@ export type VeinKind = 'rich' | 'frenzy'
 /** The mine as $.store keeps it, shared by every session on the machine. */
 export type Save = {
   v: 1
-  /** Changes when the mine collapses (prestige), so stale deltas can be told apart. */
+  /** Changes when a new shaft opens (prestige), so stale deltas can be told apart. */
   runId: string
   sparks: number
-  /** Sparks earned in this run, since the last collapse. */
+  /** Sparks earned in this run, since the last new shaft. */
   lifetime: number
   /** Sparks earned in every run. */
   allTime: number
-  crystals: number
+  /** Ancient stones, from new shafts: each adds to everything for good. */
+  stones: number
+  /** The deepest a finished run reached, in metres; this run's depth comes from `lifetime`. */
+  deepest: number
+  /** New shafts opened. */
+  shafts: number
   clicks: number
   tools: number
   turns: number
   mined: Counts<ToolKind>
   producers: Counts<ProducerId>
   upgrades: string[]
-  /** All-time stats, kept through a collapse: sparks by where they came from, and what was found. */
+  /** All-time stats, kept through a new shaft: sparks by where they came from, and what was found. */
   bySource: Counts<SourceKind>
   /** The most sparks one turn has mined. */
   bestTurn: number
@@ -130,7 +135,7 @@ export type Band = {
   pick: number
   /** The producers owned, in shop order: the crew the band shows on its right. */
   crew: { id: ProducerId; owned: number }[]
-  /** The layer the mine has reached: 0 topsoil, 1 stone, 2 crystal caves, 3 magma. */
+  /** The layer the mine has reached, an index of BIOMES: 0 topsoil, 1 stone, ... 6 the core. */
   biome: number
   /** One line even while Claude works: `/mine compact`. */
   isCompact: boolean
@@ -194,7 +199,8 @@ export type IconId =
   | 'moon'
   | 'clock'
   | 'lantern'
-  | 'crystal'
+  | 'stone'
+  | 'badge'
   | 'locked'
   | 'glove'
   | 'whistle'
@@ -212,6 +218,9 @@ export type VeinProps = {
 export type StatsProps = {
   bySource: Counts<SourceKind>
   bestTurn: number
+  /** The deepest any run reached, this one included, in metres. */
+  deepest: number
+  shafts: number
   gems: number
   veins: number
   events: Counts<EventKind>
@@ -242,10 +251,18 @@ export type ShopModel = {
   /** The next unlock; how close it is lives in the live counter, so clicks do not redraw the pane. */
   next: { name: string; icon: IconId; text: string } | null
   values: { click: number; read: number; edit: number }
-  crystals: number
-  gain: number
-  nextCrystalAt: number
-  showCollapse: boolean
+  /** Ancient stones held, achievements earned, and what each adds to everything, in percent. */
+  bonus: { stones: number; stonesPct: number; achievements: number; achievementsPct: number }
+  /** The layers, deepest last: the ones this run reached, and the one it is in. */
+  layers: { name: string; from: number; color: string; text: string; isReached: boolean; isHere: boolean }[]
+  /** Every achievement in order, earned or not, and the closest unearned one. */
+  achievements: { id: string; name: string; isEarned: boolean }[]
+  nextAchievement: { name: string; text: string } | null
+  /**
+   * The new shaft, once the run is deep enough to think of one: the stones it
+   * pays now, none until SHAFT_DEPTH. Its depth lives in the live counter.
+   */
+  shaft: { gain: number; at: number } | null
 }
 
 declare module 'claude-code' {

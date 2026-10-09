@@ -315,6 +315,9 @@ test('a vein shows after a while of work, and a press catches it', async ($, on)
   // A rich vein pays two minutes of the rate, and never less than 30 clicks: here, 30.
   expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Rich vein +30 ✻' })).toBeDefined()
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 30' })).toBeDefined()
+  // The first vein is an achievement, and the next tick says so.
+  await w.clock.advance(200)
+  expect(w.toasts).toEqual(['Achievement: First vein. Everything mines 2% more.'])
 })
 
 test('a vein not caught in time goes', async ($, on) => {

@@ -179,10 +179,12 @@ function inLines(list: Upgrade[]): Upgrade[] {
 
 export const UPGRADES: readonly Upgrade[] = inLines([...otherUpgrades, ...producerUpgrades])
 
-/** Each crystal adds this share to everything the mine earns. */
-export const CRYSTAL_BONUS = 0.02
-/** Crystals owned in all are the cube root of all-time sparks over this. */
-export const CRYSTAL_UNIT = 1_000_000
+/** Each ancient stone adds this share to everything the mine earns, for good. */
+export const STONE_BONUS = 0.1
+/** A new shaft pays the cube root of the run's sparks over this, in ancient stones. */
+export const STONE_UNIT = 1_000_000
+/** How deep a run must reach before a new shaft can be opened, in metres: the magma. */
+export const SHAFT_DEPTH = 500
 
 /**
  * What Claude's own work pays, once a turn each: seconds of the crew's rate,
@@ -208,12 +210,69 @@ export const VEIN = {
   frenzyMs: 30_000,
 } as const
 
-/** The layers the mine digs through, from the depth where each starts, in metres. */
-export const BIOMES: readonly { name: string; from: number; color: string }[] = [
-  { name: 'Topsoil', from: 0, color: '#c8a27a' },
-  { name: 'Stone', from: 100, color: '#9aa3ad' },
-  { name: 'Crystal caves', from: 300, color: '#b6a6ff' },
-  { name: 'Magma', from: 500, color: '#ff7a2f' },
+/** What reaching a layer adds for the rest of the run. */
+export type Perk =
+  | { kind: 'none' }
+  | { kind: 'click'; mult: number }
+  /** Adds this chance that a click strikes a gem. */
+  | { kind: 'gem'; chance: number }
+  /** Veins show this many times as often. */
+  | { kind: 'veins'; speed: number }
+  /** The idle crew mines this many times as much. */
+  | { kind: 'idle'; mult: number }
+  /** Work events pay this many times as much. */
+  | { kind: 'events'; mult: number }
+  | { kind: 'global'; mult: number }
+
+export type Biome = { name: string; from: number; color: string; perk: Perk; text: string }
+
+/**
+ * The layers the mine digs through, from the depth where each starts, in
+ * metres. A layer's perk holds from the moment the mine reaches it until the
+ * run ends, so the deeper a run gets, the more of them it has.
+ */
+export const BIOMES: readonly Biome[] = [
+  { name: 'Topsoil', from: 0, color: '#c8a27a', perk: { kind: 'none' }, text: 'Where every mine begins.' },
+  { name: 'Stone', from: 100, color: '#9aa3ad', perk: { kind: 'click', mult: 1.5 }, text: 'Clicks mine 50% more.' },
+  { name: 'Crystal caves', from: 300, color: '#b6a6ff', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.' },
+  { name: 'Magma', from: 500, color: '#ff7a2f', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.' },
+  { name: 'Groundwater', from: 700, color: '#4fb3d9', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
+  { name: 'Ancient ruins', from: 850, color: '#d9b45f', perk: { kind: 'events', mult: 2 }, text: 'Tests, commits and long shifts pay double.' },
+  { name: 'The core', from: 1_000, color: '#ffe9a8', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
+]
+
+/** What an achievement counts: a record of the save, or how often a work event paid. */
+export type Goal =
+  | { kind: 'veins' | 'gems' | 'clicks' | 'tools' | 'shafts' | 'stones' | 'bestTurn' | 'allTime' | 'deepest'; n: number }
+  | { kind: 'event'; event: EventKind; n: number }
+
+export type Achievement = { id: string; name: string; text: string; goal: Goal }
+
+/** Each achievement adds this share to everything the mine earns, for good. */
+export const ACHIEVEMENT_BONUS = 0.02
+
+/** Records worth a badge. Each counts what a save keeps through a new shaft, so none is ever lost. */
+export const ACHIEVEMENTS: readonly Achievement[] = [
+  { id: 'first-vein', name: 'First vein', text: 'Catch a vein.', goal: { kind: 'veins', n: 1 } },
+  { id: 'vein-hunter', name: 'Vein hunter', text: 'Catch 25 veins.', goal: { kind: 'veins', n: 25 } },
+  { id: 'hard-rock', name: 'Hard rock', text: 'Dig down to the stone, 100 m.', goal: { kind: 'deepest', n: 100 } },
+  { id: 'crystal-caves', name: 'Crystal caves', text: 'Reach the crystal caves, 300 m.', goal: { kind: 'deepest', n: 300 } },
+  { id: 'magma', name: 'Into the magma', text: 'Reach the magma, 500 m.', goal: { kind: 'deepest', n: 500 } },
+  { id: 'groundwater', name: 'Underground river', text: 'Reach the groundwater, 700 m.', goal: { kind: 'deepest', n: 700 } },
+  { id: 'ruins', name: 'Lost ruins', text: 'Reach the ancient ruins, 850 m.', goal: { kind: 'deepest', n: 850 } },
+  { id: 'core', name: 'The core', text: 'Reach the core, 1,000 m.', goal: { kind: 'deepest', n: 1_000 } },
+  { id: 'tests-100', name: 'Green streak', text: 'Pass the tests 100 times.', goal: { kind: 'event', event: 'tests', n: 100 } },
+  { id: 'commits-100', name: 'Ship it', text: 'Commit 100 times.', goal: { kind: 'event', event: 'commit', n: 100 } },
+  { id: 'long-shifts-10', name: 'Night owl', text: 'Work 10 long shifts.', goal: { kind: 'event', event: 'longShift', n: 10 } },
+  { id: 'turn-1m', name: 'Big turn', text: 'Mine 1M sparks in one turn.', goal: { kind: 'bestTurn', n: 1e6 } },
+  { id: 'turn-1b', name: 'Legendary turn', text: 'Mine 1B sparks in one turn.', goal: { kind: 'bestTurn', n: 1e9 } },
+  { id: 'clicks-10k', name: 'Calloused hands', text: 'Click 10,000 times.', goal: { kind: 'clicks', n: 10_000 } },
+  { id: 'gems-100', name: 'Jeweler', text: 'Strike 100 gems.', goal: { kind: 'gems', n: 100 } },
+  { id: 'tools-1k', name: 'Busy Claude', text: 'Mine 1,000 tool calls.', goal: { kind: 'tools', n: 1_000 } },
+  { id: 'shaft', name: 'Fresh rock', text: 'Open a new shaft.', goal: { kind: 'shafts', n: 1 } },
+  { id: 'stones-25', name: 'Stone collector', text: 'Hold 25 ancient stones.', goal: { kind: 'stones', n: 25 } },
+  { id: 'billion', name: 'Billionaire', text: 'Mine 1B sparks in all.', goal: { kind: 'allTime', n: 1e9 } },
+  { id: 'trillion', name: 'Trillionaire', text: 'Mine 1T sparks in all.', goal: { kind: 'allTime', n: 1e12 } },
 ]
 
 /** Spinner words, unlocked by all-time sparks. */

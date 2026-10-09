@@ -3,11 +3,13 @@
 // neither is redrawn when nothing it shows has changed.
 
 import type { Band, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
-import { BIOMES, CRYSTAL_UNIT, PRODUCERS, TOOL_NAMES, type Upgrade } from './data.ts'
+import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, PRODUCERS, SHAFT_DEPTH, STONE_BONUS, TOOL_NAMES, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate } from './format.ts'
 import * as game from './game.ts'
 
 export const SHOP_LIMIT = 8
+/** The shop starts to show the new shaft this far above the depth where it opens. */
+const SHAFT_LEAD = 200
 
 const TOOL_ICONS: Readonly<Record<ToolKind, IconId>> = {
   read: 'glasses',
@@ -79,10 +81,11 @@ export const EMPTY_SHOP: ShopModel = {
   more: 0,
   next: null,
   values: { click: 1, read: 1, edit: 4 },
-  crystals: 0,
-  gain: 0,
-  nextCrystalAt: CRYSTAL_UNIT,
-  showCollapse: false,
+  bonus: { stones: 0, stonesPct: 0, achievements: 0, achievementsPct: 0 },
+  layers: [],
+  achievements: [],
+  nextAchievement: null,
+  shaft: null,
 }
 
 export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopModel {
@@ -112,7 +115,10 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
     canBuy: save.sparks >= u.cost,
   }))
   const nextUp: ShopModel['next'] = next === null ? null : { name: next.name, icon: upgradeIcon(next), text: unlockText(next) }
-  const gain = game.crystalGain(save)
+  const metres = game.depth(save)
+  const here = game.biomeAt(metres)
+  const won = new Set(game.achievements(save).map(a => a.id))
+  const goal = game.nextAchievement(save)
   return {
     isLoaded,
     amount,
@@ -126,10 +132,16 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
       read: game.toolValue(save, 'read', m),
       edit: game.toolValue(save, 'edit', m),
     },
-    crystals: save.crystals,
-    gain,
-    nextCrystalAt: (save.crystals + gain + 1) ** 3 * CRYSTAL_UNIT,
-    showCollapse: save.crystals > 0 || save.allTime >= CRYSTAL_UNIT / 10,
+    bonus: {
+      stones: save.stones,
+      stonesPct: Math.round(save.stones * STONE_BONUS * 100),
+      achievements: won.size,
+      achievementsPct: Math.round(won.size * ACHIEVEMENT_BONUS * 100),
+    },
+    layers: BIOMES.map((b, i) => ({ name: b.name, from: b.from, color: b.color, text: b.text, isReached: i <= here, isHere: i === here })),
+    achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: a.name, isEarned: won.has(a.id) })),
+    nextAchievement: goal === null ? null : { name: goal.name, text: goal.text },
+    shaft: save.shafts > 0 || metres >= SHAFT_DEPTH - SHAFT_LEAD ? { gain: game.stoneGain(save), at: SHAFT_DEPTH } : null,
   }
 }
 
@@ -218,6 +230,8 @@ export function statsProps(save: Save): StatsProps {
   return {
     bySource: save.bySource,
     bestTurn: save.bestTurn,
+    deepest: game.deepestOf(save),
+    shafts: save.shafts,
     gems: save.gems,
     veins: save.veins,
     events: save.events,
@@ -227,4 +241,4 @@ export function statsProps(save: Save): StatsProps {
   }
 }
 
-export const EMPTY_STATS: StatsProps = { bySource: {}, bestTurn: 0, gems: 0, veins: 0, events: {}, clicks: 0, tools: 0, turns: 0 }
+export const EMPTY_STATS: StatsProps = { bySource: {}, bestTurn: 0, deepest: 0, shafts: 0, gems: 0, veins: 0, events: {}, clicks: 0, tools: 0, turns: 0 }

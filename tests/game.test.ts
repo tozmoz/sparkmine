@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Mine, Save } from '../types'
-import { PRODUCERS, UPGRADES } from '../hooks/data.ts'
+import { ACHIEVEMENTS, PRODUCERS, UPGRADES } from '../hooks/data.ts'
 import { fmt, fmtRate } from '../hooks/format.ts'
 import * as game from '../hooks/game.ts'
 
@@ -21,10 +21,12 @@ describe('prices', () => {
 })
 
 describe('income', () => {
-  test('producers, upgrades and crystals set the rate', () => {
+  test('producers, upgrades, ancient stones and achievements set the rate', () => {
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 } })))).toBe(0.5)
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, upgrades: ['apprentice-1'] })))).toBe(0.75)
-    expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, crystals: 5 })))).toBe(0.55)
+    expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, stones: 5 })))).toBe(0.75)
+    // First vein and Big turn: 2% each.
+    expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, veins: 1, bestTurn: 2e6 })))).toBe(0.52)
   })
 
   test('picks multiply clicks, and muscle memory adds a share of the rate', () => {
@@ -141,22 +143,53 @@ describe('buying', () => {
   })
 })
 
-describe('collapse', () => {
-  test('crystals come from the cube root of all-time sparks', () => {
-    expect(game.crystalGain(saveWith({ allTime: 999_999 }))).toBe(0)
-    expect(game.crystalGain(saveWith({ allTime: 8_000_000 }))).toBe(2)
-    expect(game.crystalGain(saveWith({ allTime: 8_000_000, crystals: 1 }))).toBe(1)
+describe('a new shaft', () => {
+  test('pays the cube root of the run\'s sparks in stones, from 500 m down', () => {
+    // 50M is 470 m: not yet. 125M is 510 m, and the cube root of 125 is 5.
+    expect(game.stoneGain(saveWith({ lifetime: 50e6 }))).toBe(0)
+    expect(game.stoneGain(saveWith({ lifetime: 125e6 }))).toBe(5)
+    expect(game.stoneGain(saveWith({ lifetime: 1e9 }))).toBe(10)
   })
 
-  test('the mine resets, and crystals, all-time sparks and counters stay', () => {
-    const after = game.collapse(
-      saveWith({ sparks: 5e6, lifetime: 8e6, allTime: 8e6, clicks: 40, producers: { cart: 9 }, upgrades: ['pick-1'] }),
+  test('starts the mine over, and the stones, records and counters stay', () => {
+    const after = game.openShaft(
+      saveWith({ sparks: 5e6, lifetime: 125e6, allTime: 2e8, clicks: 40, producers: { cart: 9 }, upgrades: ['pick-1'], stones: 3, deepest: 450 }),
       'next',
     )
-    expect(after).toMatchObject({ runId: 'next', sparks: 0, lifetime: 0, allTime: 8e6, crystals: 2, clicks: 40 })
+    expect(after).toMatchObject({ runId: 'next', sparks: 0, lifetime: 0, allTime: 2e8, stones: 8, deepest: 510, shafts: 1, clicks: 40 })
     expect(after?.producers).toEqual({})
     expect(after?.upgrades).toEqual([])
-    expect(game.collapse(saveWith({ allTime: 10 }), 'next')).toBeNull()
+    expect(game.openShaft(saveWith({ lifetime: 50e6, allTime: 50e6 }), 'next')).toBeNull()
+    // The layers' perks went with the run; the achievements stay.
+    if (after === null) throw new Error('no shaft')
+    expect(game.multipliers(after).veinSpeed).toBe(1)
+    expect(game.achievements(after).map(a => a.id)).toEqual(['hard-rock', 'crystal-caves', 'magma', 'shaft'])
+  })
+})
+
+describe('layers', () => {
+  test('each layer reached adds its perk for the rest of the run', () => {
+    const at = (lifetime: number) => game.multipliers(saveWith({ lifetime }))
+    // 9K is 100 m, the stone: clicks mine 50% more, and Hard rock adds 2%.
+    expect(near(game.clickValue(saveWith({ lifetime: 9_000 })))).toBe(1.53)
+    expect(at(1e6).gemChance).toBe(0.02)
+    expect(at(1e8)).toMatchObject({ veinSpeed: 2, idleMult: 1, events: 1 })
+    expect(at(1e10)).toMatchObject({ veinSpeed: 2, idleMult: 1.25, events: 1 })
+    expect(at(3.2e11)).toMatchObject({ idleMult: 1.25, events: 2 })
+    // The core: 25% more, and six depth achievements add 12%.
+    expect(near(at(1e13).global)).toBe(1.4)
+    expect(near(game.idleShare(saveWith({ lifetime: 1e10, upgrades: ['idle-1'] })))).toBe(0.125)
+    expect(game.veinAfter('run', 1, 2).seconds).toBe(Math.round(game.veinAfter('run', 1).seconds / 2))
+  })
+})
+
+describe('achievements', () => {
+  test('are read off the records, and the closest unearned one is next', () => {
+    expect(game.achievements(saveWith({}))).toEqual([])
+    const save = saveWith({ veins: 20, bestTurn: 2e6, deepest: 520, events: { commit: 3 } })
+    expect(game.achievements(save).map(a => a.name)).toEqual(['First vein', 'Hard rock', 'Crystal caves', 'Into the magma', 'Big turn'])
+    expect(game.nextAchievement(save)?.name).toBe('Vein hunter')
+    expect(new Set(ACHIEVEMENTS.map(a => a.id)).size).toBe(ACHIEVEMENTS.length)
   })
 })
 
@@ -308,7 +341,7 @@ describe('depth', () => {
     expect(game.depth(saveWith({ lifetime: 9_000 }))).toBe(100)
     expect(game.depth(saveWith({ lifetime: 999_000 }))).toBe(300)
     expect(game.depth(saveWith({ lifetime: 99_999_000 }))).toBe(500)
-    expect([0, 99, 100, 299, 300, 499, 500, 900].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3])
+    expect([0, 99, 100, 299, 300, 499, 500, 699, 700, 849, 850, 999, 1_000, 5_000].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
   })
 })
 
@@ -338,9 +371,11 @@ describe('stats', () => {
     expect(merged).toMatchObject({ bySource: { crew: 5, click: 40, event: 20 }, gems: 3, veins: 1, events: { tests: 1 }, bestTurn: 100 })
   })
 
-  test('stats survive a collapse, and an older save reads with none', () => {
-    const after = game.collapse(saveWith({ allTime: 8e6, bySource: { crew: 9 }, gems: 4, bestTurn: 77 }), 'next')
+  test('stats survive a new shaft, and an older save reads with none', () => {
+    const after = game.openShaft(saveWith({ lifetime: 125e6, allTime: 2e8, bySource: { crew: 9 }, gems: 4, bestTurn: 77 }), 'next')
     expect(after).toMatchObject({ bySource: { crew: 9 }, gems: 4, bestTurn: 77 })
+    // The crystals of the collapse a new shaft replaced come back as stones.
+    expect(game.normalize({ v: 1, runId: 'old', crystals: 3 })).toMatchObject({ stones: 3, deepest: 0, shafts: 0 })
     expect(game.normalize({ v: 1, runId: 'old', sparks: 5 })).toMatchObject({ bySource: {}, gems: 0, veins: 0, events: {}, bestTurn: 0 })
     const old = { ...game.newMine('old'), save: { v: 1, runId: 'old', sparks: 5 } as unknown as Save }
     expect(game.normalizeMine(old).save).toMatchObject({ sparks: 5, bySource: {}, events: {} })

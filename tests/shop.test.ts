@@ -117,20 +117,39 @@ test('an upgrade goes on sale at its unlock', async ($, on) => {
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 400' })).toBeDefined()
 })
 
-test('collapsing the mine trades the run for crystals', async ($, on) => {
-  const w = world(on, { save: seeded({ sparks: 5e6, lifetime: 8e6, allTime: 8e6, producers: { cart: 3 } }) })
+test('a new shaft trades the run for ancient stones, from 500 m down', async ($, on) => {
+  const w = world(on, { save: seeded({ sparks: 5e6, lifetime: 125e6, allTime: 2e8, producers: { cart: 3 } }) })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
-  expect((await ui.find({ key: 'collapse' }))?.props.label).toBe('Collapse for 2 ◆')
-  w.answers.push('Keep mining')
-  await ui.press({ key: 'collapse' })
+  expect((await ui.find({ key: 'shaft' }))?.props.label).toBe('Open for 5 ◈')
+  w.answers.push('Keep digging')
+  await ui.press({ key: 'shaft' })
   expect(await ui.find({ type: 'Text', text: 'Mine cart ×3' })).toBeDefined()
-  w.answers.push('Collapse')
-  await ui.press({ key: 'collapse' })
+  w.answers.push('Open it')
+  await ui.press({ key: 'shaft' })
   await ui.advance(250)
-  expect(await ui.find({ type: 'Text', text: '◆ 2 · +4% to everything' })).toBeDefined()
+  // Stones add 10% each; Hard rock, Crystal caves, Into the magma and Fresh rock 2% each.
+  expect(await ui.find({ type: 'Text', text: '◈ 5 stones +50% · ★ 4 achievements +8%' })).toBeDefined()
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 0' })).toBeDefined()
-  expect(w.store.get('save')).toMatchObject({ crystals: 2, sparks: 0, allTime: 8e6, producers: {} })
+  expect(w.store.get('save')).toMatchObject({ stones: 5, shafts: 1, deepest: 510, sparks: 0, allTime: 2e8, producers: {} })
+  expect(w.toasts).toContain('A new shaft is open. You hold 5 ◈. Achievement: Fresh rock. Everything mines 2% more.')
+})
+
+test('a shaft above 500 m says how deep it must go, and the layers say what each adds', async ($, on) => {
+  const w = world(on, { save: seeded({ sparks: 100, lifetime: 2e6, allTime: 2e6, veins: 1 }) })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  expect((await ui.find({ key: 'shaft' }))?.props).toMatchObject({ label: 'Open a new shaft', dimColor: true })
+  await ui.press({ key: 'shaft' })
+  expect(w.toasts).toEqual(['A new shaft opens once this one reaches 500 m'])
+  // 2M is 330 m: the crystal caves, with the stone above them reached and the magma ahead.
+  expect(await ui.find({ type: 'Text', text: '◀ here' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: 'Crystal caves' }))?.props).toMatchObject({ bold: true })
+  expect(await ui.find({ type: 'Text', text: '500 m · Veins show twice as often.' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: 'Magma' }))?.props).toMatchObject({ dimColor: true })
+  expect(await ui.find({ type: 'Text', text: '3/20 · +6% to everything' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '★ First vein' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '☆ Vein hunter' })).toBeDefined()
 })
 
 test('what a session mines reaches the store', async ($, on) => {
@@ -191,13 +210,14 @@ test('on the desktop the cards stand a row apart, in the terminal they stay pack
 })
 
 test('the stats say where the sparks came from', async ($, on) => {
-  world(on, { save: seeded({ bySource: { crew: 600, click: 300, tool: 60, event: 40 }, bestTurn: 450, gems: 3, veins: 2, events: { tests: 4, commit: 1 } }) })
+  world(on, { save: seeded({ bySource: { crew: 600, click: 300, tool: 60, event: 40 }, bestTurn: 450, gems: 3, veins: 2, events: { tests: 4, commit: 1 }, deepest: 520, shafts: 1 }) })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
   await ui.advance(1_000)
   expect(await ui.find({ in: 'stats', type: 'Text', text: '60% · ✻ 600' })).toBeDefined()
   expect(await ui.find({ in: 'stats', type: 'Text', text: '4% · ✻ 40' })).toBeDefined()
-  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Best turn +450 · Gems 3 · Veins 2' })).toBeDefined()
+  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Best turn +450 · Deepest 520 m · Shafts 1' })).toBeDefined()
+  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Gems 3 · Veins 2' })).toBeDefined()
   expect(await ui.find({ in: 'stats', type: 'Text', text: 'Tests passed 4 · Commits 1 · Long shifts 0' })).toBeDefined()
 })
 

@@ -3,17 +3,22 @@
 
 import type { Counts, Delta, EventKind, Mine, ProducerId, Save, SourceKind, ToolKind, VeinKind } from '../types'
 import {
+  ACHIEVEMENT_BONUS,
+  ACHIEVEMENTS,
   BIOMES,
-  CRYSTAL_BONUS,
-  CRYSTAL_UNIT,
   EVENTS,
   GEM_WORTH,
   GROWTH,
   PRODUCERS,
   REWARDS,
+  SHAFT_DEPTH,
+  STONE_BONUS,
+  STONE_UNIT,
   TOOL_BASE,
   UPGRADES,
   VEIN,
+  type Achievement,
+  type Goal,
   type Producer,
   type Unlock,
   type Upgrade,
@@ -30,7 +35,9 @@ export function fresh(runId: string): Save {
     sparks: 0,
     lifetime: 0,
     allTime: 0,
-    crystals: 0,
+    stones: 0,
+    deepest: 0,
+    shafts: 0,
     clicks: 0,
     tools: 0,
     turns: 0,
@@ -118,7 +125,10 @@ export function normalize(raw: unknown): Save | null {
     sparks: num(r.sparks),
     lifetime: num(r.lifetime),
     allTime: num(r.allTime),
-    crystals: Math.floor(num(r.crystals)),
+    // Crystals were the stones of the collapse a new shaft replaced.
+    stones: Math.floor(num(r.stones ?? r.crystals)),
+    deepest: Math.round(num(r.deepest)),
+    shafts: Math.floor(num(r.shafts)),
     clicks: Math.floor(num(r.clicks)),
     tools: Math.floor(num(r.tools)),
     turns: Math.floor(num(r.turns)),
@@ -214,11 +224,15 @@ export type Multipliers = {
   ore: number
   idle: number
   shift: number
+  /** From the layers: how much more often veins show, what the idle crew and work events add. */
+  veinSpeed: number
+  idleMult: number
+  events: number
 }
 
 export function multipliers(save: Save): Multipliers {
   const m: Multipliers = {
-    global: 1 + CRYSTAL_BONUS * save.crystals,
+    global: (1 + STONE_BONUS * save.stones) * (1 + ACHIEVEMENT_BONUS * achievements(save).length),
     click: 1,
     clickRate: 0,
     clickCrew: 0,
@@ -229,6 +243,35 @@ export function multipliers(save: Save): Multipliers {
     ore: 0,
     idle: 0,
     shift: 0,
+    veinSpeed: 1,
+    idleMult: 1,
+    events: 1,
+  }
+  // Every layer this run reached adds its perk.
+  for (const biome of BIOMES.slice(0, biomeAt(depth(save)) + 1)) {
+    const perk = biome.perk
+    switch (perk.kind) {
+      case 'none':
+        break
+      case 'click':
+        m.click *= perk.mult
+        break
+      case 'gem':
+        m.gemChance += perk.chance
+        break
+      case 'veins':
+        m.veinSpeed *= perk.speed
+        break
+      case 'idle':
+        m.idleMult *= perk.mult
+        break
+      case 'events':
+        m.events *= perk.mult
+        break
+      case 'global':
+        m.global *= perk.mult
+        break
+    }
   }
   for (const id of save.upgrades) {
     const effect = upgrade(id)?.effect
@@ -317,7 +360,7 @@ export function roll(runId: string, label: string): number {
 /** How deep the mine is, in metres: a hundred more for every tenfold of this run's sparks. */
 export const depth = (save: Save): number => Math.round(100 * Math.log10(1 + save.lifetime / 1_000))
 
-/** The layer a depth is in: 0 topsoil, 1 stone, 2 crystal caves, 3 magma. */
+/** The layer a depth is in, an index of BIOMES: 0 topsoil, 1 stone, ... 6 the core. */
 export function biomeAt(metres: number): number {
   let biome = 0
   BIOMES.forEach((b, i) => {
@@ -329,7 +372,7 @@ export function biomeAt(metres: number): number {
 /** What a work event pays: seconds of the crew's rate, and never less than its clicks. */
 export function eventValue(save: Save, kind: EventKind, m = multipliers(save)): number {
   const e = EVENTS[kind]
-  return Math.max(rate(save, m) * e.seconds, clickValue(save, m) * e.clicks)
+  return Math.max(rate(save, m) * e.seconds, clickValue(save, m) * e.clicks) * m.events
 }
 
 /** What a rich vein pays. */
@@ -337,11 +380,14 @@ export function veinValue(save: Save, m = multipliers(save)): number {
   return Math.max(rate(save, m) * VEIN.richSeconds, clickValue(save, m) * VEIN.richClicks)
 }
 
-/** Seconds of work before the `n`th vein of a session shows, and what kind it is. */
-export function veinAfter(runId: string, n: number): { seconds: number; kind: VeinKind } {
+/**
+ * Seconds of work before the `n`th vein of a session shows, and what kind it
+ * is; `speed` times as often in the magma and below.
+ */
+export function veinAfter(runId: string, n: number, speed = 1): { seconds: number; kind: VeinKind } {
   const wait = n === 0 ? VEIN.first : VEIN.next
   return {
-    seconds: wait.min + Math.floor(wait.spread * roll(runId, `vein-${n}`)),
+    seconds: Math.round((wait.min + Math.floor(wait.spread * roll(runId, `vein-${n}`))) / speed),
     kind: roll(runId, `vein-kind-${n}`) < 0.5 ? 'rich' : 'frenzy',
   }
 }
@@ -407,7 +453,10 @@ export function shiftValue(save: Save, m = multipliers(save)): number {
   return rate(save, m) * m.shift
 }
 
-export const idleShare = (save: Save): number => multipliers(save).idle
+export function idleShare(save: Save): number {
+  const m = multipliers(save)
+  return Math.min(1, m.idle * m.idleMult)
+}
 
 function have(save: Save, unlock: Unlock): number {
   switch (unlock.kind) {
@@ -468,9 +517,57 @@ export function shopUpgrades(save: Save): { onSale: Upgrade[]; next: Upgrade | n
   return { onSale, next: locked[0] ?? null }
 }
 
-/** How many crystals collapsing the mine now would add. */
-export function crystalGain(save: Save): number {
-  return Math.max(0, Math.floor(Math.cbrt(save.allTime / CRYSTAL_UNIT)) - save.crystals)
+/** The deepest any run reached, this one included, in metres. */
+export const deepestOf = (save: Save): number => Math.max(save.deepest, depth(save))
+
+/** How many ancient stones a new shaft would pay now: none until the run reaches SHAFT_DEPTH. */
+export function stoneGain(save: Save): number {
+  return depth(save) < SHAFT_DEPTH ? 0 : Math.floor(Math.cbrt(save.lifetime / STONE_UNIT))
+}
+
+/** How far a save has come toward a goal: the record or count it measures. */
+function reached(save: Save, goal: Goal): number {
+  switch (goal.kind) {
+    case 'veins':
+      return save.veins
+    case 'gems':
+      return save.gems
+    case 'clicks':
+      return save.clicks
+    case 'tools':
+      return save.tools
+    case 'shafts':
+      return save.shafts
+    case 'stones':
+      return save.stones
+    case 'bestTurn':
+      return save.bestTurn
+    case 'allTime':
+      return save.allTime
+    case 'deepest':
+      return deepestOf(save)
+    case 'event':
+      return save.events[goal.event] ?? 0
+  }
+}
+
+export const isEarned = (save: Save, a: Achievement): boolean => reached(save, a.goal) >= a.goal.n
+
+/**
+ * The achievements a save has earned. Each counts a record that only grows and
+ * survives a new shaft, so they are read off the save and never stored.
+ */
+export const achievements = (save: Save): Achievement[] => ACHIEVEMENTS.filter(a => isEarned(save, a))
+
+/** The unearned achievement closest to done, by share of its goal. */
+export function nextAchievement(save: Save): Achievement | null {
+  let best: { a: Achievement; share: number } | null = null
+  for (const a of ACHIEVEMENTS) {
+    if (isEarned(save, a)) continue
+    const share = reached(save, a.goal) / a.goal.n
+    if (best === null || share > best.share) best = { a, share }
+  }
+  return best?.a ?? null
 }
 
 export function rewardWord(allTime: number): string | null {
@@ -579,16 +676,19 @@ export function buyUpgrade(mine: Mine, id: string): Mine | null {
 }
 
 /**
- * Prestige: the mine collapses. Sparks, producers and upgrades go; crystals,
- * all-time sparks and the counters stay. Null while it would add no crystal.
+ * Prestige: a new shaft in fresh rock. Sparks, producers, upgrades and depth
+ * go; ancient stones, all-time sparks, the records and the counters stay.
+ * Null until the run is deep enough to pay a stone.
  */
-export function collapse(save: Save, runId: string): Save | null {
-  const gain = crystalGain(save)
+export function openShaft(save: Save, runId: string): Save | null {
+  const gain = stoneGain(save)
   if (gain < 1) return null
   return {
     ...fresh(runId),
     allTime: save.allTime,
-    crystals: save.crystals + gain,
+    stones: save.stones + gain,
+    deepest: deepestOf(save),
+    shafts: save.shafts + 1,
     clicks: save.clicks,
     tools: save.tools,
     turns: save.turns,
@@ -651,7 +751,7 @@ export function syncMine(stored: Save | null, mine: Mine, newId: string): { mine
   const writer = mine.writer === '' ? newId : mine.writer
   const base = stored ?? mine.save
   const isLost = base.chain !== '' && base.chain === mine.chain && (base.writes[writer] ?? 0) < mine.seq
-  // The changes of an older run went with it on purpose: the mine collapsed or was reset.
+  // The changes of an older run went with it on purpose: a new shaft opened, or the mine was reset.
   const lost = isLost ? mine.inflight.filter(d => d.runId === base.runId) : []
   const deltas = isEmptyDelta(mine.pending) ? lost : [...lost, mine.pending]
   if (deltas.length === 0) {
