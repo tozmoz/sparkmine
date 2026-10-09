@@ -232,7 +232,7 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (io !== null && e.agentId === undefined) await state.endTurn(io, e.durationMs)
+    if (io !== null && e.agentId === undefined) await state.endTurn(io, e.durationMs, e.reason)
     return result
   })
 

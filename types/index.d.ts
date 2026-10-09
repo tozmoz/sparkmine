@@ -18,8 +18,12 @@ export type Counts<K extends string> = { [P in K]?: number }
 /** Where sparks come from, for the shop's stats. */
 export type SourceKind = 'crew' | 'click' | 'tool' | 'turn' | 'event' | 'vein'
 
-/** What Claude's own work turns into a reward: green tests, a commit, a long shift. */
-export type EventKind = 'tests' | 'commit' | 'longShift'
+/**
+ * What Claude's own work turns into a reward: green tests, a bug squashed
+ * (tests that failed, then passed), a build, a clean lint, a commit, a pull
+ * request opened or merged, a long shift, and a streak of good turns.
+ */
+export type EventKind = 'tests' | 'fix' | 'build' | 'lint' | 'commit' | 'pr' | 'merge' | 'longShift' | 'streak'
 
 export type VeinKind = 'rich' | 'frenzy'
 
@@ -49,6 +53,8 @@ export type Save = {
   bySource: Counts<SourceKind>
   /** The most sparks one turn has mined. */
   bestTurn: number
+  /** The most good turns in a row a session has worked. */
+  bestStreak: number
   gems: number
   veins: number
   events: Counts<EventKind>
@@ -77,6 +83,7 @@ export type Delta = {
   upgrades: string[]
   bySource: Counts<SourceKind>
   bestTurn: number
+  bestStreak: number
   gems: number
   veins: number
   events: Counts<EventKind>
@@ -122,6 +129,12 @@ export type View = {
   event: { label: string; value: number; at: number } | null
   /** The work events already rewarded this turn: each pays once a turn. */
   turnEvents: EventKind[]
+  /** Tool calls this turn: a turn Claude did no work in neither makes nor breaks a streak. */
+  turnTools: number
+  /** Good turns in a row: each ended in an answer, after some work. */
+  streak: number
+  /** A test run failed and none has passed since: the next green run squashes a bug. */
+  testsFailing: boolean
 }
 
 /** What the band's drawing depends on. It changes rarely, so the scene is not redrawn on every click. */
@@ -227,6 +240,7 @@ export type StatsProps = {
   /** The deepest any run reached, this one included, in metres. */
   deepest: number
   shafts: number
+  bestStreak: number
   gems: number
   veins: number
   events: Counts<EventKind>

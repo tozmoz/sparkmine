@@ -26,7 +26,7 @@ import {
 
 export const TOOL_KINDS: readonly ToolKind[] = ['read', 'edit', 'bash', 'web', 'agent', 'mcp', 'other']
 export const SOURCE_KINDS: readonly SourceKind[] = ['crew', 'click', 'tool', 'turn', 'event', 'vein']
-export const EVENT_KINDS: readonly EventKind[] = ['tests', 'commit', 'longShift']
+export const EVENT_KINDS: readonly EventKind[] = ['tests', 'fix', 'build', 'lint', 'commit', 'pr', 'merge', 'longShift', 'streak']
 
 export function fresh(runId: string): Save {
   return {
@@ -46,6 +46,7 @@ export function fresh(runId: string): Save {
     upgrades: [],
     bySource: {},
     bestTurn: 0,
+    bestStreak: 0,
     gems: 0,
     veins: 0,
     events: {},
@@ -67,6 +68,7 @@ export function emptyDelta(runId: string): Delta {
     upgrades: [],
     bySource: {},
     bestTurn: 0,
+    bestStreak: 0,
     gems: 0,
     veins: 0,
     events: {},
@@ -95,6 +97,7 @@ function stats(r: Record<string, unknown>) {
   return {
     bySource: counts(r.bySource, SOURCE_KINDS),
     bestTurn: num(r.bestTurn),
+    bestStreak: Math.floor(num(r.bestStreak)),
     gems: Math.floor(num(r.gems)),
     veins: Math.floor(num(r.veins)),
     events: counts(r.events, EVENT_KINDS),
@@ -405,13 +408,43 @@ const TEST_RUNNERS: readonly RegExp[] = [
   /^\S+\s+plugin\s+test\b/,
 ]
 
+/** A build at the head of one step: a package's build script, a compiler, a bundler. */
+const BUILDERS: readonly RegExp[] = [
+  /^(npm|pnpm|yarn|bun)\s+(run\s+)?build\b/,
+  /^(npx\s+|bunx\s+|pnpm\s+exec\s+)?(vite|next|nuxt|astro|parcel|svelte-kit)\s+build\b/,
+  /^(npx\s+|bunx\s+|pnpm\s+exec\s+)?(webpack|rollup|esbuild|tsup)\b/,
+  /^(npx\s+|bunx\s+|pnpm\s+exec\s+)?tsc\b(?!.*--noEmit)/,
+  /^(cargo|go|swift|dotnet|zig)\s+build\b/,
+  /^make(\s+(build|all))?$/,
+  /^(\.\/)?(mvnw?|gradlew?)\b.*\b(compile|package|build|assemble)\b/,
+  /^(xcodebuild|bazel\s+build|cmake\s+--build|ninja)\b/,
+  /^python3?\s+-m\s+build\b/,
+]
+
+/** A linter or a type check at the head of one step. */
+const LINTERS: readonly RegExp[] = [
+  /^(npm|pnpm|yarn|bun)\s+(run\s+)?(lint|typecheck|type-check)\b/,
+  /^(npx\s+|bunx\s+|pnpm\s+exec\s+)?(eslint|oxlint|stylelint|biome\s+(check|lint)|prettier\s+(--check|-c))\b/,
+  /^(npx\s+|bunx\s+|pnpm\s+exec\s+)?tsc\b.*--noEmit\b/,
+  /^(python3?\s+-m\s+)?(ruff\s+check|flake8|pylint|mypy|pyright|black\s+--check)\b/,
+  /^(golangci-lint|staticcheck|go\s+vet)\b/,
+  /^cargo\s+(clippy|fmt\s+--check)\b/,
+  /^(rubocop|swiftlint|ktlint|shellcheck|hadolint)\b/,
+  /^\S+\s+plugin\s+validate\b/,
+]
+
+/** A pull request opened, and one merged; `--auto` only asks to merge it later. */
+const OPENS_PR: readonly RegExp[] = [/^gh\s+pr\s+create\b/]
+const MERGES_PR: readonly RegExp[] = [/^gh\s+pr\s+merge\b(?!.*--auto)/]
+
+/** Each step of a shell command, with the variables set before it dropped. */
+const steps = (command: string): string[] =>
+  command.split(/&&|\|\||;|\||\n/).map(step => step.trim().replace(/^(\w+=\S*\s+)+/, ''))
+
+const runs = (command: string, heads: readonly RegExp[]): boolean => steps(command).some(step => heads.some(re => re.test(step)))
+
 /** Whether a shell command runs a test suite, in any step of it. */
-export function isTestCommand(command: string): boolean {
-  return command
-    .split(/&&|\|\||;|\||\n/)
-    .map(step => step.trim().replace(/^(\w+=\S*\s+)+/, ''))
-    .some(step => TEST_RUNNERS.some(re => re.test(step)))
-}
+export const isTestCommand = (command: string): boolean => runs(command, TEST_RUNNERS)
 
 /** What a finished tool call tells about Claude's work, as plain data the hooks read off it. */
 export type ToolOutcome = { tool: string; command?: string; isError: boolean; interrupted: boolean; background: boolean; committed: boolean }
@@ -430,12 +463,28 @@ export function outcomeOf(tool: string, input: unknown, answer: { isError?: unkn
   }
 }
 
-/** The work event a tool call is, if any: a test run that passed, or a commit. */
-export function workEvent(o: ToolOutcome): EventKind | null {
-  if (o.tool !== 'Bash' || o.isError || o.interrupted || o.background) return null
-  if (o.committed) return 'commit'
-  if (o.command !== undefined && isTestCommand(o.command)) return 'tests'
-  return null
+/**
+ * The work events a finished Bash call is, when it succeeded: tests, a build
+ * and a lint that passed, a commit, a pull request opened or merged. One
+ * command can be several (`npm run build && npm test`).
+ */
+export function workEvents(o: ToolOutcome): EventKind[] {
+  if (o.tool !== 'Bash' || o.isError || o.interrupted || o.background) return []
+  const command = o.command ?? ''
+  const events: EventKind[] = []
+  if (runs(command, TEST_RUNNERS)) events.push('tests')
+  if (runs(command, BUILDERS)) events.push('build')
+  if (runs(command, LINTERS)) events.push('lint')
+  if (o.committed) events.push('commit')
+  if (runs(command, OPENS_PR)) events.push('pr')
+  if (runs(command, MERGES_PR)) events.push('merge')
+  return events
+}
+
+/** How a finished Bash call ran the tests, if it did; a run cut short or sent to the background tells nothing. */
+export function testRun(o: ToolOutcome): 'passed' | 'failed' | null {
+  if (o.tool !== 'Bash' || o.interrupted || o.background || o.command === undefined || !isTestCommand(o.command)) return null
+  return o.isError ? 'failed' : 'passed'
 }
 
 /** What the next click mines, and whether it strikes a gem. */
@@ -542,6 +591,8 @@ function reached(save: Save, goal: Goal): number {
       return save.stones
     case 'bestTurn':
       return save.bestTurn
+    case 'bestStreak':
+      return save.bestStreak
     case 'allTime':
       return save.allTime
     case 'deepest':
@@ -641,6 +692,12 @@ export function recordTurn(mine: Mine, earned: number): Mine {
   return { ...mine, save: { ...mine.save, bestTurn: earned }, pending: { ...mine.pending, bestTurn: Math.max(mine.pending.bestTurn, earned) } }
 }
 
+/** Keeps the longest streak of good turns yet, in the save and in what the next sync carries. */
+export function recordStreak(mine: Mine, streak: number): Mine {
+  if (!(streak > mine.save.bestStreak)) return mine
+  return { ...mine, save: { ...mine.save, bestStreak: streak }, pending: { ...mine.pending, bestStreak: Math.max(mine.pending.bestStreak, streak) } }
+}
+
 export function buyProducer(mine: Mine, id: ProducerId, n: number): Mine | null {
   const count = Math.max(1, Math.floor(n))
   const price = priceOf(producer(id), owned(mine.save, id), count)
@@ -695,6 +752,7 @@ export function openShaft(save: Save, runId: string): Save | null {
     mined: save.mined,
     bySource: save.bySource,
     bestTurn: save.bestTurn,
+    bestStreak: save.bestStreak,
     gems: save.gems,
     veins: save.veins,
     events: save.events,
@@ -721,6 +779,7 @@ export function applyDelta(stored: Save, d: Delta): Save {
     upgrades: sameRun ? [...new Set([...stored.upgrades, ...d.upgrades])] : stored.upgrades,
     bySource: add(stored.bySource, d.bySource),
     bestTurn: Math.max(stored.bestTurn, d.bestTurn),
+    bestStreak: Math.max(stored.bestStreak, d.bestStreak),
     gems: stored.gems + d.gems,
     veins: stored.veins + d.veins,
     events: add(stored.events, d.events),
@@ -775,6 +834,7 @@ export const isEmptyDelta = (d: Delta): boolean =>
   d.upgrades.length === 0 &&
   Object.keys(d.bySource).length === 0 &&
   d.bestTurn === 0 &&
+  d.bestStreak === 0 &&
   d.gems === 0 &&
   d.veins === 0 &&
   Object.keys(d.events).length === 0

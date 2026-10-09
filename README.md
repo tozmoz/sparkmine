@@ -45,8 +45,10 @@ claude plugin update sparkmine@sparkmine
 - Open the shop with **Shop** or `/mine`. Producers mine every second Claude
   works; upgrades make clicks, tool calls and the crew stronger. The shop's
   stats show where your sparks came from.
-- **Claude's work pays**, once a turn each: tests that pass, a commit, and a
-  turn longer than five minutes.
+- **Claude's work pays**, once a turn each: tests that pass, a bug squashed
+  (tests that failed, then pass), a build that passes, a clean lint, a commit,
+  a pull request opened or merged, and a turn longer than five minutes. Every
+  third good turn in a row pays a streak.
 - **Veins:** now and then a gold vein shows beside the Shop sign for ten
   seconds. Catch it for two minutes of income, or a ×5 frenzy for thirty.
 - **Depth:** the mine goes a hundred metres deeper with every tenfold of
@@ -58,8 +60,8 @@ claude plugin update sparkmine@sparkmine
 - **New shaft:** from 500 m down, open a new shaft in the shop to start over
   for ◈ ancient stones. Each adds 10% to everything for good, and a deeper run
   pays more of them.
-- **Achievements:** 20 badges for records such as your first vein, 100
-  commits or reaching the magma. Each adds 2% to everything, and they stay
+- **Achievements:** 23 badges for records such as your first vein, 100
+  commits, a ten-turn streak or reaching the magma. Each adds 2% to everything, and they stay
   through new shafts.
 
 All your sessions share one save, so they mine into the same mine.

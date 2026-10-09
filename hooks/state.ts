@@ -3,7 +3,7 @@
 // store sync and the actions the hooks and buttons call.
 
 import type { Band, EventKind, Mine, Mode, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
-import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STONE_BONUS, VEIN, type Achievement } from './data.ts'
+import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STONE_BONUS, STREAK_TURNS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
 import * as model from './model.ts'
@@ -70,6 +70,9 @@ export const INITIAL_VIEW: View = {
   frenzy: null,
   event: null,
   turnEvents: [],
+  turnTools: 0,
+  streak: 0,
+  testsFailing: false,
 }
 
 export const INITIAL_BAND: Band = {
@@ -329,26 +332,38 @@ export async function clicks(io: Io, n: number): Promise<{ counted: number; gems
 }
 
 /**
- * Pays a work event, once a turn for each kind: green tests, a commit, a long
- * shift. The view keeps it a moment, so the HUD can say what paid.
+ * Pays work events, once a turn for each kind: green tests, a build, a commit,
+ * a pull request, a long shift. The view keeps them a moment, so the HUD can
+ * say what paid; several at once (a build and the tests in one command) share
+ * one line and add up.
  */
-async function reward(io: Io, kind: EventKind, now: number): Promise<number> {
-  const fresh = { isNew: false }
+async function reward(io: Io, kinds: readonly EventKind[], now: number, labels: Partial<Record<EventKind, string>> = {}): Promise<number> {
+  const fresh: { kinds: EventKind[] } = { kinds: [] }
   await patchView(io, view => {
-    fresh.isNew = !view.turnEvents.includes(kind)
-    return fresh.isNew ? { ...view, turnEvents: [...view.turnEvents, kind] } : view
+    fresh.kinds = [...new Set(kinds)].filter(kind => !view.turnEvents.includes(kind))
+    return fresh.kinds.length === 0 ? view : { ...view, turnEvents: [...view.turnEvents, ...fresh.kinds] }
   })
-  if (!fresh.isNew) return 0
-  let value = 0
+  if (fresh.kinds.length === 0) return 0
+  let total = 0
   await io.mine(m => {
-    value = game.eventValue(m.save, kind)
-    return game.earn(m, value, { kind: 'event', event: kind })
+    total = 0
+    let next = m
+    for (const kind of fresh.kinds) {
+      const value = game.eventValue(next.save, kind)
+      total += value
+      next = game.earn(next, value, { kind: 'event', event: kind })
+    }
+    return next
   })
-  await io.view(view => ({ ...view, event: { label: EVENTS[kind].label, value, at: now } }))
-  return value
+  const label = fresh.kinds.map(kind => labels[kind] ?? EVENTS[kind].label).join(' · ')
+  await io.view(view => ({ ...view, event: { label, value: total, at: now } }))
+  return total
 }
 
-/** A tool call Claude finished: the miner mines it, and green tests or a commit pay a little more. */
+/**
+ * A tool call Claude finished: the miner mines it, and the work it did pays a
+ * little more. Tests that pass after a run of them failed squash a bug.
+ */
 export async function minedTool(io: Io, outcome: game.ToolOutcome): Promise<number> {
   await ensureLoaded(io)
   if ((await io.readBand()).isStopped) return 0
@@ -360,9 +375,16 @@ export async function minedTool(io: Io, outcome: game.ToolOutcome): Promise<numb
   })
   const now = await io.now()
   const label = kind === 'mcp' ? 'MCP' : outcome.tool
-  await io.view(view => ({ ...view, last: { label, value }, lastToolAt: now }))
-  const event = game.workEvent(outcome)
-  if (event !== null) await reward(io, event, now)
+  const run = game.testRun(outcome)
+  const squashed = { yes: false }
+  await io.view(view => {
+    squashed.yes = run === 'passed' && view.testsFailing
+    const testsFailing = run === null ? view.testsFailing : run === 'failed'
+    return { ...view, last: { label, value }, lastToolAt: now, turnTools: view.turnTools + 1, testsFailing }
+  })
+  const events = game.workEvents(outcome)
+  if (squashed.yes) events.push('fix')
+  if (events.length > 0) await reward(io, events, now)
   await refresh(io, now)
   return value
 }
@@ -380,12 +402,20 @@ export async function setWaiting(io: Io, id: string, isWaiting: boolean): Promis
 export async function startTurn(io: Io): Promise<void> {
   await ensureLoaded(io)
   const mine = await io.readMine()
-  await io.view(view => ({ ...view, isTurn: true, turnStart: mine.save.lifetime, turnEvents: [] }))
+  await io.view(view => ({ ...view, isTurn: true, turnStart: mine.save.lifetime, turnEvents: [], turnTools: 0 }))
   await refresh(io)
 }
 
-/** A finished turn: shift pay, the long-shift reward for a long one, and the best turn yet. */
-export async function endTurn(io: Io, durationMs = 0): Promise<number> {
+/** Why a turn ended, as `turn.complete` says: only an answer keeps a streak going. */
+export type TurnEnd = 'answer' | 'aborted' | 'refusal' | 'error'
+
+/**
+ * A finished turn: shift pay, the long-shift reward for a long one, the
+ * streak, and the best turn yet. A good turn ends in an answer after some
+ * work; every STREAK_TURNS of them in a row pay. One without work leaves the
+ * streak as it was, and one cut short or failed ends it.
+ */
+export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer'): Promise<number> {
   await ensureLoaded(io)
   const isStopped = (await io.readBand()).isStopped
   let bonus = 0
@@ -394,7 +424,18 @@ export async function endTurn(io: Io, durationMs = 0): Promise<number> {
       bonus = game.shiftValue(m.save)
       return game.earn(m, bonus, { kind: 'turn' })
     })
-    if (durationMs >= LONG_SHIFT_MS) await reward(io, 'longShift', await io.now())
+    const run = { streak: 0, isLonger: false }
+    await patchView(io, view => {
+      const streak = reason !== 'answer' ? 0 : view.turnTools > 0 ? view.streak + 1 : view.streak
+      run.streak = streak
+      run.isLonger = streak > view.streak
+      return streak === view.streak ? view : { ...view, streak }
+    })
+    const kinds: EventKind[] = []
+    if (durationMs >= LONG_SHIFT_MS) kinds.push('longShift')
+    if (run.isLonger && run.streak % STREAK_TURNS === 0) kinds.push('streak')
+    if (kinds.length > 0) await reward(io, kinds, await io.now(), { streak: `Streak ×${run.streak}` })
+    await io.mine(m => game.recordStreak(m, run.streak))
   }
   const mine = await io.readMine()
   const { turnStart } = await io.readView()

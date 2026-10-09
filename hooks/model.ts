@@ -234,6 +234,7 @@ export function statsProps(save: Save): StatsProps {
     bestTurn: save.bestTurn,
     deepest: game.deepestOf(save),
     shafts: save.shafts,
+    bestStreak: save.bestStreak,
     gems: save.gems,
     veins: save.veins,
     events: save.events,
@@ -243,4 +244,4 @@ export function statsProps(save: Save): StatsProps {
   }
 }
 
-export const EMPTY_STATS: StatsProps = { bySource: {}, bestTurn: 0, deepest: 0, shafts: 0, gems: 0, veins: 0, events: {}, clicks: 0, tools: 0, turns: 0 }
+export const EMPTY_STATS: StatsProps = { bySource: {}, bestTurn: 0, deepest: 0, shafts: 0, bestStreak: 0, gems: 0, veins: 0, events: {}, clicks: 0, tools: 0, turns: 0 }

@@ -147,7 +147,7 @@ test('a shaft above 500 m says how deep it must go, and the layers say what each
   expect((await ui.find({ type: 'Text', text: 'Crystal caves' }))?.props).toMatchObject({ bold: true })
   expect(await ui.find({ type: 'Text', text: '500 m · Veins show twice as often.' })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: 'Magma' }))?.props).toMatchObject({ dimColor: true })
-  expect(await ui.find({ type: 'Text', text: '3/20 · +6% to everything' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '3/23 · +6% to everything' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '★ First vein' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '☆ Vein hunter' })).toBeDefined()
 })
@@ -210,15 +210,16 @@ test('on the desktop the cards stand a row apart, in the terminal they stay pack
 })
 
 test('the stats say where the sparks came from', async ($, on) => {
-  world(on, { save: seeded({ bySource: { crew: 600, click: 300, tool: 60, event: 40 }, bestTurn: 450, gems: 3, veins: 2, events: { tests: 4, commit: 1 }, deepest: 520, shafts: 1 }) })
+  world(on, { save: seeded({ bySource: { crew: 600, click: 300, tool: 60, event: 40 }, bestTurn: 450, bestStreak: 4, gems: 3, veins: 2, events: { tests: 4, fix: 1, build: 2, commit: 1, pr: 1 }, deepest: 520, shafts: 1 }) })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
   await ui.advance(1_000)
   expect(await ui.find({ in: 'stats', type: 'Text', text: '60% · ✻ 600' })).toBeDefined()
   expect(await ui.find({ in: 'stats', type: 'Text', text: '4% · ✻ 40' })).toBeDefined()
-  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Best turn +450 · Deepest 520 m · Shafts 1' })).toBeDefined()
+  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Best turn +450 · Best streak 4 · Deepest 520 m · Shafts 1' })).toBeDefined()
   expect(await ui.find({ in: 'stats', type: 'Text', text: 'Gems 3 · Veins 2' })).toBeDefined()
-  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Tests passed 4 · Commits 1 · Long shifts 0' })).toBeDefined()
+  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Tests passed 4 · Bugs squashed 1 · Builds 2 · Clean lints 0' })).toBeDefined()
+  expect(await ui.find({ in: 'stats', type: 'Text', text: 'Commits 1 · PRs opened 1 · PRs merged 0 · Long shifts 0' })).toBeDefined()
 })
 
 test('a stopped mine says so atop the shop', async ($, on) => {
