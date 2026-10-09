@@ -42,6 +42,8 @@ export function fresh(runId: string): Save {
     gems: 0,
     veins: 0,
     events: {},
+    writes: {},
+    chain: '',
   }
 }
 
@@ -65,7 +67,7 @@ export function emptyDelta(runId: string): Delta {
 }
 
 export function newMine(runId: string): Mine {
-  return { save: fresh(runId), pending: emptyDelta(runId), isLoaded: false }
+  return { save: fresh(runId), pending: emptyDelta(runId), isLoaded: false, writer: '', seq: 0, chain: '', inflight: [] }
 }
 
 const num = (value: unknown): number =>
@@ -92,6 +94,16 @@ function stats(r: Record<string, unknown>) {
   }
 }
 
+/** Sessions whose last write a save remembers: the newest this many. */
+const MAX_WRITERS = 32
+
+/** Each session's last write a save holds, read entry by entry, the newest kept. */
+function writes(value: unknown): Record<string, number> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {}
+  const entries = Object.entries(value as Record<string, unknown>).filter(([, seq]) => num(seq) > 0)
+  return Object.fromEntries(entries.slice(-MAX_WRITERS).map(([id, seq]) => [id, Math.floor(num(seq))]))
+}
+
 const PRODUCER_IDS = PRODUCERS.map(p => p.id)
 const UPGRADE_IDS = new Set(UPGRADES.map(u => u.id))
 
@@ -116,17 +128,27 @@ export function normalize(raw: unknown): Save | null {
       ? [...new Set(r.upgrades.filter((id): id is string => typeof id === 'string' && UPGRADE_IDS.has(id)))]
       : [],
     ...stats(r),
+    writes: writes(r.writes),
+    chain: typeof r.chain === 'string' ? r.chain : '',
   }
 }
 
 /**
  * The session's mine with every field a newer version reads: a mine kept in
- * the session's state from before an update lacks the stats fields.
+ * the session's state from before an update lacks the stats and the sync's fields.
  */
 export function normalizeMine(mine: Mine): Mine {
   const save = normalize(mine.save) ?? fresh('unloaded')
-  const pending: Delta = { ...emptyDelta(save.runId), ...mine.pending, ...stats(mine.pending as unknown as Record<string, unknown>) }
-  return { save, pending, isLoaded: mine.isLoaded }
+  const delta = (d: Delta): Delta => ({ ...emptyDelta(save.runId), ...d, ...stats(d as unknown as Record<string, unknown>) })
+  return {
+    save,
+    pending: delta(mine.pending),
+    isLoaded: mine.isLoaded,
+    writer: typeof mine.writer === 'string' ? mine.writer : '',
+    seq: Math.floor(num(mine.seq)),
+    chain: typeof mine.chain === 'string' ? mine.chain : '',
+    inflight: Array.isArray(mine.inflight) ? mine.inflight.map(delta) : [],
+  }
 }
 
 export function classifyTool(name: string): ToolKind {
@@ -596,6 +618,43 @@ export function applyDelta(stored: Save, d: Delta): Save {
     veins: stored.veins + d.veins,
     events: add(stored.events, d.events),
   }
+}
+
+/** Notes a session's write in the save's `writes`, as its newest. */
+function wrote(writes: Record<string, number>, writer: string, seq: number): Record<string, number> {
+  const others = Object.entries(writes).filter(([id]) => id !== writer)
+  return Object.fromEntries([...others.slice(-(MAX_WRITERS - 1)), [writer, seq]])
+}
+
+/**
+ * Brings a session's mine in line with the save in the store, and says what
+ * to write back. Every session writes the one save: it reads it, lays its own
+ * changes over and writes it back. Two that read it at once both write, and the
+ * later write drops the earlier one's changes, so a purchase would come undone.
+ * So the save keeps the number of each session's last write, and a session
+ * whose write is missing lays those changes over again.
+ *
+ * That record holds only along one chain of writes. Off it (an older version
+ * of the mod wrote the save in between) the write may be in or not, and it is
+ * left as it is: a change lost now and then, never one counted twice.
+ *
+ * @param newId a fresh id: the session's name in `writes` when it has none yet, and a new chain's
+ */
+export function syncMine(stored: Save | null, mine: Mine, newId: string): { mine: Mine; save: Save; isWrite: boolean } {
+  const writer = mine.writer === '' ? newId : mine.writer
+  const base = stored ?? mine.save
+  const isLost = base.chain !== '' && base.chain === mine.chain && (base.writes[writer] ?? 0) < mine.seq
+  // The changes of an older run went with it on purpose: the mine collapsed or was reset.
+  const lost = isLost ? mine.inflight.filter(d => d.runId === base.runId) : []
+  const deltas = isEmptyDelta(mine.pending) ? lost : [...lost, mine.pending]
+  if (deltas.length === 0) {
+    return { mine: { ...mine, writer, save: base, pending: emptyDelta(base.runId), inflight: [] }, save: base, isWrite: stored === null }
+  }
+  const seq = mine.seq + 1
+  const merged = deltas.reduce((save, d) => applyDelta(save, d), base)
+  const chain = base.chain === '' ? newId : base.chain
+  const save = { ...merged, chain, writes: wrote(base.chain === '' ? {} : merged.writes, writer, seq) }
+  return { mine: { ...mine, writer, seq, chain, save, pending: emptyDelta(save.runId), inflight: deltas }, save, isWrite: true }
 }
 
 export const isEmptyDelta = (d: Delta): boolean =>

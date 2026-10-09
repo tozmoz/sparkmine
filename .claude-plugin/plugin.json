@@ -1,6 +1,6 @@
 {
   "name": "sparkmine",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A pixel-art mining clicker above your prompt. Claude works, you click.",
   "author": { "name": "tozmoz" },
   "homepage": "https://github.com/tozmoz/sparkmine",

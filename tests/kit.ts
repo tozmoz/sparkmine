@@ -16,6 +16,8 @@ export type World = {
   answers: string[]
   /** What a permission check decides. */
   decision: 'allow' | 'ask' | 'deny'
+  /** Another session's save, written right after this session next writes one: it read before that write. */
+  overwrite?: Save
   /** How a Bash call ends, by its command: a failed run, a commit. Unset, it succeeds plainly. */
   bash?: (command: string) => { result: unknown; isError?: true } | undefined
 }
@@ -33,6 +35,10 @@ export function world(on: On, store: Record<string, unknown> = {}): World {
   on('store.get', ($, e) => ({ value: w.store.get(e.key) }))
   on('store.set', ($, e) => {
     w.store.set(e.key, JSON.parse(JSON.stringify(e.value)))
+    if (e.key === 'save' && w.overwrite !== undefined) {
+      w.store.set(e.key, w.overwrite)
+      w.overwrite = undefined
+    }
     return { value: undefined }
   })
   on('store.delete', ($, e) => {
@@ -114,6 +120,8 @@ export function seeded(patch: Partial<Save>): Save {
     gems: 0,
     veins: 0,
     events: {},
+    writes: {},
+    chain: '',
     ...patch,
   }
 }

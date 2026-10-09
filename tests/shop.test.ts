@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { band, command, endSession, finishTurn, pane, seeded, start, world } from './kit.ts'
+import { band, command, endSession, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
 
 test('/mine opens the shop pane', async ($, on) => {
   const w = world(on)
@@ -115,6 +115,26 @@ test('what a session mines reaches the store', async ($, on) => {
   await finishTurn($, 't1')
   await endSession($)
   expect(w.store.get('save')).toMatchObject({ sparks: 3, clicks: 1, tools: 1, turns: 1, mined: { bash: 1 }, bySource: { click: 1, tool: 2 }, bestTurn: 3 })
+})
+
+test('a purchase stays when another session writes over it', async ($, on) => {
+  const read = seeded({ sparks: 100, lifetime: 100, allTime: 100, chain: 'c' })
+  const w = world(on, { save: read })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  await ui.press({ key: 'buy-apprentice' })
+  // Another session read the save before this one wrote the purchase, and its write lands last.
+  w.overwrite = { ...read, sparks: 110, lifetime: 110, allTime: 110, writes: { other: 1 } }
+  await wait(w, 6)
+  expect(w.store.get('save')).toMatchObject({ sparks: 110, producers: {} })
+  await ui.advance(250)
+  expect(await ui.find({ type: 'Text', text: 'Apprentice ×1' })).toBeDefined()
+  // The next sync finds its write missing and lays the purchase over the other session's.
+  await wait(w, 6)
+  expect(w.store.get('save')).toMatchObject({ sparks: 95, producers: { apprentice: 1 } })
+  await ui.advance(250)
+  expect(await ui.find({ type: 'Text', text: 'Apprentice ×1' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 95' })).toBeDefined()
 })
 
 test('/mine reset asks first', async ($, on) => {
