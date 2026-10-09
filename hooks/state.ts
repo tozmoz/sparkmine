@@ -173,10 +173,10 @@ export async function sync(io: Io): Promise<void> {
   syncing ??= (async () => {
     if (!(await io.readMine()).isLoaded) return
     const stored = game.normalize(await io.get(SAVE_KEY))
-    const writer = newRunId()
+    const id = newRunId()
     const out: { write: Save | null } = { write: null }
     await io.mine(mine => {
-      const next = game.syncMine(stored, mine, writer)
+      const next = game.syncMine(stored, mine, id)
       out.write = next.isWrite ? next.save : null
       return next.mine
     })

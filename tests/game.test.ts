@@ -156,7 +156,7 @@ describe('sync', () => {
   })
 
   test('a purchase another session wrote over goes in again, once', () => {
-    const stored = saveWith({ sparks: 100, lifetime: 100, allTime: 100 })
+    const stored = saveWith({ sparks: 100, lifetime: 100, allTime: 100, chain: 'c' })
     const bought = game.buyProducer(mineWith(stored), 'apprentice', 1)
     const mined = game.earn(mineWith(stored), 10, { kind: 'crew' })
     if (bought === null) throw new Error('could not buy')
@@ -186,6 +186,21 @@ describe('sync', () => {
     expect(next.isWrite).toBe(false)
     expect(next.mine.save).toMatchObject({ sparks: 95, producers: { apprentice: 1 } })
     expect(Object.keys(next.mine.save.writes)).toEqual(['a', 'b'])
+  })
+
+  test('after a write by an older version, nothing is laid over twice', () => {
+    const stored = saveWith({ sparks: 100, chain: 'c' })
+    const bought = game.buyProducer(mineWith(stored), 'apprentice', 1)
+    if (bought === null) throw new Error('could not buy')
+    const first = game.syncMine(stored, bought, 'a')
+    // An older version reads that write and writes it back without the record; then a new one writes.
+    const older = game.normalize({ ...first.save, writes: undefined, chain: undefined })
+    if (older === null) throw new Error('not a save')
+    const other = game.syncMine(older, game.earn(mineWith(older), 10, { kind: 'crew' }), 'b')
+    expect(other.save.chain).toBe('b')
+    const next = game.syncMine(other.save, first.mine, 'x')
+    expect(next.isWrite).toBe(false)
+    expect(next.mine.save).toMatchObject({ sparks: 95, producers: { apprentice: 1 } })
   })
 
   test('a reset elsewhere is not undone by a lost write', () => {

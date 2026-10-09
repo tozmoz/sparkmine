@@ -52,6 +52,11 @@ export type Save = {
    * session whose write is missing knows another wrote over it.
    */
   writes: Record<string, number>
+  /**
+   * Names the unbroken run of writes `writes` records. An older version of the
+   * mod writes the save without either, so the next write starts a new chain.
+   */
+  chain: string
 }
 
 /** What this session changed since it last synced with the store. */
@@ -78,8 +83,9 @@ export type Mine = {
   isLoaded: boolean
   /** This session's name in the save's `writes`; empty until its first sync. */
   writer: string
-  /** The number of this session's last write. */
+  /** The number of this session's last write, and the chain it went on. */
   seq: number
+  chain: string
   /** The changes that write carried, kept until the store is seen to hold them. */
   inflight: Delta[]
 }

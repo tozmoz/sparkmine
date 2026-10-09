@@ -121,6 +121,7 @@ export function seeded(patch: Partial<Save>): Save {
     veins: 0,
     events: {},
     writes: {},
+    chain: '',
     ...patch,
   }
 }

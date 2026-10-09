@@ -43,6 +43,7 @@ export function fresh(runId: string): Save {
     veins: 0,
     events: {},
     writes: {},
+    chain: '',
   }
 }
 
@@ -66,7 +67,7 @@ export function emptyDelta(runId: string): Delta {
 }
 
 export function newMine(runId: string): Mine {
-  return { save: fresh(runId), pending: emptyDelta(runId), isLoaded: false, writer: '', seq: 0, inflight: [] }
+  return { save: fresh(runId), pending: emptyDelta(runId), isLoaded: false, writer: '', seq: 0, chain: '', inflight: [] }
 }
 
 const num = (value: unknown): number =>
@@ -128,6 +129,7 @@ export function normalize(raw: unknown): Save | null {
       : [],
     ...stats(r),
     writes: writes(r.writes),
+    chain: typeof r.chain === 'string' ? r.chain : '',
   }
 }
 
@@ -144,6 +146,7 @@ export function normalizeMine(mine: Mine): Mine {
     isLoaded: mine.isLoaded,
     writer: typeof mine.writer === 'string' ? mine.writer : '',
     seq: Math.floor(num(mine.seq)),
+    chain: typeof mine.chain === 'string' ? mine.chain : '',
     inflight: Array.isArray(mine.inflight) ? mine.inflight.map(delta) : [],
   }
 }
@@ -631,12 +634,16 @@ function wrote(writes: Record<string, number>, writer: string, seq: number): Rec
  * So the save keeps the number of each session's last write, and a session
  * whose write is missing lays those changes over again.
  *
- * @param newWriter the session's name in `writes`, when it has none yet
+ * That record holds only along one chain of writes. Off it (an older version
+ * of the mod wrote the save in between) the write may be in or not, and it is
+ * left as it is: a change lost now and then, never one counted twice.
+ *
+ * @param newId a fresh id: the session's name in `writes` when it has none yet, and a new chain's
  */
-export function syncMine(stored: Save | null, mine: Mine, newWriter: string): { mine: Mine; save: Save; isWrite: boolean } {
-  const writer = mine.writer === '' ? newWriter : mine.writer
+export function syncMine(stored: Save | null, mine: Mine, newId: string): { mine: Mine; save: Save; isWrite: boolean } {
+  const writer = mine.writer === '' ? newId : mine.writer
   const base = stored ?? mine.save
-  const isLost = (base.writes[writer] ?? 0) < mine.seq
+  const isLost = base.chain !== '' && base.chain === mine.chain && (base.writes[writer] ?? 0) < mine.seq
   // The changes of an older run went with it on purpose: the mine collapsed or was reset.
   const lost = isLost ? mine.inflight.filter(d => d.runId === base.runId) : []
   const deltas = isEmptyDelta(mine.pending) ? lost : [...lost, mine.pending]
@@ -645,8 +652,9 @@ export function syncMine(stored: Save | null, mine: Mine, newWriter: string): { 
   }
   const seq = mine.seq + 1
   const merged = deltas.reduce((save, d) => applyDelta(save, d), base)
-  const save = { ...merged, writes: wrote(merged.writes, writer, seq) }
-  return { mine: { ...mine, writer, seq, save, pending: emptyDelta(save.runId), inflight: deltas }, save, isWrite: true }
+  const chain = base.chain === '' ? newId : base.chain
+  const save = { ...merged, chain, writes: wrote(base.chain === '' ? {} : merged.writes, writer, seq) }
+  return { mine: { ...mine, writer, seq, chain, save, pending: emptyDelta(save.runId), inflight: deltas }, save, isWrite: true }
 }
 
 export const isEmptyDelta = (d: Delta): boolean =>

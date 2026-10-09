@@ -118,7 +118,7 @@ test('what a session mines reaches the store', async ($, on) => {
 })
 
 test('a purchase stays when another session writes over it', async ($, on) => {
-  const read = seeded({ sparks: 100, lifetime: 100, allTime: 100 })
+  const read = seeded({ sparks: 100, lifetime: 100, allTime: 100, chain: 'c' })
   const w = world(on, { save: read })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
