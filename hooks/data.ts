@@ -233,7 +233,8 @@ export type Perk =
   | { kind: 'events'; mult: number }
   | { kind: 'global'; mult: number }
 
-export type Biome = { name: string; from: number; color: string; perk: Perk; text: string }
+/** A layer: where it starts, its color, its perk, and the emoji square a shared card draws it with. */
+export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string }
 
 /**
  * The layers the mine digs through, from the depth where each starts, in
@@ -241,13 +242,13 @@ export type Biome = { name: string; from: number; color: string; perk: Perk; tex
  * run ends, so the deeper a run gets, the more of them it has.
  */
 export const BIOMES: readonly Biome[] = [
-  { name: 'Topsoil', from: 0, color: '#c8a27a', perk: { kind: 'none' }, text: 'Where every mine begins.' },
-  { name: 'Stone', from: 100, color: '#9aa3ad', perk: { kind: 'click', mult: 1.5 }, text: 'Clicks mine 50% more.' },
-  { name: 'Crystal caves', from: 300, color: '#b6a6ff', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.' },
-  { name: 'Magma', from: 500, color: '#ff7a2f', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.' },
-  { name: 'Groundwater', from: 700, color: '#4fb3d9', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
-  { name: 'Ancient ruins', from: 850, color: '#d9b45f', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double." },
-  { name: 'The core', from: 1_000, color: '#ffe9a8', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
+  { name: 'Topsoil', from: 0, color: '#c8a27a', square: '🟫', perk: { kind: 'none' }, text: 'Where every mine begins.' },
+  { name: 'Stone', from: 100, color: '#9aa3ad', square: '⬜', perk: { kind: 'click', mult: 1.5 }, text: 'Clicks mine 50% more.' },
+  { name: 'Crystal caves', from: 300, color: '#b6a6ff', square: '🟪', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.' },
+  { name: 'Magma', from: 500, color: '#ff7a2f', square: '🟧', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.' },
+  { name: 'Groundwater', from: 700, color: '#4fb3d9', square: '🟦', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
+  { name: 'Ancient ruins', from: 850, color: '#d9b45f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double." },
+  { name: 'The core', from: 1_000, color: '#ffe9a8', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
 ]
 
 /** What an achievement counts: a record of the save, or how often a work event paid. */
