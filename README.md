@@ -1,6 +1,6 @@
-# sparkmine
+# Sparkmine: Idle Clicker Game for Claude Code
 
-An idle clicker game for Claude Code, built as a
+A game you play while Claude works, built as a
 [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview).
 Claude works. You click.
 
@@ -14,11 +14,11 @@ tool call Claude makes mines sparks ✻, and each press of **Mine** mines more.
 Claude's own work pays too: a test run that passes, a commit, a long turn.
 Spend it all in the shop on a crew that keeps digging, and on upgrades.
 
-<img src="docs/shop.png" alt="The shop: producers, upgrades and stats, with pixel icons" width="420">
+<img src="docs/shop.png" alt="The shop in the Claude Desktop app: upgrades, a new shaft, the layers, achievements and stats" width="420">
 
 ## Install
 
-Needs Claude Code v2.1.287 or later. In a terminal, run:
+Needs Claude Code v2.1.293 or later. In a terminal, run:
 
 ```bash
 claude plugin marketplace add tozmoz/sparkmine
@@ -86,6 +86,13 @@ you reset it.
 - It counts tool calls, turns and permission prompts, and reads whether a
   test run passed or a commit landed, but changes none of them.
 - It keeps one small save on your machine.
+
+## Known limits
+
+- In the terminal, quick clicks on one spot count as one. Press `m` instead.
+- A mod cannot see a permission dialog, so the band keeps going while one is
+  open. It rests only while Claude asks you a question or waits on a plan.
+- Each machine keeps its own save.
 
 ## License
 
