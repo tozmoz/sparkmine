@@ -432,7 +432,13 @@ export function progress(save: Save, u: Upgrade): { have: number; need: number }
   return { have: have(save, u.unlock), need: u.unlock.n }
 }
 
-export const isUnlocked = (save: Save, u: Upgrade): boolean => have(save, u.unlock) >= u.unlock.n
+/** Whether the upgrade's own unlock is reached: so many clicks, producers, sparks. */
+const isReached = (save: Save, u: Upgrade): boolean => have(save, u.unlock) >= u.unlock.n
+
+/** Whether the cheaper upgrade that does the same is bought, when there is one. */
+const isInTurn = (save: Save, u: Upgrade): boolean => u.after === undefined || save.upgrades.includes(u.after)
+
+export const isUnlocked = (save: Save, u: Upgrade): boolean => isInTurn(save, u) && isReached(save, u)
 
 export const hasUpgrade = (save: Save, id: string): boolean => save.upgrades.includes(id)
 
@@ -452,7 +458,8 @@ export function pickTier(save: Save): number {
 export function shopUpgrades(save: Save): { onSale: Upgrade[]; next: Upgrade | null } {
   const left = UPGRADES.filter(u => !hasUpgrade(save, u.id))
   const onSale = left.filter(u => isUnlocked(save, u))
-  const locked = left.filter(u => !isUnlocked(save, u))
+  // The next goal is short of its unlock, and next in its line or behind one on sale now.
+  const locked = left.filter(u => !isReached(save, u) && (isInTurn(save, u) || onSale.some(o => o.id === u.after)))
   locked.sort((a, b) => {
     const pa = progress(save, a)
     const pb = progress(save, b)

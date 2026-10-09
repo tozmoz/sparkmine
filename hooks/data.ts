@@ -86,6 +86,8 @@ export type Upgrade = {
   cost: number
   effect: Effect
   unlock: Unlock
+  /** The cheaper upgrade that does just the same: this one goes on sale once that is bought. */
+  after?: string
 }
 
 const TIERS = [
@@ -110,7 +112,7 @@ const producerUpgrades: Upgrade[] = PRODUCERS.flatMap(p =>
   TIERS.map((tier, i) => ({
     id: `${p.id}-${i + 1}`,
     name: TIER_NAMES[p.id][i] ?? `${p.name} ${i + 1}`,
-    blurb: `${p.plural} mine 50% more.`,
+    blurb: i === 0 ? `${p.plural} mine 50% more.` : `${p.plural} mine 50% more again.`,
     cost: p.cost * tier.times,
     effect: { kind: 'producer', id: p.id, mult: 1.5 },
     unlock: { kind: 'owned', id: p.id, n: tier.at },
@@ -119,12 +121,12 @@ const producerUpgrades: Upgrade[] = PRODUCERS.flatMap(p =>
 
 const otherUpgrades: Upgrade[] = [
   { id: 'pick-1', name: 'Sharpened pick', blurb: 'Clicks mine twice as much.', cost: 100, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 25 } },
-  { id: 'pick-2', name: 'Steel pick', blurb: 'Clicks mine twice as much.', cost: 500, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 100 } },
-  { id: 'grip-1', name: 'Work gloves', blurb: 'Clicks mine twice as much.', cost: 3_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 250 } },
-  { id: 'pick-3', name: 'Diamond pick', blurb: 'Clicks mine twice as much.', cost: 10_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 500 } },
+  { id: 'pick-2', name: 'Steel pick', blurb: 'Clicks mine twice as much again.', cost: 500, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 100 } },
+  { id: 'grip-1', name: 'Work gloves', blurb: 'Clicks mine twice as much again.', cost: 3_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 250 } },
+  { id: 'pick-3', name: 'Diamond pick', blurb: 'Clicks mine twice as much again.', cost: 10_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 500 } },
   { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 1% of your rate.', cost: 50_000, effect: { kind: 'clickRate', pct: 1 }, unlock: { kind: 'clicks', n: 1_000 } },
   { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 2% of your rate.', cost: 5_000_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 3_000 } },
-  { id: 'pick-6', name: 'Obsidian edge', blurb: 'Clicks mine twice as much.', cost: 500_000_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 10_000 } },
+  { id: 'pick-6', name: 'Obsidian edge', blurb: 'Clicks mine twice as much again.', cost: 500_000_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 10_000 } },
   { id: 'strike-1', name: 'Seismic tap', blurb: 'Each click mines another 3% of your rate.', cost: 50_000_000, effect: { kind: 'clickRate', pct: 3 }, unlock: { kind: 'clicks', n: 6_000 } },
   { id: 'strike-2', name: 'Fault line', blurb: 'Each click mines another 5% of your rate.', cost: 10_000_000_000, effect: { kind: 'clickRate', pct: 5 }, unlock: { kind: 'clicks', n: 15_000 } },
 
@@ -158,9 +160,24 @@ const otherUpgrades: Upgrade[] = [
   { id: 'lamp-2', name: 'Canary in the mine', blurb: 'Everything mines 15% more.', cost: 25_000_000, effect: { kind: 'global', mult: 1.15 }, unlock: { kind: 'earned', n: 100_000_000 } },
 ]
 
-export const UPGRADES: readonly Upgrade[] = [...otherUpgrades, ...producerUpgrades].sort(
-  (a, b) => a.cost - b.cost,
-)
+/**
+ * Upgrades that do just the same form a line, cheapest first: a producer's
+ * tiers, the click doublers, the gem chances. Each goes on sale once the one
+ * before it is bought, so the shop never offers the same thing at two prices.
+ */
+function inLines(list: Upgrade[]): Upgrade[] {
+  const last = new Map<string, string>()
+  return [...list]
+    .sort((a, b) => a.cost - b.cost)
+    .map(u => {
+      const line = JSON.stringify(u.effect)
+      const after = last.get(line)
+      last.set(line, u.id)
+      return after === undefined ? u : { ...u, after }
+    })
+}
+
+export const UPGRADES: readonly Upgrade[] = inLines([...otherUpgrades, ...producerUpgrades])
 
 /** Each crystal adds this share to everything the mine earns. */
 export const CRYSTAL_BONUS = 0.02
