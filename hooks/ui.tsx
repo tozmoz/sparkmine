@@ -32,6 +32,34 @@ export type ShopParts = {
   isRoomy: boolean
 }
 
+/** Where a Button's closure is held: what a surface names when it presses the Button. */
+export type Press = { plugin: string; handle: number }
+
+/**
+ * Keeps each Button's handle from one drawing of the shop to the next. Every
+ * Button built gets a new handle and a redraw lets the old ones go, so a press
+ * the desktop sent under one just let go reached nothing: a purchase made as
+ * the shop redrew was lost. A Button whose key was drawn before keeps that
+ * handle, with this drawing's label and closure.
+ *
+ * @param held the handles drawn so far, by key, kept from drawing to drawing
+ */
+export function keepHandles(tree: RenderElement, held: Map<string, Press>): RenderElement {
+  const keep = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(keep)
+    if (node === null || typeof node !== 'object') return node
+    const el = node as { type?: unknown; props?: { key?: unknown }; press?: unknown; children?: unknown }
+    if (el.type === 'Button' && typeof el.props?.key === 'string' && typeof el.press === 'object' && el.press !== null) {
+      const before = held.get(el.props.key)
+      if (before !== undefined) return { ...el, press: before }
+      held.set(el.props.key, el.press as Press)
+      return node
+    }
+    return el.children === undefined ? node : { ...el, children: keep(el.children) }
+  }
+  return keep(tree) as RenderElement
+}
+
 function card(el: Elements, parts: ShopParts, item: ShopItem, button: RenderElement): RenderElement {
   const { Box, Text } = el
   const name = item.owned > 0 ? `${item.name} ×${item.owned}` : item.name

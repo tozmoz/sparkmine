@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Mine, Save } from '../types'
-import { UPGRADES } from '../hooks/data.ts'
+import { PRODUCERS, UPGRADES } from '../hooks/data.ts'
 import { fmt, fmtRate } from '../hooks/format.ts'
 import * as game from '../hooks/game.ts'
 
@@ -99,6 +99,31 @@ describe('buying', () => {
     const { onSale, next } = game.shopUpgrades(saveWith({ clicks: 30, producers: { apprentice: 1 } }))
     expect(onSale.map(u => u.id)).toEqual(['pick-1', 'apprentice-1'])
     expect(next?.id).toBe('pick-2')
+  })
+
+  test('a line of upgrades doing the same goes on sale a tier at a time', () => {
+    const drills = saveWith({ producers: { drill: 5 } })
+    const ids = (save: Save) => game.shopUpgrades(save).onSale.map(u => u.id)
+    expect(ids(drills)).toContain('drill-1')
+    expect(ids(drills)).not.toContain('drill-2')
+    const bought = saveWith({ producers: { drill: 5 }, upgrades: ['drill-1'] })
+    expect(ids(bought)).toContain('drill-2')
+    expect(game.buyUpgrade(mineWith({ sparks: 1e9, producers: { drill: 5 } }), 'drill-2')).toBeNull()
+    expect(UPGRADES.find(u => u.id === 'drill-2')).toMatchObject({ name: 'Pressure valves', blurb: 'Steam drills mine 50% more again.', after: 'drill-1' })
+    // A tier waits behind the one before it: no goal that the shop could not sell when reached.
+    expect(game.shopUpgrades(saveWith({ clicks: 30 })).next?.id).toBe('pick-2')
+    expect(game.shopUpgrades(saveWith({ clicks: 150 })).next?.id).not.toBe('grip-1')
+  })
+
+  test('no two upgrades on sale do the same, and every line runs cheapest first', () => {
+    for (const u of UPGRADES) {
+      if (u.after === undefined) continue
+      const before = UPGRADES.find(o => o.id === u.after)
+      expect(before === undefined ? null : [JSON.stringify(before.effect), before.cost < u.cost]).toEqual([JSON.stringify(u.effect), true])
+    }
+    const everything = saveWith({ clicks: 1e6, tools: 1e6, turns: 1e6, allTime: 1e12, producers: Object.fromEntries(PRODUCERS.map(p => [p.id, 100])) })
+    const effects = game.shopUpgrades(everything).onSale.map(u => JSON.stringify(u.effect))
+    expect(new Set(effects).size).toBe(effects.length)
   })
 
   test('there are 63 upgrades, each with its own id', () => {

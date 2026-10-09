@@ -168,7 +168,7 @@ test('the wooden Shop sign opens the shop', async ($, on) => {
 })
 
 test('buying the Diamond pick puts it in the miner\'s hands', async ($, on) => {
-  const w = world(on, { save: seeded({ sparks: 20_000, clicks: 600, upgrades: ['pick-1', 'pick-2'] }) })
+  const w = world(on, { save: seeded({ sparks: 20_000, clicks: 600, upgrades: ['pick-1', 'pick-2', 'grip-1'] }) })
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
