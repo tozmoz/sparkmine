@@ -44,6 +44,35 @@ test('a purchase shows at once, and a run of quick presses all land', async ($, 
   expect(await ui.find({ type: 'Text', text: 'Apprentice ×3' })).toBeDefined()
 })
 
+/** Each Button's handle in a drawn tree, by key: what a surface names when it presses one. */
+function handles(node: unknown, out: Record<string, number> = {}): Record<string, number> {
+  if (Array.isArray(node)) for (const child of node) handles(child, out)
+  else if (node !== null && typeof node === 'object') {
+    const el = node as { type?: unknown; props?: { key?: unknown }; press?: { handle?: unknown }; children?: unknown }
+    if (el.type === 'Button' && typeof el.props?.key === 'string' && typeof el.press?.handle === 'number') out[el.props.key] = el.press.handle
+    handles(el.children, out)
+  }
+  return out
+}
+
+test('a redraw keeps every shop button under its handle, so a press already sent still lands', async ($, on) => {
+  world(on, { save: seeded({ sparks: 1_000 }) })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  const before = handles(await ui.drawn())
+  expect(Object.keys(before)).toEqual(expect.arrayContaining(['amount-1', 'amount-10', 'buy-apprentice']))
+  // A purchase and a new amount redraw the shop and relabel its buttons.
+  await ui.press({ key: 'buy-apprentice' })
+  await ui.press({ key: 'amount-10' })
+  await ui.advance(700)
+  expect((await ui.find({ key: 'buy-apprentice' }))?.props.label).toBe('×10 399 ✻')
+  const after = handles(await ui.drawn())
+  for (const key of Object.keys(before)) expect([key, after[key]]).toEqual([key, before[key]])
+  // The button pressed under its first handle still buys.
+  await ui.press({ key: 'buy-apprentice' })
+  expect(await ui.find({ type: 'Text', text: 'Apprentice ×11' })).toBeDefined()
+})
+
 test('×100 buys a hundred or none, and its button lights only when all of it is affordable', async ($, on) => {
   const w = world(on, { save: seeded({ sparks: 2_000 }) })
   await start($)

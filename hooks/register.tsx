@@ -87,6 +87,16 @@ export const register: Register = on => {
   let lastStats: StatsProps = EMPTY_STATS
   /** Presses each band HUD has posted so far, by instance. */
   const totals = new Map<string, number>()
+  /** The shop's Button handles, by surface and then key: see ui.keepHandles. */
+  const shopHandles = new Map<string, Map<string, ui.Press>>()
+  const handlesOn = (surface: string): Map<string, ui.Press> => {
+    let held = shopHandles.get(surface)
+    if (held === undefined) {
+      held = new Map()
+      shopHandles.set(surface, held)
+    }
+    return held
+  }
 
   /**
    * Counts the presses a band HUD reports. Each post carries its running
@@ -391,32 +401,42 @@ export const register: Register = on => {
       collapse: () => (io === null ? false : state.collapseMine(io)),
     }
     const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, acked: 0, ...HUD_SHOP }
+    const held = handlesOn(e.surface)
     const { Text } = $.ui.resolve(e)
     const notice = band.isStopped ? <Text color="warning">Sparkmine is stopped. /mine start sets it going again.</Text> : null
     if (e.surface === 'desktop') {
       const { Client, Svg } = $.ui.resolve(e)
       const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins, pick: band.pick, biome: band.biome }
-      return ui.shopTree($.ui.resolve(e), shop, {
-        icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
-        header: <Svg source={svgFor(header, HEADER_SCALE)} alt="The mine" width={W * HEADER_SCALE} height={H * HEADER_SCALE} />,
-        live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
-        stats: <Client key="stats" module="./stats.ts" props={lastStats} />,
-        notice,
-        isRoomy: true,
-      }, act)
+      return ui.keepHandles(
+        ui.shopTree($.ui.resolve(e), shop, {
+          icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
+          header: <Svg source={svgFor(header, HEADER_SCALE)} alt="The mine" width={W * HEADER_SCALE} height={H * HEADER_SCALE} />,
+          live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
+          stats: <Client key="stats" module="./stats.ts" props={lastStats} />,
+          notice,
+          isRoomy: true,
+        }, act),
+        held,
+      )
     }
     if (e.surface === 'terminal') {
       const { Client } = $.ui.resolve(e)
-      return ui.shopTree($.ui.resolve(e), shop, {
-        icon: () => null,
-        header: null,
-        live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
-        stats: <Client key="stats" module="./stats.ts" props={lastStats} />,
-        notice,
-        isRoomy: false,
-      }, act)
+      return ui.keepHandles(
+        ui.shopTree($.ui.resolve(e), shop, {
+          icon: () => null,
+          header: null,
+          live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
+          stats: <Client key="stats" module="./stats.ts" props={lastStats} />,
+          notice,
+          isRoomy: false,
+        }, act),
+        held,
+      )
     }
-    return ui.shopTree($.ui.resolve(e), shop, { icon: () => null, header: null, live: <Text bold>{`✻ ${Math.floor(lastHud.sparks)}`}</Text>, stats: null, notice, isRoomy: false }, act)
+    return ui.keepHandles(
+      ui.shopTree($.ui.resolve(e), shop, { icon: () => null, header: null, live: <Text bold>{`✻ ${Math.floor(lastHud.sparks)}`}</Text>, stats: null, notice, isRoomy: false }, act),
+      held,
+    )
   })
 
   // The spinner says what the mine has unlocked. On the desktop its word names
