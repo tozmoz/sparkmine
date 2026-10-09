@@ -196,7 +196,40 @@ test('the terminal draws the scene when it has room, and the HUD alone when not'
   expect((await narrow.find({ key: 'mine' }))?.props).toMatchObject({ label: 'Mine', hotkey: 'm' })
 })
 
-test('a permission prompt pauses the miner until the turn moves on', async ($, on) => {
+const QUESTION = { question: 'Which database?', header: 'Database', options: [{ label: 'Postgres', description: 'Relational' }, { label: 'SQLite', description: 'A file' }], multiSelect: false }
+
+/** A question the person takes their time over, and how to answer it. */
+function slowPerson(w: ReturnType<typeof world>): () => void {
+  let answer = () => {}
+  w.answering = new Promise(resolve => {
+    answer = resolve
+  })
+  return answer
+}
+
+test("Claude's question rests the miner until the person answers", async ($, on) => {
+  const w = world(on)
+  const answer = slowPerson(w)
+  await start($)
+  await $.turn.start({ text: 'pick for me', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  const asked = $.tool.call({ tool: 'AskUserQuestion', questions: [QUESTION] })
+  await ui.advance(POLL)
+  expect(w.asked).toEqual(['Which database?'])
+  expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeDefined()
+  // The sign stays, dulled, so nothing moves; a press does nothing until Claude works again.
+  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ backgroundColor: '#5c4d2e' })
+  await ui.pointer(DOWN)
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 0' })).toBeDefined()
+  answer()
+  await asked
+  await ui.redraw()
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeUndefined()
+})
+
+test('a permission check that asks leaves the miner working: the mode settles most without anyone', async ($, on) => {
   const w = world(on)
   w.decision = 'ask'
   await start($)
@@ -204,16 +237,26 @@ test('a permission prompt pauses the miner until the turn moves on', async ($, o
   await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' }, tool_use_id: 'call-1' })
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
-  expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeDefined()
-  // The sign stays, dulled, so nothing moves; a press does nothing until Claude works again.
-  expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ backgroundColor: '#5c4d2e' })
+  expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeUndefined()
   await ui.pointer(DOWN)
   await ui.advance(POLL)
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 0' })).toBeDefined()
-  await finishTurn($, 't1')
-  await ui.redraw()
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
+})
+
+test("the mod's own question, a new shaft's, is not Claude waiting: the miner works on", async ($, on) => {
+  const w = world(on, { save: seeded({ lifetime: 125e6, allTime: 2e8 }) })
+  const answer = slowPerson(w)
+  w.answers.push('Keep digging')
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  const shop = await $.ui.mount(pane('desktop'))
+  const pressed = shop.press({ key: 'shaft' })
   await ui.advance(POLL)
+  expect(w.asked).toHaveLength(1)
   expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeUndefined()
+  answer()
+  await pressed
 })
 
 test('a survey has the band to itself', async ($, on) => {

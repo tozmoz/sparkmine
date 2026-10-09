@@ -14,6 +14,10 @@ export type World = {
   opened: string[]
   /** What the person picks, in order, when the mod asks a question. */
   answers: string[]
+  /** Each question put to the person, as it is put. */
+  asked: string[]
+  /** While set, the person takes their time: a question waits on it before it is answered. */
+  answering?: Promise<void>
   /** What a permission check decides. */
   decision: 'allow' | 'ask' | 'deny'
   /** Another session's save, written right after this session next writes one: it read before that write. */
@@ -29,6 +33,7 @@ export function world(on: On, store: Record<string, unknown> = {}): World {
     toasts: [],
     opened: [],
     answers: [],
+    asked: [],
     decision: 'allow',
   }
   // A store the tests can read back, kept as JSON the way the engine keeps it.
@@ -61,11 +66,13 @@ export function world(on: On, store: Record<string, unknown> = {}): World {
   on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'engine', ref: 0 }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
-  // $.ui.ask is a call of the AskUserQuestion tool: answer it as the person would.
-  on('tool.call', ($, e) => {
+  // $.ui.ask is a call of the AskUserQuestion tool: answer it as the person would, when they are ready.
+  on('tool.call', async ($, e) => {
     if (e.tool === 'Bash') return w.bash?.(String(e.command)) ?? { result: { stdout: '', stderr: '', interrupted: false } }
     if (e.tool !== 'AskUserQuestion') return { result: 'ok' }
     const question = e.questions[0]?.question ?? ''
+    w.asked.push(question)
+    if (w.answering !== undefined) await w.answering
     return { result: { questions: e.questions, answers: { [question]: w.answers.shift() ?? 'No' } } }
   })
   on('tool.check', () => ({ decision: w.decision }))
