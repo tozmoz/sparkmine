@@ -398,7 +398,10 @@ export const register: Register = on => {
       buy: id => (io === null ? 0 : state.buyProducer(io, id)),
       upgrade: id => (io === null ? false : state.buyUpgrade(io, id)),
       amount: n => (io === null ? undefined : state.setAmount(io, n)),
-      collapse: () => (io === null ? false : state.collapseMine(io)),
+      // The question waits on the person, longer than a press may run: it goes on after the press.
+      shaft: () => {
+        if (io !== null) void state.newShaft(io).catch(() => undefined)
+      },
     }
     const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, acked: 0, ...HUD_SHOP }
     const held = handlesOn(e.surface)

@@ -5,7 +5,7 @@
 import type { ElementTable, RenderElement, RenderSurface } from 'claude-code'
 
 import type { IconId, ProducerId, ShopItem, ShopModel } from '../types'
-import { CRYSTAL_BONUS } from './data.ts'
+import { STONE_BONUS } from './data.ts'
 import { fmt } from './format.ts'
 
 type Elements = ElementTable<RenderSurface>
@@ -14,7 +14,7 @@ export type ShopActions = {
   buy: (id: ProducerId) => unknown
   upgrade: (id: string) => unknown
   amount: (n: number) => unknown
-  collapse: () => unknown
+  shaft: () => unknown
 }
 
 export type ShopParts = {
@@ -60,6 +60,21 @@ export function keepHandles(tree: RenderElement, held: Map<string, Press>): Rend
   return keep(tree) as RenderElement
 }
 
+/** The gold of an earned achievement, the Mine sign's own. */
+const GOLD = '#f2b632'
+
+/** What the stones and achievements add to everything, once there are any. */
+function bonusLine(el: Elements, model: ShopModel): RenderElement | null {
+  const { Text } = el
+  const b = model.bonus
+  if (b.stones === 0 && b.achievements === 0) return null
+  const parts = [
+    ...(b.stones > 0 ? [`◈ ${b.stones} stones +${b.stonesPct}%`] : []),
+    ...(b.achievements > 0 ? [`★ ${b.achievements} achievements +${b.achievementsPct}%`] : []),
+  ]
+  return <Text color="permission">{parts.join(' · ')}</Text>
+}
+
 function card(el: Elements, parts: ShopParts, item: ShopItem, button: RenderElement): RenderElement {
   const { Box, Text } = el
   const name = item.owned > 0 ? `${item.name} ×${item.owned}` : item.name
@@ -102,9 +117,7 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
       <Box flexDirection="column">
         {parts.live}
         <Text dimColor>{`Click +${fmt(v.click)} · Read +${fmt(v.read)} · Edit +${fmt(v.edit)}`}</Text>
-        {model.crystals > 0 ? (
-          <Text color="permission">{`◆ ${model.crystals} · +${Math.round(model.crystals * CRYSTAL_BONUS * 100)}% to everything`}</Text>
-        ) : null}
+        {bonusLine(el, model)}
       </Box>
     </Box>
   )
@@ -141,20 +154,57 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
       </Box>
     )
 
-  const collapse = model.showCollapse ? (
-    <Box flexDirection="column">
-      <Text bold>Collapse the mine</Text>
-      <Box flexDirection="row" columnGap={1} alignItems="center" paddingX={1}>
-        {parts.icon('crystal', model.gain < 1)}
-        <Text dimColor>
-          {model.gain > 0
-            ? `Trade this run for ${model.gain} ◆. Each ◆ adds ${Math.round(CRYSTAL_BONUS * 100)}% to everything, for good.`
-            : `The next ◆ comes at ${fmt(model.nextCrystalAt)} sparks in all.`}
-        </Text>
-        {priceButton(el, 'collapse', model.gain > 0 ? `Collapse for ${model.gain} ◆` : 'Collapse', model.gain > 0, () => act.collapse())}
+  const shaft =
+    model.shaft === null ? null : (
+      <Box flexDirection="column">
+        <Text bold>New shaft</Text>
+        <Box flexDirection="row" columnGap={1} alignItems="center" paddingX={1}>
+          {parts.icon('stone', model.shaft.gain < 1)}
+          <Text dimColor>
+            {model.shaft.gain > 0
+              ? `Start over in fresh rock for ${model.shaft.gain} ◈ ancient stones. Each adds ${Math.round(STONE_BONUS * 100)}% to everything, for good; achievements and stats stay.`
+              : `A new shaft opens once this one reaches ${model.shaft.at} m, and pays more ◈ the deeper it gets.`}
+          </Text>
+          {priceButton(el, 'shaft', model.shaft.gain > 0 ? `Open for ${model.shaft.gain} ◈` : 'Open a new shaft', model.shaft.gain > 0, () => act.shaft())}
+        </Box>
       </Box>
-    </Box>
-  ) : null
+    )
+
+  // The layers ahead: each one reached adds its perk for the rest of the run.
+  const layers =
+    model.layers.length === 0 ? null : (
+      <Box flexDirection="column">
+        <Text bold>Layers</Text>
+        {model.layers.map(layer => (
+          <Box flexDirection="row" columnGap={1} paddingX={1}>
+            {layer.isReached ? <Text color={layer.color}>■</Text> : <Text dimColor>□</Text>}
+            <Text bold={layer.isHere} dimColor={!layer.isReached}>{layer.name}</Text>
+            <Text dimColor>{`${layer.from} m · ${layer.text}`}</Text>
+            {layer.isHere ? <Text color={layer.color}>◀ here</Text> : null}
+          </Box>
+        ))}
+      </Box>
+    )
+
+  const earned = model.achievements.filter(a => a.isEarned).length
+  const achievements =
+    model.achievements.length === 0 ? null : (
+      <Box flexDirection="column">
+        <Box flexDirection="row" columnGap={1} alignItems="center">
+          {parts.icon('badge', earned === 0)}
+          <Text bold>Achievements</Text>
+          <Text dimColor>{`${earned}/${model.achievements.length} · +${model.bonus.achievementsPct}% to everything`}</Text>
+        </Box>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
+          {model.achievements.map(a => (a.isEarned ? <Text color={GOLD}>{`★ ${a.name}`}</Text> : <Text dimColor>{`☆ ${a.name}`}</Text>))}
+        </Box>
+        {model.nextAchievement === null ? null : (
+          <Box paddingX={1}>
+            <Text dimColor>{`Next: ${model.nextAchievement.name}. ${model.nextAchievement.text}`}</Text>
+          </Box>
+        )}
+      </Box>
+    )
 
   const stats =
     parts.stats === null ? null : (
@@ -184,7 +234,9 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
         {model.more > 0 ? <Text dimColor>{`+${model.more} more on sale`}</Text> : null}
         {next}
       </Box>
-      {collapse}
+      {shaft}
+      {layers}
+      {achievements}
       {stats}
     </Box>
   )

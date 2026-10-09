@@ -209,7 +209,10 @@ type Strata = {
   ores: readonly [Ore, Ore]
 }
 
-/** Deeper is stranger: the mine passes from topsoil through stone and crystal caves into magma. */
+/**
+ * Deeper is stranger: the mine passes from topsoil through stone and crystal
+ * caves into magma, then groundwater, ancient ruins and the core. One per BIOMES entry.
+ */
 const STRATA: readonly Strata[] = [
   // Topsoil: warm brown earth with gold and teal.
   {
@@ -238,6 +241,27 @@ const STRATA: readonly Strata[] = [
     rock: [0x1a1414, 0x2e2522, 0x4a271d], ceiling: [0x1a1414, 0x2e2522, 0x3d302b],
     dirt: 0x2a1410, dirtSpeck: 0x5a1f10, pebble: 0x3d302b, pile: 0x4a2a20, pileTop: 0x6a3a28,
     ores: [[0xff7a2f, 0xffd36e, 0xc2412d], [0xe24b4a, 0xf7c1c1, 0x8f2e20]],
+  },
+  // Groundwater: dark wet slate, seeping with aquamarine and pearl.
+  {
+    cave: 0x0f1d24, caveDark: 0x0a151a, caveLight: 0x15283a,
+    rock: [0x13242c, 0x1f3d4a, 0x2b5566], ceiling: [0x13242c, 0x1a3340, 0x1f3d4a],
+    dirt: 0x10202a, dirtSpeck: 0x1f3d4a, pebble: 0x2b5566, pile: 0x2b5566, pileTop: 0x4fb3d9,
+    ores: [[0x4fb3d9, 0xd8f4ff, 0x2a7fa8], [0xe6edf3, 0xffffff, 0x9aa8b4]],
+  },
+  // Ancient ruins: carved sandstone, set with old gold and jade.
+  {
+    cave: 0x221a10, caveDark: 0x18120a, caveLight: 0x2e2416,
+    rock: [0x2e2416, 0x5a4626, 0x7a6236], ceiling: [0x2e2416, 0x4a3a20, 0x5a4626],
+    dirt: 0x2a2014, dirtSpeck: 0x4a3a20, pebble: 0x5a4626, pile: 0x7a6236, pileTop: 0xd9b45f,
+    ores: [[0xd9b45f, 0xfff0b8, 0xa8862e], [0x5dcaa5, 0xb5f0dc, 0x2f8a6c]],
+  },
+  // The core: rock glowing red from within, veined with white-hot gold.
+  {
+    cave: 0x2a0c06, caveDark: 0x1e0804, caveLight: 0x3a120a,
+    rock: [0x5a1608, 0x9a2e10, 0xd9531c], ceiling: [0x4a1208, 0x6e200c, 0x9a2e10],
+    dirt: 0x3a120a, dirtSpeck: 0x6e200c, pebble: 0x9a2e10, pile: 0xc2411a, pileTop: 0xffd36e,
+    ores: [[0xffe9a8, 0xffffff, 0xf2b632], [0xffd36e, 0xfff4b8, 0xff7a2f]],
   },
 ]
 

@@ -3,7 +3,7 @@
 // store sync and the actions the hooks and buttons call.
 
 import type { Band, EventKind, Mine, Mode, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
-import { EVENTS, LONG_SHIFT_MS, PRODUCERS, VEIN } from './data.ts'
+import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STONE_BONUS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
 import * as model from './model.ts'
@@ -145,6 +145,8 @@ async function showPurchase(io: Io): Promise<void> {
 }
 
 let loading: Promise<void> | null = null
+/** The achievements this session has seen earned; null until it first looks. */
+let earned: Set<string> | null = null
 
 /** Reads the save from the store the first time anything needs it. */
 export async function ensureLoaded(io: Io): Promise<void> {
@@ -153,6 +155,8 @@ export async function ensureLoaded(io: Io): Promise<void> {
     const stored = game.normalize(await io.get(SAVE_KEY))
     const save = stored ?? game.fresh(newRunId())
     await io.mine(mine => (mine.isLoaded ? mine : { ...game.newMine(save.runId), save, isLoaded: true, writer: newRunId() }))
+    // What the save has earned already is not news.
+    earned ??= new Set(game.achievements(save).map(a => a.id))
     if (stored === null) await io.put(SAVE_KEY, save)
     await readSettings(io)
     await refreshReward(io, false)
@@ -202,6 +206,28 @@ export async function refreshReward(io: Io, announce: boolean): Promise<void> {
 
 let lastTick = 0
 
+/**
+ * The achievements a save earned since this session last looked. The ones a
+ * save already has when the session first looks are not news.
+ */
+function newlyEarned(save: Save): Achievement[] {
+  const now = game.achievements(save)
+  const before = earned
+  earned = new Set(now.map(a => a.id))
+  return before === null ? [] : now.filter(a => !before.has(a.id))
+}
+
+/**
+ * One line for every achievement earned at once: a toast drawn over another
+ * before it showed is lost, and a deep save from another session earns several.
+ */
+function achievementText(list: readonly Achievement[]): string {
+  const names = list.map(a => a.name)
+  const last = names.pop()
+  const named = names.length === 0 ? last : `${names.join(', ')} and ${last}`
+  return `${list.length === 1 ? 'Achievement' : 'Achievements'}: ${named}. Everything mines ${Math.round(ACHIEVEMENT_BONUS * 100 * list.length)}% more.`
+}
+
 /** Runs every TICK_MS: the crew's income, the switch between work and idle, and the veins. */
 export async function tick(io: Io): Promise<void> {
   const now = await io.now()
@@ -209,27 +235,30 @@ export async function tick(io: Io): Promise<void> {
   lastTick = now
   const mine = await io.readMine()
   if (!mine.isLoaded) return
+  const won = newlyEarned(mine.save)
+  if (won.length > 0) io.toast(achievementText(won))
   const band = await refresh(io, now)
   if (band.isStopped) return
   const view = await io.readView()
   const share = band.mode === 'idle' ? game.idleShare(mine.save) : 1
   const amount = game.rate(mine.save) * share * seconds * boostAt(view, now)
   if (amount > 0) await io.mine(m => game.earn(m, amount, { kind: 'crew' }))
-  await growVeins(io, band.mode, seconds, now, mine.save.runId)
+  await growVeins(io, band.mode, seconds, now, mine.save)
 }
 
 /**
  * Veins show while Claude works: after so many seconds of work one shows for
  * a few seconds, and goes when it is not caught. A frenzy runs out on its own.
  */
-async function growVeins(io: Io, mode: Mode, seconds: number, now: number, runId: string): Promise<void> {
+async function growVeins(io: Io, mode: Mode, seconds: number, now: number, save: Save): Promise<void> {
+  const speed = game.multipliers(save).veinSpeed
   await patchView(io, view => {
     let next = view
     if (next.vein !== null && now > next.vein.until) next = { ...next, vein: null }
     if (next.frenzy !== null && now >= next.frenzy.until) next = { ...next, frenzy: null }
     if (mode !== 'work' || next.vein !== null) return next
     const work = next.veinWork + seconds
-    const due = game.veinAfter(runId, next.veinCount)
+    const due = game.veinAfter(save.runId, next.veinCount, speed)
     if (work < due.seconds) return { ...next, veinWork: work }
     const id = next.veinCount + 1
     return { ...next, veinWork: 0, veinCount: id, vein: { id, kind: due.kind, until: now + VEIN.showMs } }
@@ -462,33 +491,36 @@ async function confirm(io: Io, question: string, yes: string, no: string): Promi
   }
 }
 
-/** Prestige: trade this run for crystals, after the person confirms. */
-export async function collapseMine(io: Io): Promise<boolean> {
+/** Prestige: trade this run for ancient stones in a new shaft, after the person confirms. */
+export async function newShaft(io: Io): Promise<boolean> {
   await sync(io)
-  const gain = game.crystalGain((await io.readMine()).save)
+  const gain = game.stoneGain((await io.readMine()).save)
   if (gain < 1) {
-    io.toast('Mine more before the collapse pays a crystal')
+    io.toast(`A new shaft opens once this one reaches ${SHAFT_DEPTH} m`)
     return false
   }
   const isSure = await confirm(
     io,
-    `Collapse the mine for ${gain} ◆? Sparks, producers, upgrades and depth reset. Crystals stay, and each adds 2% to everything.`,
-    'Collapse',
-    'Keep mining',
+    `Open a new shaft for ${gain} ◈? Sparks, producers, upgrades and depth start over. Ancient stones, achievements and stats stay, and each ◈ adds ${Math.round(STONE_BONUS * 100)}% to everything.`,
+    'Open it',
+    'Keep digging',
   )
   if (!isSure) return false
   await sync(io)
-  const next = game.collapse((await io.readMine()).save, newRunId())
+  const next = game.openShaft((await io.readMine()).save, newRunId())
   if (next === null) return false
   await io.put(SAVE_KEY, next)
   await io.mine(mine => ({ ...mine, save: next, pending: game.emptyDelta(next.runId), inflight: [], isLoaded: true }))
+  await io.view(view => ({ ...view, turnStart: 0 }))
   await refresh(io, undefined, true)
-  io.toast(`The mine collapsed. You hold ${next.crystals} ◆.`)
+  // Fresh rock is earned now too: one toast says both, so neither hides the other.
+  const won = newlyEarned(next)
+  io.toast([`A new shaft is open. You hold ${next.stones} ◈.`, ...(won.length > 0 ? [achievementText(won)] : [])].join(' '))
   return true
 }
 
 export async function resetMine(io: Io): Promise<boolean> {
-  const isSure = await confirm(io, 'Reset Sparkmine? This deletes every spark, producer, upgrade and crystal.', 'Reset', 'Keep it')
+  const isSure = await confirm(io, 'Reset Sparkmine? This deletes every spark, producer, upgrade, ancient stone and achievement.', 'Reset', 'Keep it')
   if (!isSure) return false
   const save = game.fresh(newRunId())
   await io.put(SAVE_KEY, save)
