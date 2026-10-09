@@ -192,9 +192,18 @@ export const SHAFT_DEPTH = 500
  */
 export const EVENTS: Readonly<Record<EventKind, { label: string; seconds: number; clicks: number }>> = {
   tests: { label: 'Tests pass', seconds: 30, clicks: 10 },
+  fix: { label: 'Bug squashed', seconds: 60, clicks: 25 },
+  build: { label: 'Build passes', seconds: 15, clicks: 6 },
+  lint: { label: 'Lint clean', seconds: 15, clicks: 6 },
   commit: { label: 'Commit', seconds: 45, clicks: 20 },
+  pr: { label: 'PR opened', seconds: 60, clicks: 25 },
+  merge: { label: 'PR merged', seconds: 90, clicks: 30 },
   longShift: { label: 'Long shift', seconds: 90, clicks: 30 },
+  streak: { label: 'Streak', seconds: 45, clicks: 20 },
 }
+
+/** Good turns in a row that pay a streak: every this many. */
+export const STREAK_TURNS = 3
 
 /** A turn at least this long pays the long-shift reward when it ends. */
 export const LONG_SHIFT_MS = 5 * 60_000
@@ -237,13 +246,13 @@ export const BIOMES: readonly Biome[] = [
   { name: 'Crystal caves', from: 300, color: '#b6a6ff', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.' },
   { name: 'Magma', from: 500, color: '#ff7a2f', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.' },
   { name: 'Groundwater', from: 700, color: '#4fb3d9', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
-  { name: 'Ancient ruins', from: 850, color: '#d9b45f', perk: { kind: 'events', mult: 2 }, text: 'Tests, commits and long shifts pay double.' },
+  { name: 'Ancient ruins', from: 850, color: '#d9b45f', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double." },
   { name: 'The core', from: 1_000, color: '#ffe9a8', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
 ]
 
 /** What an achievement counts: a record of the save, or how often a work event paid. */
 export type Goal =
-  | { kind: 'veins' | 'gems' | 'clicks' | 'tools' | 'shafts' | 'stones' | 'bestTurn' | 'allTime' | 'deepest'; n: number }
+  | { kind: 'veins' | 'gems' | 'clicks' | 'tools' | 'shafts' | 'stones' | 'bestTurn' | 'bestStreak' | 'allTime' | 'deepest'; n: number }
   | { kind: 'event'; event: EventKind; n: number }
 
 export type Achievement = { id: string; name: string; text: string; goal: Goal }
@@ -264,6 +273,9 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'tests-100', name: 'Green streak', text: 'Pass the tests 100 times.', goal: { kind: 'event', event: 'tests', n: 100 } },
   { id: 'commits-100', name: 'Ship it', text: 'Commit 100 times.', goal: { kind: 'event', event: 'commit', n: 100 } },
   { id: 'long-shifts-10', name: 'Night owl', text: 'Work 10 long shifts.', goal: { kind: 'event', event: 'longShift', n: 10 } },
+  { id: 'fixes-25', name: 'Exterminator', text: 'Squash 25 bugs: tests that failed, then passed.', goal: { kind: 'event', event: 'fix', n: 25 } },
+  { id: 'merges-10', name: 'Release train', text: 'Merge 10 pull requests.', goal: { kind: 'event', event: 'merge', n: 10 } },
+  { id: 'streak-10', name: 'On fire', text: 'Work 10 good turns in a row.', goal: { kind: 'bestStreak', n: 10 } },
   { id: 'turn-1m', name: 'Big turn', text: 'Mine 1M sparks in one turn.', goal: { kind: 'bestTurn', n: 1e6 } },
   { id: 'turn-1b', name: 'Legendary turn', text: 'Mine 1B sparks in one turn.', goal: { kind: 'bestTurn', n: 1e9 } },
   { id: 'clicks-10k', name: 'Calloused hands', text: 'Click 10,000 times.', goal: { kind: 'clicks', n: 10_000 } },

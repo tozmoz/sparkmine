@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import * as game from '../hooks/game.ts'
-import { band, command, committed, failed, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
+import { band, command, committed, endSession, failed, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
 const POLL = 150
@@ -323,6 +323,72 @@ test('green tests and a commit pay once a turn, and the HUD says what paid', asy
   await w.clock.advance(6_000)
   await ui.advance(POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: /★/ })).toBeUndefined()
+})
+
+test('tests that failed and then pass squash a bug, which pays beside the tests', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'fix it', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  w.bash = () => failed
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  w.bash = undefined
+  await $.tool.call({ tool: 'Edit', file_path: '/tmp/project/a.ts', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await ui.advance(POLL)
+  // 10 clicks for the tests, 25 for the bug: one line, added up.
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Tests pass · Bug squashed +35 ✻' })).toBeDefined()
+})
+
+test('a build, a clean lint, a pull request opened and one merged each pay once a turn', async ($, on) => {
+  world(on)
+  await start($)
+  await $.turn.start({ text: 'ship it', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await $.tool.call({ tool: 'Bash', command: 'npm run lint && npm run build' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Build passes · Lint clean +12 ✻' })).toBeDefined()
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --title "Ship it" --body "Done."' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ PR opened +25 ✻' })).toBeDefined()
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 1 --squash' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ PR merged +30 ✻' })).toBeDefined()
+  // The same again this turn pays the tool call alone.
+  await $.tool.call({ tool: 'Bash', command: 'npm run build' })
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ PR merged +30 ✻' })).toBeDefined()
+})
+
+test('every third good turn in a row pays a streak; a turn cut short ends it', async ($, on) => {
+  const w = world(on)
+  await start($)
+  const ui = await $.ui.mount(band('desktop'))
+  const turn = async (id: string, reason: 'answer' | 'aborted' = 'answer') => {
+    await $.turn.start({ text: 'go', turnId: id })
+    await $.tool.call({ tool: 'Read', file_path: '/tmp/project/a.ts' })
+    await finishTurn($, id, 1_000, reason)
+    await ui.redraw()
+    await ui.advance(POLL)
+  }
+  await turn('t1')
+  await turn('t2')
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /Streak/ })).toBeUndefined()
+  await turn('t3')
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Streak ×3 +20 ✻' })).toBeDefined()
+  // A turn without a tool call neither makes nor breaks it; an aborted one starts it over.
+  await $.turn.start({ text: 'thanks', turnId: 't4' })
+  await finishTurn($, 't4')
+  await turn('t5', 'aborted')
+  await turn('t6')
+  await turn('t7')
+  await w.clock.advance(6_000)
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /Streak/ })).toBeUndefined()
+  await turn('t8')
+  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Streak ×3 +20 ✻' })).toBeDefined()
+  await endSession($)
+  expect(w.store.get('save')).toMatchObject({ bestStreak: 3, events: { streak: 2 } })
 })
 
 test('a long shift pays when the turn ends', async ($, on) => {

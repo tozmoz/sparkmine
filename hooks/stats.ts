@@ -67,9 +67,10 @@ const Stats: ClientModule<StatsProps, { isPolling: true }> = (props, surface) =>
       ]),
     )
   }
-  rows.push(dim(`Best turn +${short(props.bestTurn ?? 0)} · Deepest ${commas(props.deepest ?? 0)} m · Shafts ${commas(props.shafts ?? 0)}`))
+  rows.push(dim(`Best turn +${short(props.bestTurn ?? 0)} · Best streak ${commas(props.bestStreak ?? 0)} · Deepest ${commas(props.deepest ?? 0)} m · Shafts ${commas(props.shafts ?? 0)}`))
   rows.push(dim(`Gems ${commas(props.gems ?? 0)} · Veins ${commas(props.veins ?? 0)}`))
-  rows.push(dim(`Tests passed ${commas(events.tests ?? 0)} · Commits ${commas(events.commit ?? 0)} · Long shifts ${commas(events.longShift ?? 0)}`))
+  rows.push(dim(`Tests passed ${commas(events.tests ?? 0)} · Bugs squashed ${commas(events.fix ?? 0)} · Builds ${commas(events.build ?? 0)} · Clean lints ${commas(events.lint ?? 0)}`))
+  rows.push(dim(`Commits ${commas(events.commit ?? 0)} · PRs opened ${commas(events.pr ?? 0)} · PRs merged ${commas(events.merge ?? 0)} · Long shifts ${commas(events.longShift ?? 0)}`))
   rows.push(dim(`Clicks ${commas(props.clicks ?? 0)} · Tool calls ${commas(props.tools ?? 0)} · Turns ${commas(props.turns ?? 0)}`))
   return Box({ flexDirection: 'column', children: rows as never[] })
 }

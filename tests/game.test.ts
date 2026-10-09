@@ -313,11 +313,38 @@ describe('the work behind the mine', () => {
       expect(game.isTestCommand(cmd)).toBe(false)
     }
     const run = { tool: 'Bash', command: 'npm test', isError: false, interrupted: false, background: false, committed: false }
-    expect(game.workEvent(run)).toBe('tests')
-    expect(game.workEvent({ ...run, isError: true })).toBeNull()
-    expect(game.workEvent({ ...run, background: true })).toBeNull()
-    expect(game.workEvent({ ...run, command: 'git commit -m x', committed: true })).toBe('commit')
-    expect(game.workEvent({ ...run, tool: 'Read' })).toBeNull()
+    expect(game.workEvents(run)).toEqual(['tests'])
+    expect(game.workEvents({ ...run, isError: true })).toEqual([])
+    expect(game.workEvents({ ...run, background: true })).toEqual([])
+    expect(game.workEvents({ ...run, command: 'git commit -m x', committed: true })).toEqual(['commit'])
+    expect(game.workEvents({ ...run, tool: 'Read' })).toEqual([])
+  })
+
+  test('builds, lints and pull requests are told apart, and one command can be several', () => {
+    const run = (command: string) => game.workEvents({ tool: 'Bash', command, isError: false, interrupted: false, background: false, committed: false })
+    for (const cmd of ['npm run build', 'pnpm build', 'npx tsc', 'cargo build --release', 'go build ./...', 'make', 'npx vite build', './gradlew assemble']) {
+      expect([cmd, run(cmd)]).toEqual([cmd, ['build']])
+    }
+    for (const cmd of ['npm run lint', 'npx eslint src', 'npx tsc --noEmit', 'ruff check .', 'cargo clippy', 'golangci-lint run', '"$CLI" plugin validate .']) {
+      expect([cmd, run(cmd)]).toEqual([cmd, ['lint']])
+    }
+    expect(run('gh pr create --title Fix --body Done')).toEqual(['pr'])
+    expect(run('gh pr merge 15 --squash --delete-branch')).toEqual(['merge'])
+    // --auto only asks to merge once the checks pass: nothing is merged yet.
+    expect(run('gh pr merge 15 --auto --squash')).toEqual([])
+    expect(run('npm run lint && npm run build && npm test')).toEqual(['tests', 'build', 'lint'])
+    for (const cmd of ['make test', 'gh pr view 15', 'gh pr list', 'echo npm run build', 'cat Makefile']) {
+      expect([cmd, run(cmd).filter(e => e !== 'tests')]).toEqual([cmd, []])
+    }
+  })
+
+  test('a test run is read as passed or failed; one cut short or in the background says nothing', () => {
+    const run = { tool: 'Bash', command: 'npm test', isError: false, interrupted: false, background: false, committed: false }
+    expect(game.testRun(run)).toBe('passed')
+    expect(game.testRun({ ...run, isError: true })).toBe('failed')
+    expect(game.testRun({ ...run, interrupted: true })).toBeNull()
+    expect(game.testRun({ ...run, background: true })).toBeNull()
+    expect(game.testRun({ ...run, command: 'npm run build' })).toBeNull()
   })
 
   test("a call's outcome is read off its input and result", () => {

@@ -93,8 +93,8 @@ export const command = ($: Engine, args: string) =>
 export const endSession = ($: Engine) =>
   $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } })
 
-export const finishTurn = ($: Engine, turnId: string, durationMs = 1_000) =>
-  $.turn.complete({ answer: 'Done.', durationMs, isAborted: false, turnId, reason: 'answer' })
+export const finishTurn = ($: Engine, turnId: string, durationMs = 1_000, reason: 'answer' | 'aborted' | 'error' = 'answer') =>
+  $.turn.complete({ answer: 'Done.', durationMs, isAborted: reason === 'aborted', turnId, reason })
 
 /**
  * Lets time pass a second at a time, as it does for a running session: one
@@ -126,6 +126,7 @@ export function seeded(patch: Partial<Save>): Save {
     upgrades: [],
     bySource: {},
     bestTurn: 0,
+    bestStreak: 0,
     gems: 0,
     veins: 0,
     events: {},
