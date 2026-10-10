@@ -43,9 +43,13 @@ test('every scene fits the size an Svg may have', () => {
   for (const mode of ['work', 'idle', 'pause'] as const) {
     for (const carts of [0, 6]) {
       for (let biome = 0; biome < BIOMES.length; biome += 1) {
-        const svg = sceneSvg({ mode, carts, goblins: 1, pick: 4, biome }, 3)
-        expect(svg.length).toBeLessThan(131_072)
-        expect(svg.startsWith('<svg')).toBe(true)
+        const plain: SceneSpec = { mode, carts, goblins: 1, pick: 4, biome }
+        const detailed: SceneSpec = { ...plain, bug: 'crawl', canary: true, gloves: true, warm: true, coffee: true, ...(mode === 'pause' ? { pose: 'facing' as const } : {}) }
+        for (const spec of [plain, detailed]) {
+          const svg = sceneSvg(spec, 3)
+          expect(svg.length).toBeLessThan(131_072)
+          expect(svg.startsWith('<svg')).toBe(true)
+        }
       }
     }
   }
@@ -60,6 +64,37 @@ test('on the far side the tunnel opens to the sky, where no lantern burns', () =
   expect(sceneSvg(WORK, 3)).toContain('class="glow"')
   // The far side's turf hangs overhead, in the terminal too.
   expect(compose(far, momentAt('work', 0)).get(0, 1)).toBe(0x2f6e2c)
+})
+
+test('upgrades bought show in the mine, and a bug crawls on the rock in step with the dig', () => {
+  const plain = sceneSvg(WORK, 3)
+  const bought = sceneSvg({ ...WORK, canary: true, gloves: true, warm: true, coffee: true }, 3)
+  // The canary, the gloves, the warmer glow, the mug.
+  for (const color of ['#ffd84a', '#c8862a', '#ffa63d', '#e24b4a']) {
+    expect(bought).toContain(color)
+    expect(plain).not.toContain(color)
+  }
+  expect(sceneSvg({ ...WORK, bug: 'crawl' }, 3)).toContain('@keyframes bug')
+  expect(sceneSvg({ ...WORK, bug: 'splat' }, 3)).toContain('#b5e08a')
+  // In the terminal it takes a step every quarter of the slide.
+  const bugAt = (scroll: number) => compose({ ...WORK, bug: 'crawl' }, { ...momentAt('work', 0), scroll }).data.indexOf(0xff4fa3)
+  expect(bugAt(0)).toBeGreaterThan(-1)
+  expect(bugAt(8)).not.toBe(bugAt(0))
+})
+
+test('the details add no frame for the terminal to paint', () => {
+  const frames = (spec: SceneSpec) => {
+    const seen = new Set<string>()
+    for (let ms = 0; ms < LOOP_MS; ms += 10) seen.add(sceneCells(spec, momentAt('work', ms)))
+    return seen.size
+  }
+  expect(frames({ ...WORK, bug: 'crawl', canary: true, gloves: true, warm: true, coffee: true })).toBe(frames(WORK))
+})
+
+test('the miner faces you while Claude asks, and sits down a while into its idle', () => {
+  const pause: SceneSpec = { ...WORK, mode: 'pause' }
+  const looks = [pause, { ...pause, pose: 'facing' }, { ...pause, pose: 'coffee' }, { ...pause, pose: 'sleep' }] as const
+  expect(new Set(looks.map(spec => sceneSvg(spec, 3))).size).toBe(4)
 })
 
 test('the pick the miner holds is the one the upgrades bought', () => {

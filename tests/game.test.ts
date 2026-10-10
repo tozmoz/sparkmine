@@ -19,6 +19,23 @@ describe('prices', () => {
     expect(game.priceOf(apprentice, 10)).toBe(73)
     expect(game.priceOf(apprentice, 0, 10)).toBe(341)
   })
+
+  test('Max buys all the purse allows, in steps the label keeps a while', () => {
+    const apprentice = game.producer('apprentice')
+    for (const have of [0, 37, 111]) {
+      for (const sparks of [1e3, 1e6, 1e9, 1e12]) {
+        const n = game.affordable(apprentice, have, sparks)
+        expect(game.priceOf(apprentice, have, n) <= sparks && game.priceOf(apprentice, have, n + 1) > sparks).toBe(true)
+      }
+    }
+    expect(game.affordable(apprentice, 0, 14)).toBe(0)
+    expect(game.maxCount(apprentice, 0, 14)).toBe(1)
+    expect(game.maxCount(apprentice, 0, 2_000)).toBe(20)
+    // 63 fit in two million: the label says 50, until 75 fit.
+    expect(game.affordable(apprentice, 0, 2e6)).toBe(63)
+    expect(game.maxCount(apprentice, 0, 2e6)).toBe(50)
+    expect(game.maxCount(apprentice, 0, 1e9)).toBe(100)
+  })
 })
 
 describe('income', () => {
@@ -409,6 +426,29 @@ describe('the work behind the mine', () => {
     expect(game.testRun({ ...run, interrupted: true })).toBeNull()
     expect(game.testRun({ ...run, background: true })).toBeNull()
     expect(game.testRun({ ...run, command: 'npm run build' })).toBeNull()
+  })
+
+  test('tests that fail behind a pipe or an echo are read off what they printed', () => {
+    const piped = { tool: 'Bash', command: 'npm test 2>&1 | tail -20', isError: false, interrupted: false, background: false, committed: false }
+    const failing = [
+      '  3 passing\n  2 failing',
+      'Tests:       1 failed, 4 passed, 5 total',
+      'FAIL src/mine.test.ts',
+      '=========== 1 failed, 12 passed in 0.31s ===========',
+      '--- FAIL: TestDig (0.00s)\nFAIL\tsparkmine/dig\t0.01s',
+      'test result: FAILED. 3 passed; 1 failed; 0 ignored',
+      'FAILED (failures=1)',
+      'not ok 2 - digs deeper',
+      '5 examples, 1 failure',
+    ]
+    for (const output of failing) expect(game.testRun({ ...piped, output })).toBe('failed')
+    for (const output of ['  5 passing', 'Tests:       0 failed, 5 passed', '12 passed in 0.2s', 'ok 1 - digs\n# fail 0', 'test result: ok. 4 passed; 0 failed']) {
+      expect(game.testRun({ ...piped, output })).toBe('passed')
+    }
+    // A failing run pays no "Tests pass".
+    expect(game.workEvents({ ...piped, output: '  2 failing' })).toEqual([])
+    expect(game.workEvents({ ...piped, output: '  5 passing' })).toEqual(['tests'])
+    expect(game.outcomeOf('Bash', { command: 'npm test; echo done' }, { result: { stdout: '1 failing\ndone', stderr: '', interrupted: false } }).output).toBe('1 failing\ndone')
   })
 
   test("a call's outcome is read off its input and result", () => {

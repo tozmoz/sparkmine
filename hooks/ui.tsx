@@ -4,7 +4,7 @@
 
 import type { ElementTable, RenderElement, RenderSurface } from 'claude-code'
 
-import type { IconId, ProducerId, ShopItem, ShopModel } from '../types'
+import type { Amount, IconId, ProducerId, ShopItem, ShopModel } from '../types'
 import { fmt } from './format.ts'
 
 type Elements = ElementTable<RenderSurface>
@@ -12,7 +12,7 @@ type Elements = ElementTable<RenderSurface>
 export type ShopActions = {
   buy: (id: ProducerId) => unknown
   upgrade: (id: string) => unknown
-  amount: (n: number) => unknown
+  amount: (amount: Amount) => unknown
   shaft: () => unknown
 }
 
@@ -58,6 +58,9 @@ export function keepHandles(tree: RenderElement, held: Map<string, Press>): Rend
   }
   return keep(tree) as RenderElement
 }
+
+/** What a press of a producer's button can buy: one, ten, or as many as the purse allows. */
+const AMOUNTS: readonly Amount[] = [1, 10, 'max']
 
 /** The gold of an earned achievement, the Mine sign's own. */
 const GOLD = '#f2b632'
@@ -126,7 +129,7 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
       el,
       parts,
       item,
-      priceButton(el, `buy-${item.id}`, `${amount > 1 ? `×${amount} ` : ''}${fmt(item.price)} ✻`, item.canBuy, () =>
+      priceButton(el, `buy-${item.id}`, `${amount === 1 ? '' : `×${item.count} `}${fmt(item.price)} ✻`, item.canBuy, () =>
         act.buy(item.id as ProducerId),
       ),
     ),
@@ -227,8 +230,8 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
       <Box flexDirection="column">
         <Box flexDirection="row" columnGap={2}>
           <Text bold>Producers</Text>
-          {[1, 10, 100].map(n => (
-            <Button key={`amount-${n}`} label={`×${n}`} plain dimColor={amount !== n} onPress={() => act.amount(n)} />
+          {AMOUNTS.map(n => (
+            <Button key={`amount-${n}`} label={n === 'max' ? 'Max' : `×${n}`} plain dimColor={amount !== n} onPress={() => act.amount(n)} />
           ))}
         </Box>
         {cards(producers)}

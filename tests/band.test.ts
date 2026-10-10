@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import * as game from '../hooks/game.ts'
+import { sceneSvg } from '../hooks/scene.ts'
+import * as state from '../hooks/state.ts'
 import { band, command, committed, endSession, failed, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
@@ -9,8 +11,17 @@ const POLL = 150
 /** Lets the vein poll once: it asks less often than the HUD. */
 const VEIN_POLL = 300
 
+/** The bug's pink and the splat's green: no rock or ore has either. */
+const BUG_PINK = '#ff4fa3'
+const SPLAT_GREEN = '#b5e08a'
+
 /** A press of the desktop's gold Mine sign: the pointer going down on the HUD. */
 const DOWN = { type: 'down', x: 1, y: 0, button: 'left', in: 'hud' } as const
+
+test('a session kept from before an update reads its ×100 as Max', () => {
+  expect(state.fillView({ ...state.INITIAL_VIEW, amount: 100 as never }).amount).toBe('max')
+  expect(state.fillView({ ...state.INITIAL_VIEW, amount: 10 }).amount).toBe(10)
+})
 
 test('the band keeps one line while Claude is idle', async ($, on) => {
   world(on)
@@ -217,6 +228,8 @@ test("Claude's question rests the miner until the person answers", async ($, on)
   await ui.advance(POLL)
   expect(w.asked).toEqual(['Which database?'])
   expect(await ui.find({ in: 'hud', type: 'Text', text: 'Claude is waiting for you' })).toBeDefined()
+  // The miner turns to face you while you decide.
+  expect((await ui.find({ type: 'Svg' }))?.props.source).toBe(sceneSvg({ mode: 'pause', carts: 0, goblins: 0, pick: 0, biome: 0, pose: 'facing' }, 3, true))
   // The sign stays, dulled, so nothing moves; a press does nothing until Claude works again.
   expect((await ui.find({ in: 'hud', key: 'mine' }))?.props).toMatchObject({ backgroundColor: '#5c4d2e' })
   await ui.pointer(DOWN)
@@ -338,6 +351,64 @@ test('tests that failed and then pass squash a bug, which pays beside the tests'
   await ui.advance(POLL)
   // 10 clicks for the tests, 25 for the bug: one line, added up.
   expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Tests pass · Bug squashed +35 ✻' })).toBeDefined()
+})
+
+test('a failing test run puts a bug on the rock, and squashing it leaves a splat a moment', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'fix it', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  const scene = async () => {
+    await ui.advance(POLL)
+    return String((await ui.find({ type: 'Svg' }))?.props.source)
+  }
+  expect(await scene()).not.toContain(BUG_PINK)
+  w.bash = () => failed
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  w.bash = undefined
+  expect(await scene()).toContain(BUG_PINK)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  expect(await scene()).not.toContain(BUG_PINK)
+  expect(await scene()).toContain(SPLAT_GREEN)
+  await w.clock.advance(state.SPLAT_MS)
+  expect(await scene()).not.toContain(SPLAT_GREEN)
+})
+
+test('tests that fail behind a pipe still put the bug on the rock, and pay no "Tests pass"', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'fix it', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  // The pipe's last step succeeds: only the output says the tests failed.
+  w.bash = () => ({ result: { stdout: '  3 passing\n  1 failing\n', stderr: '', interrupted: false } })
+  await $.tool.call({ tool: 'Bash', command: 'npm test 2>&1 | tail -20' })
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(BUG_PINK)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /★ Tests pass/ })).toBeUndefined()
+})
+
+test('upgrades bought show in the mine: the canary, the gloves, warmer lanterns, a coffee', async ($, on) => {
+  world(on, { save: seeded({ upgrades: ['lamp-1', 'lamp-2', 'grip-1', 'apprentice-2'] }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  const scene = String((await ui.find({ type: 'Svg' }))?.props.source)
+  for (const color of ['#ffd84a', '#c8862a', '#ffa63d', '#e24b4a']) expect(scene).toContain(color)
+})
+
+test("a while into Claude's idle the miner has a coffee, then a nap: the line shows a cup, the shop's picture shows him", async ($, on) => {
+  expect([0, state.COFFEE_MS - 1, state.COFFEE_MS, state.SLEEP_MS - 1, state.SLEEP_MS].map(state.napOf)).toEqual([null, null, 'coffee', 'coffee', 'sleep'])
+  const w = world(on)
+  await start($)
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /☕/ })).toBeUndefined()
+  await w.clock.advance(state.COFFEE_MS)
+  await ui.advance(POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /· ☕$/ })).toBeDefined()
+  const shop = await $.ui.mount(pane('desktop'))
+  expect((await shop.find({ type: 'Svg' }))?.props.source).toBe(sceneSvg({ mode: 'pause', carts: 0, goblins: 0, pick: 0, biome: 0, pose: 'coffee' }, 2))
 })
 
 test('a build, a clean lint, a pull request opened and one merged each pay once a turn', async ($, on) => {

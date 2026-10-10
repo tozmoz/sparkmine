@@ -120,6 +120,9 @@ export type Mine = {
 
 export type Mode = 'idle' | 'work' | 'pause'
 
+/** How many producers one press of a buy button buys: one, ten, or as many as the purse allows. */
+export type Amount = 1 | 10 | 'max'
+
 /** What changes while Claude works. Nothing draws from it directly, so it can change often. */
 export type View = {
   isTurn: boolean
@@ -131,7 +134,7 @@ export type View = {
   turnStart: number
   lastTurn: number
   /** How many producers one press of a buy button buys. */
-  amount: number
+  amount: Amount
   /** Gems struck so far this session, and what the latest ones added beyond their clicks. */
   gem: { seq: number; bonus: number } | null
   /** The vein showing now, until when it can be caught. */
@@ -151,7 +154,17 @@ export type View = {
   streak: number
   /** A test run failed and none has passed since: the next green run squashes a bug. */
   testsFailing: boolean
+  /** When the pick last squashed that bug: the splat shows for a moment. */
+  squashedAt: number
+  /** Since when Claude has done nothing here: a turn's end, a tool call, or the session's start. */
+  restSince: number
 }
+
+/** How long Claude has been idle shows on the miner: a coffee after a while, asleep after a long while. */
+export type Nap = 'coffee' | 'sleep'
+
+/** Upgrades there to see in the mine: the caged canary, work gloves, warmer lanterns, a coffee mug. */
+export type Extras = { canary: boolean; gloves: boolean; warm: boolean; coffee: boolean }
 
 /** What the band's drawing depends on. It changes rarely, so the scene is not redrawn on every click. */
 export type Band = {
@@ -170,6 +183,11 @@ export type Band = {
   isCompact: boolean
   /** Stopped by `/mine stop`: nothing mines and the band is gone. */
   isStopped: boolean
+  /** A bug on the rock while tests fail, and the splat a moment after the pick got it. */
+  bug: 'crawl' | 'splat' | null
+  extras: Extras
+  /** Only while Claude is idle. */
+  nap: Nap | null
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */
@@ -214,6 +232,8 @@ export type HudProps = {
   goal: { name: string; have: number; need: number } | null
   tools: number
   turns: number
+  /** Claude idle a while: the one-line band says so with a cup, then a snooze. */
+  nap: Nap | null
   /** The HUD's fixed height in rows: a surface unmounts a Client whose size keeps changing. */
   height: number
 }
@@ -273,6 +293,8 @@ export type ShopItem = {
   name: string
   detail: string
   owned: number
+  /** How many one press buys, and what they cost: for Max, as many as the purse allows, and one when it allows none. */
+  count: number
   price: number
   canBuy: boolean
 }
@@ -280,7 +302,7 @@ export type ShopItem = {
 /** What the shop pane draws. Rebuilt on every change, written only when it differs. */
 export type ShopModel = {
   isLoaded: boolean
-  amount: number
+  amount: Amount
   producers: ShopItem[]
   /** The price of the next producer, still hidden. */
   teaser: number | null

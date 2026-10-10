@@ -191,6 +191,9 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
   if (props.mode === 'idle') {
     const notes = [props.lastTurn > 0 ? `last turn +${short(props.lastTurn)}` : 'mines while Claude works']
     if (props.idle > 0) notes.push(`crew at ${Math.round(props.idle * 100)}%`)
+    // The miner's own break, a while into Claude's: a cup, then a snooze.
+    if (props.nap === 'coffee') notes.push('☕')
+    if (props.nap === 'sleep') notes.push('💤')
     return box([line([count, dim('·'), deep, reward === null ? dim(`· ${notes.join(' · ')}`) : line([dim('·'), reward])])])
   }
 

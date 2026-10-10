@@ -217,6 +217,30 @@ export function priceOf(producer: Producer, have: number, n = 1): number {
   return total
 }
 
+/** How many of a producer `sparks` buys, when `have` are owned: none when it is short of one. */
+export function affordable(p: Producer, have: number, sparks: number): number {
+  if (!(sparks >= priceOf(p, have))) return 0
+  // The sum of the prices without their rounding up says nearly how many; the rounding is checked one by one.
+  let n = Math.max(1, Math.floor(Math.log(1 + (sparks * (GROWTH - 1)) / (p.cost * GROWTH ** have)) / Math.log(GROWTH)))
+  while (n > 1 && priceOf(p, have, n) > sparks) n -= 1
+  while (priceOf(p, have, n + 1) <= sparks) n += 1
+  return n
+}
+
+/**
+ * What a press of Max buys: as many as `sparks` buys, rounded down to a step
+ * (every count to nine, then fives, twenty-fives and hundreds), so its label
+ * changes now and then rather than with every spark; one when none fits, so
+ * the button still says what one costs.
+ */
+export function maxCount(p: Producer, have: number, sparks: number): number {
+  const n = affordable(p, have, sparks)
+  if (n < 10) return Math.max(1, n)
+  if (n < 50) return Math.floor(n / 5) * 5
+  if (n < 300) return Math.floor(n / 25) * 25
+  return Math.floor(n / 100) * 100
+}
+
 export function producer(id: ProducerId): Producer {
   const found = PRODUCERS.find(p => p.id === id)
   if (found === undefined) throw new Error(`no producer ${id}`)
@@ -487,13 +511,21 @@ const runs = (command: string, heads: readonly RegExp[]): boolean => steps(comma
 /** Whether a shell command runs a test suite, in any step of it. */
 export const isTestCommand = (command: string): boolean => runs(command, TEST_RUNNERS)
 
-/** What a finished tool call tells about Claude's work, as plain data the hooks read off it. */
-export type ToolOutcome = { tool: string; command?: string; isError: boolean; interrupted: boolean; background: boolean; committed: boolean }
+/**
+ * What a finished tool call tells about Claude's work, as plain data the hooks
+ * read off it. `output` is the end of what a shell command printed.
+ */
+export type ToolOutcome = { tool: string; command?: string; isError: boolean; interrupted: boolean; background: boolean; committed: boolean; output?: string }
+
+/** How much of a command's output is read: a test run's summary comes last. */
+const OUTPUT_TAIL = 8_000
 
 /** Reads a finished call's input and result as a ToolOutcome: nothing in either is changed. */
 export function outcomeOf(tool: string, input: unknown, answer: { isError?: unknown; result?: unknown }): ToolOutcome {
   const args = (input ?? {}) as { command?: unknown; run_in_background?: unknown }
-  const record = (answer.result ?? {}) as { interrupted?: unknown; backgroundTaskId?: unknown; gitOperation?: { commit?: { kind?: unknown } } }
+  const record = (answer.result ?? {}) as { interrupted?: unknown; backgroundTaskId?: unknown; stdout?: unknown; stderr?: unknown; gitOperation?: { commit?: { kind?: unknown } } }
+  const tail = (text: unknown) => (typeof text === 'string' ? text.slice(-OUTPUT_TAIL) : '')
+  const output = `${tail(record.stdout)}\n${tail(record.stderr)}`.trim()
   return {
     tool,
     ...(typeof args.command === 'string' ? { command: args.command } : {}),
@@ -501,8 +533,26 @@ export function outcomeOf(tool: string, input: unknown, answer: { isError?: unkn
     interrupted: record.interrupted === true,
     background: args.run_in_background === true || typeof record.backgroundTaskId === 'string',
     committed: record.gitOperation?.commit?.kind === 'committed',
+    ...(output === '' ? {} : { output }),
   }
 }
+
+/**
+ * What test runners print when tests fail. A command whose last step is not
+ * the runner (`npm test 2>&1 | tail`, `npm test; echo done`) succeeds even when
+ * they did, so the output says it: mocha's "2 failing", jest's and pytest's
+ * "1 failed", rspec's "3 failures", jest's and go's FAIL lines, cargo's
+ * "test result: FAILED", unittest's "FAILED (failures=1)", TAP's "not ok".
+ */
+const FAILED: readonly RegExp[] = [
+  /\b[1-9]\d* (failed|failing|failures?)\b/i,
+  /^\s*(FAIL|FAILED)\b/m,
+  /^--- FAIL\b/m,
+  /\btest result: FAILED\b/,
+  /\bFAILED \((failures|errors)=/,
+  /^not ok \d+/m,
+  /^# fail [1-9]/m,
+]
 
 /**
  * The work events a finished Bash call is, when it succeeded: tests, a build
@@ -513,7 +563,7 @@ export function workEvents(o: ToolOutcome): EventKind[] {
   if (o.tool !== 'Bash' || o.isError || o.interrupted || o.background) return []
   const command = o.command ?? ''
   const events: EventKind[] = []
-  if (runs(command, TEST_RUNNERS)) events.push('tests')
+  if (testRun(o) === 'passed') events.push('tests')
   if (runs(command, BUILDERS)) events.push('build')
   if (runs(command, LINTERS)) events.push('lint')
   if (o.committed) events.push('commit')
@@ -522,10 +572,14 @@ export function workEvents(o: ToolOutcome): EventKind[] {
   return events
 }
 
-/** How a finished Bash call ran the tests, if it did; a run cut short or sent to the background tells nothing. */
+/**
+ * How a finished Bash call ran the tests, if it did: failed when the call
+ * failed or its output says tests failed. A run cut short or sent to the
+ * background tells nothing.
+ */
 export function testRun(o: ToolOutcome): 'passed' | 'failed' | null {
   if (o.tool !== 'Bash' || o.interrupted || o.background || o.command === undefined || !isTestCommand(o.command)) return null
-  return o.isError ? 'failed' : 'passed'
+  return o.isError || FAILED.some(re => re.test(o.output ?? '')) ? 'failed' : 'passed'
 }
 
 /** What the next click mines, and whether it strikes a gem. */

@@ -2,7 +2,7 @@
 // live in game.ts and what the drawings show in model.ts; this file holds the
 // store sync and the actions the hooks and buttons call.
 
-import type { Band, EventKind, Mine, Mode, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
+import type { Amount, Band, EventKind, Extras, Mine, Mode, Nap, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
 import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
@@ -52,6 +52,11 @@ export const MAX_CLICKS_PER_SECOND = 20
  * and a redraw landing mid-run would lose the press that crossed it.
  */
 export const HOLD_MS = 600
+/** How long the splat stays where the pick squashed the bug. */
+export const SPLAT_MS = 3_000
+/** Idle this long, the miner has a coffee; this long, he falls asleep. */
+export const COFFEE_MS = 5 * 60_000
+export const SLEEP_MS = 30 * 60_000
 
 let heldUntil = 0
 
@@ -73,6 +78,8 @@ export const INITIAL_VIEW: View = {
   turnTools: 0,
   streak: 0,
   testsFailing: false,
+  squashedAt: 0,
+  restSince: 0,
 }
 
 export const INITIAL_BAND: Band = {
@@ -86,10 +93,16 @@ export const INITIAL_BAND: Band = {
   biome: 0,
   isCompact: false,
   isStopped: false,
+  bug: null,
+  extras: { canary: false, gloves: false, warm: false, coffee: false },
+  nap: null,
 }
 
+/** A shop amount as this version reads it: ×100 is gone, and Max buys a lot in its place. */
+const amountOf = (value: unknown): Amount => (value === 10 ? 10 : value === 'max' || value === 100 ? 'max' : 1)
+
 /** A view or a band as this version reads it: one kept from before an update lacks the newer fields. */
-export const fillView = (view: View): View => ({ ...INITIAL_VIEW, ...view })
+export const fillView = (view: View): View => ({ ...INITIAL_VIEW, ...view, amount: amountOf(view.amount) })
 export const fillBand = (band: Band): Band => ({ ...INITIAL_BAND, ...band })
 
 /** The multiplier a caught frenzy puts on everything until it runs out. */
@@ -97,6 +110,17 @@ export const boostAt = (view: View, now: number): number => (view.frenzy !== nul
 
 export const newRunId = (): string =>
   `${Date.now().toString(36)}-${Math.floor(Math.random() * 36 ** 6).toString(36)}`
+
+/** The upgrades that show in the mine. */
+export const extrasOf = (save: Save): Extras => ({
+  canary: game.hasUpgrade(save, 'lamp-2'),
+  gloves: game.hasUpgrade(save, 'grip-1'),
+  warm: game.hasUpgrade(save, 'lamp-1'),
+  coffee: game.hasUpgrade(save, 'apprentice-2'),
+})
+
+/** What an idle stretch this long shows on the miner, if anything yet. */
+export const napOf = (idleMs: number): Nap | null => (idleMs >= SLEEP_MS ? 'sleep' : idleMs >= COFFEE_MS ? 'coffee' : null)
 
 export function modeOf(view: View, now: number): Mode {
   if (view.waiting.length > 0) return 'pause'
@@ -123,11 +147,15 @@ export async function refresh(io: Io, now?: number, force = false): Promise<Band
   const isHeld = !force && at < heldUntil
   const mine = await io.readMine()
   const view = await io.readView()
+  const bug: Band['bug'] = view.testsFailing ? 'crawl' : at - view.squashedAt < SPLAT_MS ? 'splat' : null
   const band = await patch(io.readBand, io.band, current => {
     const mode = { ...current, isLoaded: mine.isLoaded, mode: modeOf(view, at) }
     if (isHeld) return mode
     return {
       ...mode,
+      bug,
+      extras: extrasOf(mine.save),
+      nap: mode.mode === 'idle' && view.restSince > 0 ? napOf(at - view.restSince) : null,
       carts: Math.min(6, game.owned(mine.save, 'cart')),
       goblins: Math.min(1, game.owned(mine.save, 'goblin')),
       pick: game.pickTier(mine.save),
@@ -161,6 +189,8 @@ export async function ensureLoaded(io: Io): Promise<void> {
     // What the save has earned already is not news.
     earned ??= new Set(game.achievements(save).map(a => a.id))
     if (stored === null) await io.put(SAVE_KEY, save)
+    const now = await io.now()
+    await patchView(io, view => (view.restSince > 0 ? view : { ...view, restSince: now }))
     await readSettings(io)
     await refreshReward(io, false)
     await refresh(io)
@@ -385,7 +415,8 @@ export async function minedTool(io: Io, outcome: game.ToolOutcome): Promise<numb
   await io.view(view => {
     squashed.yes = run === 'passed' && view.testsFailing
     const testsFailing = run === null ? view.testsFailing : run === 'failed'
-    return { ...view, last: { label, value }, lastToolAt: now, turnTools: view.turnTools + 1, testsFailing }
+    const squashedAt = squashed.yes ? now : view.squashedAt
+    return { ...view, last: { label, value }, lastToolAt: now, restSince: now, turnTools: view.turnTools + 1, testsFailing, squashedAt }
   })
   const events = game.workEvents(outcome)
   if (squashed.yes) events.push('fix')
@@ -446,32 +477,40 @@ export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer'
   const { turnStart } = await io.readView()
   const earned = Math.max(0, mine.save.lifetime - turnStart)
   if (!isStopped) await io.mine(m => game.recordTurn(m, earned))
+  const endedAt = await io.now()
   await io.view(view => ({
     ...view,
     isTurn: false,
     waiting: [],
     lastToolAt: 0,
     lastTurn: earned,
+    restSince: endedAt,
   }))
   await refresh(io)
   void sync(io).catch(() => undefined)
   return bonus
 }
 
-/** Buys the amount the shop is set to, all of it or none: a short purse says how short. */
+/**
+ * Buys the amount the shop is set to, all of it or none, or for Max as many as
+ * the purse allows: a short purse says how short.
+ */
 export async function buyProducer(io: Io, id: ProducerId): Promise<number> {
   const { amount } = await io.readView()
+  const p = game.producer(id)
+  const countFor = (save: Save) => (amount === 'max' ? game.maxCount(p, game.owned(save, id), save.sparks) : amount)
   let bought = 0
   await io.mine(mine => {
     bought = 0
-    const next = game.buyProducer(mine, id, amount)
+    const count = countFor(mine.save)
+    const next = game.buyProducer(mine, id, count)
     if (next === null) return mine
-    bought = amount
+    bought = count
     return next
   })
   if (bought === 0) {
     const { save } = await io.readMine()
-    const short = game.priceOf(game.producer(id), game.owned(save, id), amount) - save.sparks
+    const short = game.priceOf(p, game.owned(save, id), countFor(save)) - save.sparks
     io.toast(`Need ${fmt(Math.max(1, short))} more ✻`)
   } else {
     await showPurchase(io)
@@ -498,7 +537,7 @@ export async function buyUpgrade(io: Io, id: string): Promise<boolean> {
   return isBought
 }
 
-export async function setAmount(io: Io, amount: number): Promise<void> {
+export async function setAmount(io: Io, amount: Amount): Promise<void> {
   await patchView(io, view => (view.amount === amount ? view : { ...view, amount }))
   await refresh(io, undefined, true)
 }
