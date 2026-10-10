@@ -187,6 +187,11 @@ describe('layers', () => {
     expect(at(3.2e11)).toMatchObject({ idleMult: 1.25, events: 2 })
     // The core: 25% more, and six depth achievements add 12%.
     expect(near(at(1e13).global)).toBe(1.4)
+    // Past it: gems worth twice as much, tool calls mining twice as much, and on the far side half again the stones.
+    expect(at(1e14).gemWorth).toBe(20)
+    expect(at(1e15).tool).toMatchObject({ read: 2, edit: 2, bash: 2, mcp: 2 })
+    expect(game.stoneGain(saveWith({ lifetime: 1e15 }))).toBe(1_000)
+    expect(game.stoneGain(saveWith({ lifetime: 1e16 }))).toBe(3_231)
     expect(near(game.idleShare(saveWith({ lifetime: 1e10, upgrades: ['idle-1'] })))).toBe(0.125)
     expect(game.veinAfter('run', 1, 2).seconds).toBe(Math.round(game.veinAfter('run', 1).seconds / 2))
   })
@@ -194,9 +199,11 @@ describe('layers', () => {
 
 describe('the shared card', () => {
   test('leaves out what is not done yet, and names the core as a place', () => {
-    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/30', 'github.com/tozmoz/sparkmine'].join('\n'))
+    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/33', 'github.com/tozmoz/sparkmine'].join('\n'))
     const core = model.shareCard(saveWith({ lifetime: 1e13, allTime: 3e13, stones: 1, veins: 1 }))
-    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥', '✻ 30.00T mined · ◈ 1 stone · ★ 9/30', '1 vein'])
+    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥⬛⬛⬛', '✻ 30.00T mined · ◈ 1 stone · ★ 9/33', '1 vein'])
+    const far = model.shareCard(saveWith({ lifetime: 2e16, allTime: 2e16 }))
+    expect(far.split('\n').slice(0, 2)).toEqual(['⛏️ Sparkmine · 1,330 m on the far side', '🟫⬜🟪🟧🟦🟨🟥💎🟩🌏'])
   })
 })
 
@@ -437,7 +444,8 @@ describe('depth', () => {
     expect(game.depth(saveWith({ lifetime: 9_000 }))).toBe(100)
     expect(game.depth(saveWith({ lifetime: 999_000 }))).toBe(300)
     expect(game.depth(saveWith({ lifetime: 99_999_000 }))).toBe(500)
-    expect([0, 99, 100, 299, 300, 499, 500, 699, 700, 849, 850, 999, 1_000, 5_000].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
+    expect([0, 99, 100, 299, 300, 499, 500, 699, 700, 849, 850, 999, 1_000, 1_099].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
+    expect([1_100, 1_199, 1_200, 1_299, 1_300, 5_000].map(game.biomeAt)).toEqual([7, 7, 8, 8, 9, 9])
   })
 })
 

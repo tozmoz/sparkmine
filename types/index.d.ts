@@ -164,7 +164,7 @@ export type Band = {
   pick: number
   /** The producers owned, in shop order: the crew the band shows on its right. */
   crew: { id: ProducerId; owned: number }[]
-  /** The layer the mine has reached, an index of BIOMES: 0 topsoil, 1 stone, ... 6 the core. */
+  /** The layer the mine has reached, an index of BIOMES: 0 topsoil, 1 stone, ... 9 the far side. */
   biome: number
   /** One line even while Claude works: `/mine compact`. */
   isCompact: boolean

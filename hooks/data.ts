@@ -262,9 +262,19 @@ export type Perk =
   /** Work events pay this many times as much. */
   | { kind: 'events'; mult: number }
   | { kind: 'global'; mult: number }
+  /** Gems are worth this many times as much. */
+  | { kind: 'gemWorth'; mult: number }
+  /** Every tool call mines this many times as much. */
+  | { kind: 'tools'; mult: number }
+  /** A new shaft opened from here pays this many times the stones. */
+  | { kind: 'stones'; mult: number }
 
-/** A layer: where it starts, its color, its perk, and the emoji square a shared card draws it with. */
-export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string }
+/**
+ * A layer: where it starts, its color, its perk, and the emoji square a shared
+ * card draws it with. `place` is how the card says where the mine is, when
+ * "in the" and the name would read badly.
+ */
+export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string; place?: string }
 
 /**
  * The layers the mine digs through, from the depth where each starts, in
@@ -279,6 +289,9 @@ export const BIOMES: readonly Biome[] = [
   { name: 'Groundwater', from: 700, color: '#4fb3d9', square: '🟦', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
   { name: 'Ancient ruins', from: 850, color: '#d9b45f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double." },
   { name: 'The core', from: 1_000, color: '#ffe9a8', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
+  { name: 'Inner core', from: 1_100, color: '#d7f4ff', square: '💎', perk: { kind: 'gemWorth', mult: 2 }, text: 'Gems are worth twice as much.' },
+  { name: 'Hollow earth', from: 1_200, color: '#5fd47a', square: '🟩', perk: { kind: 'tools', mult: 2 }, text: 'Tool calls mine twice as much.' },
+  { name: 'The far side', from: 1_300, color: '#9cc9ff', square: '🌏', perk: { kind: 'stones', mult: 1.5 }, text: 'A new shaft from here pays 50% more ◈.', place: 'on the far side' },
 ]
 
 /** What an achievement counts: a record of the save, or how often a work event paid. */
@@ -302,6 +315,9 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'groundwater', name: 'Underground river', text: 'Reach the groundwater, 700 m.', goal: { kind: 'deepest', n: 700 } },
   { id: 'ruins', name: 'Lost ruins', text: 'Reach the ancient ruins, 850 m.', goal: { kind: 'deepest', n: 850 } },
   { id: 'core', name: 'The core', text: 'Reach the core, 1,000 m.', goal: { kind: 'deepest', n: 1_000 } },
+  { id: 'inner-core', name: 'Under pressure', text: 'Reach the inner core, 1,100 m.', goal: { kind: 'deepest', n: 1_100 } },
+  { id: 'hollow-earth', name: 'Lost world', text: 'Reach the hollow earth, 1,200 m.', goal: { kind: 'deepest', n: 1_200 } },
+  { id: 'far-side', name: 'Out the other side', text: 'Dig through to the far side, 1,300 m.', goal: { kind: 'deepest', n: 1_300 } },
   { id: 'tests-100', name: 'Green streak', text: 'Pass the tests 100 times.', goal: { kind: 'event', event: 'tests', n: 100 } },
   { id: 'commits-100', name: 'Ship it', text: 'Commit 100 times.', goal: { kind: 'event', event: 'commit', n: 100 } },
   { id: 'long-shifts-10', name: 'Night owl', text: 'Work 10 long shifts.', goal: { kind: 'event', event: 'longShift', n: 10 } },

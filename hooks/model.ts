@@ -191,7 +191,7 @@ export function shareCard(save: Save): string {
   const deepest = game.deepestOf(save)
   const here = BIOMES[game.biomeAt(metres)] ?? BIOMES[0]
   const name = here?.name ?? 'Topsoil'
-  const place = name.startsWith('The ') ? `at ${name.toLowerCase()}` : `in the ${name}`
+  const place = here?.place ?? (name.startsWith('The ') ? `at ${name.toLowerCase()}` : `in the ${name}`)
   const reached = game.biomeAt(deepest)
   const squares = BIOMES.map((b, i) => (i <= reached ? b.square : '⬛')).join('')
   const stones = save.stones > 0 ? [`◈ ${plural(save.stones, 'stone', 'stones')}`] : []

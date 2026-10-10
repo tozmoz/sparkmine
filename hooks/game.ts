@@ -246,6 +246,8 @@ export type Multipliers = {
   /** From the upgrades: what each work event pays more, and how much longer a frenzy lasts. */
   event: Record<EventKind, number>
   frenzyTime: number
+  /** What a new shaft pays, from the layers: the far side pays more stones. */
+  stones: number
 }
 
 /** What ancient stones add to everything, as a share: each next one adds a little less. */
@@ -269,6 +271,7 @@ export function multipliers(save: Save): Multipliers {
     events: 1,
     event: Object.fromEntries(EVENT_KINDS.map(k => [k, 1])) as Record<EventKind, number>,
     frenzyTime: 1,
+    stones: 1,
   }
   // Every layer this run reached adds its perk.
   for (const biome of BIOMES.slice(0, biomeAt(depth(save)) + 1)) {
@@ -293,6 +296,15 @@ export function multipliers(save: Save): Multipliers {
         break
       case 'global':
         m.global *= perk.mult
+        break
+      case 'gemWorth':
+        m.gemWorth *= perk.mult
+        break
+      case 'tools':
+        for (const kind of TOOL_KINDS) m.tool[kind] *= perk.mult
+        break
+      case 'stones':
+        m.stones *= perk.mult
         break
     }
   }
@@ -392,7 +404,7 @@ export function roll(runId: string, label: string): number {
 /** How deep the mine is, in metres: a hundred more for every tenfold of this run's sparks. */
 export const depth = (save: Save): number => Math.round(100 * Math.log10(1 + save.lifetime / 1_000))
 
-/** The layer a depth is in, an index of BIOMES: 0 topsoil, 1 stone, ... 6 the core. */
+/** The layer a depth is in, an index of BIOMES: 0 topsoil, 1 stone, ... 9 the far side. */
 export function biomeAt(metres: number): number {
   let biome = 0
   BIOMES.forEach((b, i) => {
@@ -604,7 +616,7 @@ export const deepestOf = (save: Save): number => Math.max(save.deepest, depth(sa
 
 /** How many ancient stones a new shaft would pay now: none until the run reaches SHAFT_DEPTH. */
 export function stoneGain(save: Save): number {
-  return depth(save) < SHAFT_DEPTH ? 0 : Math.floor(Math.cbrt(save.lifetime / STONE_UNIT))
+  return depth(save) < SHAFT_DEPTH ? 0 : Math.floor(Math.cbrt(save.lifetime / STONE_UNIT) * multipliers(save).stones)
 }
 
 /** How far a save has come toward a goal: the record or count it measures. */
