@@ -213,6 +213,8 @@ export type Band = {
   isCompact: boolean
   /** Stopped by `/mine stop`: nothing mines and the band is gone. */
   isStopped: boolean
+  /** Sounds off, by `/mine sound`, in every session. */
+  isMuted: boolean
   /** A bug on the rock while tests fail, and the splat a moment after the pick got it. */
   bug: 'crawl' | 'splat' | null
   extras: Extras

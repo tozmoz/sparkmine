@@ -181,6 +181,13 @@ export const register: Register = on => {
       get: key => $.store.get(key),
       put: (key, value) => $.store.set(key, value),
       toast: text => $.ui.toast(text),
+      // A clip of the mod's own, played by the system (afplay on macOS); it is not waited for, and a failure is quiet.
+      sound: name => {
+        void (async () => {
+          if (state.fillBand(await read($, BAND)).isMuted) return
+          await $.audio.play({ asset: `sounds/${name}.wav` })
+        })().catch(() => undefined)
+      },
       ask: (question, options) => $.ui.ask(question, options),
       // Values kept in the session from before an update lack newer fields: every read fills them.
       mine: change => update($, MINE, m => change(normalizeMine(m))),
@@ -199,7 +206,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'mine',
       description: 'Open the Sparkmine shop',
-      argumentHint: '[share|stop|start|compact|hide|show|reset]',
+      argumentHint: '[share|sound|stop|start|compact|hide|show|reset]',
       immediate: true,
     })
     await state.ensureLoaded(engine)
@@ -541,6 +548,12 @@ export const register: Register = on => {
       case 'resume':
         await state.setStopped(io, false)
         return { text: 'Sparkmine is mining again.' }
+      case 'sound':
+      case 'mute': {
+        const wasMuted = (await io.readBand()).isMuted
+        await state.setMuted(io, !wasMuted)
+        return { text: wasMuted ? 'Sounds are on.' : 'Sounds are off in every session. /mine sound turns them back on.' }
+      }
       case 'compact': {
         const wasCompact = (await io.readBand()).isCompact
         await state.setCompact(io, !wasCompact)
@@ -566,7 +579,7 @@ export const register: Register = on => {
       case 'reset':
         return { text: (await state.resetMine(io)) ? 'Sparkmine was reset.' : 'Nothing was reset.' }
       default:
-        return { text: 'Usage: /mine [shop|share|stop|start|compact|hide|show|reset]' }
+        return { text: 'Usage: /mine [shop|share|sound|stop|start|compact|hide|show|reset]' }
     }
   })
 }

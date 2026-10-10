@@ -401,6 +401,7 @@ test('a failing test run puts a bug on the rock, and squashing it leaves a splat
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   expect(await scene()).not.toContain(BUG_PINK)
   expect(await scene()).toContain(SPLAT_GREEN)
+  expect(w.sounds).toEqual(['sounds/squash.wav'])
   await w.clock.advance(state.SPLAT_MS)
   expect(await scene()).not.toContain(SPLAT_GREEN)
 })
@@ -466,6 +467,21 @@ test('thanks make the miner tip his helmet a moment, and the first time is a sec
   expect(await secretsStored($, w)).toEqual(['good-manners'])
 })
 
+test('a secret chimes, and /mine sound turns the sounds off in every session, and on', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await prompt($, 'thank you!')
+  await w.clock.advance(100)
+  expect(w.sounds).toEqual(['sounds/secret.wav'])
+  expect((await command($, 'sound')).text).toBe('Sounds are off in every session. /mine sound turns them back on.')
+  expect(w.store.get('muted')).toBe(true)
+  await prompt($, 'ultrathink this one')
+  await w.clock.advance(100)
+  expect(w.sounds).toEqual(['sounds/secret.wav'])
+  expect((await command($, 'sound')).text).toBe('Sounds are on.')
+  expect(w.store.get('muted')).toBe(false)
+})
+
 test('ultrathink flares the lanterns for the turn', async ($, on) => {
   const w = world(on)
   await start($)
@@ -529,6 +545,7 @@ test('a merged pull request rains confetti a moment', async ($, on) => {
   await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7 --squash' })
   await ui.advance(POLL)
   expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(CONFETTI_BLUE)
+  expect(w.sounds).toEqual(['sounds/party.wav'])
   await w.clock.advance(CONFETTI_MS)
   await ui.advance(POLL)
   expect(String((await ui.find({ type: 'Svg' }))?.props.source)).not.toContain(CONFETTI_BLUE)
@@ -635,6 +652,7 @@ test('a vein shows after a while of work, and a press catches it', async ($, on)
   // The first vein is an achievement, and the next tick says so.
   await w.clock.advance(200)
   expect(w.toasts).toEqual(['Achievement: First vein. Everything mines 2% more.'])
+  expect(w.sounds).toEqual(['sounds/vein.wav'])
 })
 
 /** A run in the stone whose first vein is its fossil. */
@@ -659,6 +677,7 @@ test('in the stone a vein may be a fossil: it shows on the rock, and catching it
   // A find is a vein caught too: the next tick says both.
   await w.clock.advance(200)
   expect(w.toasts).toEqual(['Achievements: First vein and Paleontologist. Everything mines 4% more.'])
+  expect(w.sounds).toEqual(['sounds/find.wav'])
 })
 
 test('a vein not caught in time goes', async ($, on) => {

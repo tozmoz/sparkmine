@@ -12,11 +12,16 @@ import * as model from './model.ts'
  * What the actions need from the engine. The hooks module builds it from `$`
  * once a session starts, since `$` itself is only ever spelled at a call site.
  */
+/** The few moments that make a sound, each a file in `sounds/`. */
+export type Sound = 'vein' | 'find' | 'secret' | 'squash' | 'party'
+
 export type Io = {
   now: () => Promise<number>
   get: (key: string) => Promise<unknown>
   put: (key: string, value: unknown) => Promise<void>
   toast: (text: string) => void
+  /** Plays a sound unless they are off; it never waits for it to end. */
+  sound: (name: Sound) => void
   ask: (question: string, options: readonly string[]) => Promise<string>
   mine: (change: (mine: Mine) => Mine) => Promise<Mine>
   view: (change: (view: View) => View) => Promise<View>
@@ -34,6 +39,7 @@ export const SAVE_KEY = 'save'
 /** The person's settings, kept beside the save so every session follows them. */
 export const COMPACT_KEY = 'compact'
 export const STOPPED_KEY = 'stopped'
+export const MUTED_KEY = 'muted'
 export const TICK_MS = 100
 export const SYNC_MS = 5_000
 /**
@@ -97,6 +103,7 @@ export const INITIAL_BAND: Band = {
   biome: 0,
   isCompact: false,
   isStopped: false,
+  isMuted: false,
   bug: null,
   extras: { canary: false, gloves: false, warm: false, coffee: false },
   nap: null,
@@ -344,6 +351,7 @@ export async function catchVein(io: Io, id: number): Promise<VeinKind | null> {
     return game.earn(m, value, { kind: 'vein' })
   })
   if (hit.find !== undefined) await findSecrets(io, [hit.find])
+  io.sound(hit.find !== undefined ? 'find' : 'vein')
   const label = hit.find !== undefined ? FINDS[hit.find].name : kind === 'rich' ? 'Rich vein' : `Frenzy ×${VEIN.frenzyMult}`
   await io.view(view => ({ ...view, event: { label, value, at: now } }))
   await refresh(io, now)
@@ -444,10 +452,14 @@ export async function minedTool(io: Io, outcome: game.ToolOutcome): Promise<numb
   if (squashed.yes) events.push('fix')
   if (events.length > 0) await reward(io, events, now)
   if (events.includes('merge')) await io.view(view => ({ ...view, confettiAt: now }))
-  await findSecrets(io, [
+  const found = await findSecrets(io, [
     ...(game.isInitialCommit(outcome) ? (['groundbreaking'] as const) : []),
     ...(events.includes('merge') && game.isFridayAfternoon(now) ? (['friday-deploy'] as const) : []),
   ])
+  // One sound for the call's news, the rarest: a secret, a merge, a bug squashed.
+  if (found.length > 0) io.sound('secret')
+  else if (events.includes('merge')) io.sound('party')
+  else if (squashed.yes) io.sound('squash')
   await refresh(io, now)
   return value
 }
@@ -478,7 +490,7 @@ export async function promptSeen(io: Io, text: string): Promise<void> {
     tipUntil: secrets.includes('good-manners') ? now + TIP_MS : view.tipUntil,
     flare: view.flare || secrets.includes('deep-thinker'),
   }))
-  await findSecrets(io, secrets)
+  if ((await findSecrets(io, secrets)).length > 0) io.sound('secret')
   await refresh(io, now)
 }
 
@@ -512,10 +524,11 @@ export type TurnEnd = 'answer' | 'aborted' | 'refusal' | 'error'
 export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer', answer = ''): Promise<number> {
   await ensureLoaded(io)
   const at = await io.now()
-  await findSecrets(io, [
+  const found = await findSecrets(io, [
     ...(game.isAbsolutelyRight(answer) ? (['absolutely-right'] as const) : []),
     ...(game.crossesMidnight(at, durationMs) ? (['midnight-oil'] as const) : []),
   ])
+  if (found.length > 0) io.sound('secret')
   const isStopped = (await io.readBand()).isStopped
   let bonus = 0
   if (!isStopped) {
@@ -628,9 +641,16 @@ export async function setStopped(io: Io, isStopped: boolean): Promise<void> {
 async function readSettings(io: Io): Promise<void> {
   const isCompact = (await io.get(COMPACT_KEY)) === true
   const isStopped = (await io.get(STOPPED_KEY)) === true
+  const isMuted = (await io.get(MUTED_KEY)) === true
   await patch(io.readBand, io.band, band =>
-    band.isCompact === isCompact && band.isStopped === isStopped ? band : { ...band, isCompact, isStopped },
+    band.isCompact === isCompact && band.isStopped === isStopped && band.isMuted === isMuted ? band : { ...band, isCompact, isStopped, isMuted },
   )
+}
+
+/** Sounds off or on, in every session. */
+export async function setMuted(io: Io, isMuted: boolean): Promise<void> {
+  await io.put(MUTED_KEY, isMuted)
+  await patch(io.readBand, io.band, band => (band.isMuted === isMuted ? band : { ...band, isMuted }))
 }
 
 async function confirm(io: Io, question: string, yes: string, no: string): Promise<boolean> {
