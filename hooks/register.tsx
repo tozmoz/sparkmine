@@ -53,7 +53,7 @@ const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 const flag = (on: boolean | undefined) => (on === true ? 1 : 0)
 const specKey = (spec: SceneSpec) =>
   `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}:${spec.bug ?? ''}:` +
-  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}:${spec.pose ?? ''}`
+  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}${flag(spec.flare)}${flag(spec.confetti)}:${spec.pose ?? ''}:${spec.find ?? ''}:${spec.season ?? ''}`
 const svgs = new Map<string, string>()
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
@@ -81,6 +81,10 @@ function bandSpec(band: Band, mode: Band['mode'], pose?: SceneSpec['pose']): Sce
     biome: band.biome,
     ...(band.bug === null ? {} : { bug: band.bug }),
     ...band.extras,
+    ...(band.flare ? { flare: true } : {}),
+    ...(band.find === null ? {} : { find: band.find }),
+    ...(band.season === null ? {} : { season: band.season }),
+    ...(band.confetti ? { confetti: true } : {}),
     ...(pose === undefined ? {} : { pose }),
   }
 }
@@ -177,6 +181,13 @@ export const register: Register = on => {
       get: key => $.store.get(key),
       put: (key, value) => $.store.set(key, value),
       toast: text => $.ui.toast(text),
+      // A clip of the mod's own, played by the system (afplay on macOS); it is not waited for, and a failure is quiet.
+      sound: name => {
+        void (async () => {
+          if (state.fillBand(await read($, BAND)).isMuted) return
+          await $.audio.play({ asset: `sounds/${name}.wav` })
+        })().catch(() => undefined)
+      },
       ask: (question, options) => $.ui.ask(question, options),
       // Values kept in the session from before an update lack newer fields: every read fills them.
       mine: change => update($, MINE, m => change(normalizeMine(m))),
@@ -195,7 +206,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'mine',
       description: 'Open the Sparkmine shop',
-      argumentHint: '[share|stop|start|compact|hide|show|reset]',
+      argumentHint: '[share|sound|stop|start|compact|hide|show|reset]',
       immediate: true,
     })
     await state.ensureLoaded(engine)
@@ -247,14 +258,20 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Read only: a few words in the person's own prompt find a secret, and the prompt goes on as it was.
+  on('prompt.submit', async ($, e, next) => {
+    if (io !== null && (e.origin.kind === 'composer' || e.origin.kind === 'bridge')) await state.promptSeen(io, e.text)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('turn.start', async ($, e, next) => {
-    if (io !== null) await state.startTurn(io)
+    if (io !== null) await state.startTurn(io, e.turnId)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (io !== null && e.agentId === undefined) await state.endTurn(io, e.durationMs, e.reason)
+    if (io !== null && e.agentId === undefined) await state.endTurn(io, e.durationMs, e.reason, e.answer)
     return result
   })
 
@@ -334,7 +351,8 @@ export const register: Register = on => {
     const surface = surfaceOf(e.surface)
     // The Mine button is the HUD's own, so a press answers without a round trip.
     const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, taps, isCompact: band.isCompact, ...hudSize }
-    const spec = bandSpec(band, band.mode, band.mode === 'pause' ? 'facing' : undefined)
+    // Thanked, the miner stops a moment to tip his hat; while Claude asks, he faces you.
+    const spec = band.tip ? bandSpec(band, 'pause', 'tip') : bandSpec(band, band.mode, band.mode === 'pause' ? 'facing' : undefined)
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
     let ours: RenderElement
 
@@ -506,8 +524,10 @@ export const register: Register = on => {
   // The spinner says what the mine has unlocked. On the desktop its word names
   // the step Claude is on, so only the plain "Working" changes there.
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
-    const word = await read($, REWARD)
-    if (word === null || state.fillBand(await read($, BAND)).isStopped) return next(e)
+    // Now and then a turn has a rarer word than the mine's own.
+    const band = state.fillBand(await read($, BAND))
+    const word = band.word ?? (await read($, REWARD))
+    if (word === null || band.isStopped) return next(e)
     if (e.surface === 'desktop' && e.props.word !== 'Working') return next(e)
     return next({ ...e, props: { ...e.props, word } })
   })
@@ -528,6 +548,12 @@ export const register: Register = on => {
       case 'resume':
         await state.setStopped(io, false)
         return { text: 'Sparkmine is mining again.' }
+      case 'sound':
+      case 'mute': {
+        const wasMuted = (await io.readBand()).isMuted
+        await state.setMuted(io, !wasMuted)
+        return { text: wasMuted ? 'Sounds are on.' : 'Sounds are off in every session. /mine sound turns them back on.' }
+      }
       case 'compact': {
         const wasCompact = (await io.readBand()).isCompact
         await state.setCompact(io, !wasCompact)
@@ -553,7 +579,7 @@ export const register: Register = on => {
       case 'reset':
         return { text: (await state.resetMine(io)) ? 'Sparkmine was reset.' : 'Nothing was reset.' }
       default:
-        return { text: 'Usage: /mine [shop|share|stop|start|compact|hide|show|reset]' }
+        return { text: 'Usage: /mine [shop|share|sound|stop|start|compact|hide|show|reset]' }
     }
   })
 }

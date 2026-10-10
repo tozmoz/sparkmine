@@ -1,16 +1,21 @@
 // The economy, as pure functions over plain data. No `$` in here, so the
 // rules can be tested on their own and shared by every drawing.
 
-import type { Counts, Delta, EventKind, IdleSpan, Mine, ProducerId, Save, SourceKind, ToolKind, VeinKind } from '../types'
+import type { Counts, Delta, EventKind, FindId, IdleSpan, Mine, ProducerId, Save, SecretId, Season, SourceKind, ToolKind, VeinKind } from '../types'
 import {
   ACHIEVEMENT_BONUS,
   ACHIEVEMENTS,
   BIOMES,
   EVENTS,
+  FIND_CHANCE,
+  FINDS,
+  RARE_WORD_CHANCE,
+  RARE_WORDS,
   GEM_WORTH,
   GROWTH,
   PRODUCERS,
   REWARDS,
+  SECRET_IDS,
   SHAFT_DEPTH,
   STONE_BONUS,
   STONE_POWER,
@@ -51,6 +56,7 @@ export function fresh(runId: string): Save {
     gems: 0,
     veins: 0,
     events: {},
+    secrets: [],
     idleAt: 0,
     writes: {},
     chain: '',
@@ -74,6 +80,7 @@ export function emptyDelta(runId: string): Delta {
     gems: 0,
     veins: 0,
     events: {},
+    secrets: [],
     idle: null,
   }
 }
@@ -144,11 +151,17 @@ export function normalize(raw: unknown): Save | null {
       ? [...new Set(r.upgrades.filter((id): id is string => typeof id === 'string' && UPGRADE_IDS.has(id)))]
       : [],
     ...stats(r),
+    secrets: secretsOf(r.secrets),
     idleAt: num(r.idleAt),
     writes: writes(r.writes),
     chain: typeof r.chain === 'string' ? r.chain : '',
   }
 }
+
+const isSecret = (id: unknown): id is SecretId => typeof id === 'string' && (SECRET_IDS as readonly string[]).includes(id)
+
+/** Secrets read back: the known ones, each once. */
+const secretsOf = (value: unknown): SecretId[] => (Array.isArray(value) ? [...new Set(value.filter(isSecret))] : [])
 
 /** A delta's idle span read back; null where it has none, as one kept from before an update. */
 function idleSpan(value: unknown): IdleSpan | null {
@@ -164,7 +177,13 @@ function idleSpan(value: unknown): IdleSpan | null {
  */
 export function normalizeMine(mine: Mine): Mine {
   const save = normalize(mine.save) ?? fresh('unloaded')
-  const delta = (d: Delta): Delta => ({ ...emptyDelta(save.runId), ...d, ...stats(d as unknown as Record<string, unknown>), idle: idleSpan(d.idle) })
+  const delta = (d: Delta): Delta => ({
+    ...emptyDelta(save.runId),
+    ...d,
+    ...stats(d as unknown as Record<string, unknown>),
+    secrets: secretsOf(d.secrets),
+    idle: idleSpan(d.idle),
+  })
   return {
     save,
     pending: delta(mine.pending),
@@ -460,6 +479,15 @@ export function veinAfter(runId: string, n: number, speed = 1): { seconds: numbe
   }
 }
 
+/** The find the `n`th vein of a run is instead, in a layer that hides one not found yet; the run decides, as for veins. */
+export function findAt(save: Save, n: number): FindId | null {
+  const here = biomeAt(depth(save))
+  for (const [id, find] of Object.entries(FINDS) as [FindId, (typeof FINDS)[FindId]][]) {
+    if (find.biome === here && !save.secrets.includes(id) && roll(save.runId, `find-${n}`) < FIND_CHANCE) return id
+  }
+  return null
+}
+
 /** A test runner at the head of one step of a shell command. */
 const TEST_RUNNERS: readonly RegExp[] = [
   /^(npm|pnpm|yarn|bun)\s+(run\s+)?test\b/,
@@ -698,6 +726,8 @@ function reached(save: Save, goal: Goal): number {
       return deepestOf(save)
     case 'event':
       return save.events[goal.event] ?? 0
+    case 'secret':
+      return save.secrets.includes(goal.secret) ? 1 : 0
   }
 }
 
@@ -709,11 +739,11 @@ export const isEarned = (save: Save, a: Achievement): boolean => reached(save, a
  */
 export const achievements = (save: Save): Achievement[] => ACHIEVEMENTS.filter(a => isEarned(save, a))
 
-/** The unearned achievement closest to done, by share of its goal. */
+/** The unearned achievement closest to done, by share of its goal; never a secret. */
 export function nextAchievement(save: Save): Achievement | null {
   let best: { a: Achievement; share: number } | null = null
   for (const a of ACHIEVEMENTS) {
-    if (isEarned(save, a)) continue
+    if (a.goal.kind === 'secret' || isEarned(save, a)) continue
     const share = reached(save, a.goal) / a.goal.n
     if (best === null || share > best.share) best = { a, share }
   }
@@ -801,6 +831,54 @@ export function payCrew(mine: Mine, idle: number, more: number, from: number, to
   return { ...paid, pending: { ...paid.pending, idle: next } }
 }
 
+/** Records a secret found, in the save and in what the next sync carries; once. */
+export function findSecret(mine: Mine, id: SecretId): Mine {
+  if (mine.save.secrets.includes(id)) return mine
+  return {
+    ...mine,
+    save: { ...mine.save, secrets: [...mine.save.secrets, id] },
+    pending: { ...mine.pending, secrets: [...mine.pending.secrets, id] },
+  }
+}
+
+/** Thanks in the person's prompt, in a few languages. */
+const THANKS: readonly RegExp[] = [/\b(thanks|thank you|thx|ty)\b/i, /teşekkür|sağ ?ol/i, /\b(danke|merci|gracias|grazie|obrigad[oa])\b/i]
+
+/** The secrets a prompt finds: thanks, and asking Claude to ultrathink. */
+export function promptSecrets(text: string): SecretId[] {
+  return [...(THANKS.some(re => re.test(text)) ? (['good-manners'] as const) : []), ...(/\bultrathink\b/i.test(text) ? (['deep-thinker'] as const) : [])]
+}
+
+/** Claude's own catchphrase, in an answer. */
+export const isAbsolutelyRight = (answer: string): boolean => /\byou(?:'|’|\s+a)?re absolutely right\b/i.test(answer)
+
+/** A Friday after four, where the person is. */
+export function isFridayAfternoon(ms: number): boolean {
+  const day = new Date(ms)
+  return day.getDay() === 5 && day.getHours() >= 16
+}
+
+/** A turn that ended on another day than it began, where the person is. */
+export const crossesMidnight = (endMs: number, durationMs: number): boolean =>
+  durationMs > 0 && new Date(endMs - durationMs).toDateString() !== new Date(endMs).toDateString()
+
+/** The rarer word a turn's spinner says, if it is one of the few: the turn decides. */
+export function rareWord(turnId: string): string | null {
+  if (roll(turnId, 'spinner') >= RARE_WORD_CHANCE) return null
+  return RARE_WORDS[Math.floor(roll(turnId, 'spinner-word') * RARE_WORDS.length)] ?? null
+}
+
+/** The season on the person's calendar: the last week of October, and December. */
+export function seasonOf(ms: number): Season | null {
+  const day = new Date(ms)
+  if (day.getMonth() === 9 && day.getDate() >= 24) return 'halloween'
+  if (day.getMonth() === 11) return 'winter'
+  return null
+}
+
+/** A commit that landed with "initial commit" in its command. */
+export const isInitialCommit = (o: ToolOutcome): boolean => o.committed && /initial commit/i.test(o.command ?? '')
+
 /** Keeps the best turn yet, in the save and in what the next sync carries. */
 export function recordTurn(mine: Mine, earned: number): Mine {
   if (!(earned > mine.save.bestTurn)) return mine
@@ -871,6 +949,7 @@ export function openShaft(save: Save, runId: string): Save | null {
     gems: save.gems,
     veins: save.veins,
     events: save.events,
+    secrets: save.secrets,
     idleAt: save.idleAt,
   }
 }
@@ -914,6 +993,7 @@ export function applyDelta(stored: Save, d: Delta): Save {
     gems: stored.gems + d.gems,
     veins: stored.veins + d.veins,
     events: add(stored.events, d.events),
+    secrets: [...new Set([...stored.secrets, ...d.secrets])],
     idleAt: Math.max(stored.idleAt, d.idle?.to ?? 0),
   }
 }
@@ -970,4 +1050,5 @@ export const isEmptyDelta = (d: Delta): boolean =>
   d.gems === 0 &&
   d.veins === 0 &&
   Object.keys(d.events).length === 0 &&
+  d.secrets.length === 0 &&
   d.idle === null

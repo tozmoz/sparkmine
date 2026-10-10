@@ -62,8 +62,10 @@ claude plugin update sparkmine@sparkmine
   than the one before: 10 stones add 50%, 100 add 251%. A deeper run pays more
   of them.
 - **Achievements:** 33 badges for records such as your first vein, 100
-  commits, a ten-turn streak or reaching the magma. Each adds 2% to everything, and they stay
-  through new shafts.
+  commits, a ten-turn streak or reaching the magma, and nine secrets. Each
+  adds 2% to everything, and they stay through new shafts.
+- **Sounds:** a few rare moments chime softly, such as a vein caught.
+  `/mine sound` turns them off.
 
 All your sessions share one save, so they mine into the same mine. The crew's
 idle pace is paid once, however many sessions are open.
@@ -72,6 +74,7 @@ idle pace is paid once, however many sessions are open.
 | :- | :- |
 | `/mine` | Opens the shop |
 | `/mine share` | Puts a card of your mine in the conversation to paste anywhere (in the terminal, on the clipboard too) |
+| `/mine sound` | Turns the sounds off in every session, and on again |
 | `/mine stop`, `/mine start` | Stops the game in every session, and starts it again |
 | `/mine compact` | Keeps the band to one line, even while Claude works |
 | `/mine hide`, `/mine show` | Hides the band in this session, and brings it back |
@@ -85,7 +88,10 @@ you reset it.
 - It **DOES NOT** use tokens: it never calls a model and adds nothing to your
   prompts.
 - It **DOES NOT** make network requests or run commands. Nothing leaves your
-  machine.
+  machine. Its few sounds play through the system's own player (`afplay` on
+  macOS).
+- It **DOES NOT** keep or send your prompts or Claude's answers: it reads them
+  on your machine only to notice a few words.
 - It counts tool calls, turns and permission prompts, and reads whether a
   test run passed or a commit landed, but changes none of them.
 - It keeps one small save on your machine.

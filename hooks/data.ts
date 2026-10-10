@@ -1,6 +1,6 @@
 // Everything the shop sells, and the numbers behind it.
 
-import type { EventKind, ProducerId, ToolKind } from '../types'
+import type { EventKind, FindId, ProducerId, SecretId, ToolKind } from '../types'
 
 export type Producer = {
   id: ProducerId
@@ -298,6 +298,8 @@ export const BIOMES: readonly Biome[] = [
 export type Goal =
   | { kind: 'veins' | 'gems' | 'clicks' | 'tools' | 'shafts' | 'stones' | 'bestTurn' | 'bestStreak' | 'allTime' | 'deepest'; n: number }
   | { kind: 'event'; event: EventKind; n: number }
+  /** A secret found: the shop shows it as ??? until then. */
+  | { kind: 'secret'; secret: SecretId; n: 1 }
 
 export type Achievement = { id: string; name: string; text: string; goal: Goal }
 
@@ -339,7 +341,43 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'stones-500', name: 'Pyramid builder', text: 'Hold 500 ancient stones.', goal: { kind: 'stones', n: 500 } },
   { id: 'billion', name: 'Billionaire', text: 'Mine 1B sparks in all.', goal: { kind: 'allTime', n: 1e9 } },
   { id: 'trillion', name: 'Trillionaire', text: 'Mine 1T sparks in all.', goal: { kind: 'allTime', n: 1e12 } },
+
+  // Secrets: each shows as ??? until found.
+  { id: 'absolutely-right', name: 'Absolutely right', text: 'Hear Claude say you are absolutely right.', goal: { kind: 'secret', secret: 'absolutely-right', n: 1 } },
+  { id: 'good-manners', name: 'Good manners', text: 'Thank Claude.', goal: { kind: 'secret', secret: 'good-manners', n: 1 } },
+  { id: 'deep-thinker', name: 'Deep thinker', text: 'Ask Claude to ultrathink.', goal: { kind: 'secret', secret: 'deep-thinker', n: 1 } },
+  { id: 'groundbreaking', name: 'Groundbreaking', text: 'Make an initial commit.', goal: { kind: 'secret', secret: 'groundbreaking', n: 1 } },
+  { id: 'friday-deploy', name: 'Friday deploy', text: 'Merge a pull request on a Friday after four.', goal: { kind: 'secret', secret: 'friday-deploy', n: 1 } },
+  { id: 'midnight-oil', name: 'Midnight oil', text: 'Work on through midnight.', goal: { kind: 'secret', secret: 'midnight-oil', n: 1 } },
+  { id: 'fossil', name: 'Paleontologist', text: 'Dig up a fossil in the stone.', goal: { kind: 'secret', secret: 'fossil', n: 1 } },
+  { id: 'rubber-duck', name: 'Rubber duck', text: 'Find the rubber duck in the groundwater.', goal: { kind: 'secret', secret: 'rubber-duck', n: 1 } },
+  { id: 'pharaoh', name: "Pharaoh's mask", text: "Find a pharaoh's mask in the ancient ruins.", goal: { kind: 'secret', secret: 'pharaoh', n: 1 } },
 ]
+
+export const SECRET_IDS: readonly SecretId[] = ACHIEVEMENTS.flatMap(a => (a.goal.kind === 'secret' ? [a.goal.secret] : []))
+
+/** How long the miner tips his hat when thanked. */
+export const TIP_MS = 3_000
+
+/**
+ * What three layers hide: a vein in one may be its find instead, until it is
+ * caught. `biome` is an index of BIOMES; `label` names it on its button.
+ */
+export const FINDS: Readonly<Record<FindId, { biome: number; name: string; label: string }>> = {
+  fossil: { biome: 1, name: 'A fossil', label: 'Fossil!' },
+  'rubber-duck': { biome: 4, name: 'A rubber duck', label: 'Rubber duck!' },
+  pharaoh: { biome: 5, name: "A pharaoh's mask", label: "Pharaoh's mask!" },
+}
+
+/** The chance a vein in such a layer is its find, while it is not found. */
+export const FIND_CHANCE = 0.2
+
+/** How long confetti falls for a merged pull request. */
+export const CONFETTI_MS = 4_000
+
+/** Words the spinner says now and then in place of the mine's own, one turn in RARE_WORD_CHANCE. */
+export const RARE_WORDS: readonly string[] = ['Spelunking', 'Panning for gold', 'Dowsing']
+export const RARE_WORD_CHANCE = 1 / 12
 
 /** Spinner words, unlocked by all-time sparks. */
 export const REWARDS: readonly { at: number; word: string }[] = [

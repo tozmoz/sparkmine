@@ -13,6 +13,8 @@ export type World = {
   toasts: string[]
   /** What the mod put on the clipboard. */
   copied: string[]
+  /** The sounds the mod played, by file. */
+  sounds: string[]
   opened: string[]
   /** What the person picks, in order, when the mod asks a question. */
   answers: string[]
@@ -28,12 +30,14 @@ export type World = {
   bash?: (command: string) => { result: unknown; isError?: true } | undefined
 }
 
-export function world(on: On, store: Record<string, unknown> = {}): World {
+/** @param now when the session starts: some secrets go by the person's own clock. */
+export function world(on: On, store: Record<string, unknown> = {}, now = 1_000_000): World {
   const w: World = {
-    clock: mock.clock(on, { now: 1_000_000 }),
+    clock: mock.clock(on, { now }),
     store: new Map(Object.entries(store)),
     toasts: [],
     copied: [],
+    sounds: [],
     opened: [],
     answers: [],
     asked: [],
@@ -61,6 +65,11 @@ export function world(on: On, store: Record<string, unknown> = {}): World {
     w.toasts.push(e.text)
     return { value: undefined }
   })
+  on('audio.play', ($, e) => {
+    w.sounds.push(e.clip.asset ?? '')
+    return { value: undefined }
+  })
+  on('prompt.submit', ($, e) => ({ text: e.text }))
   on('ui.copy', ($, e) => {
     w.copied.push(e.text)
     return { value: { isCopied: true } }
@@ -100,8 +109,11 @@ export const command = ($: Engine, args: string) =>
 export const endSession = ($: Engine) =>
   $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } })
 
-export const finishTurn = ($: Engine, turnId: string, durationMs = 1_000, reason: 'answer' | 'aborted' | 'error' = 'answer') =>
-  $.turn.complete({ answer: 'Done.', durationMs, isAborted: reason === 'aborted', turnId, reason })
+export const finishTurn = ($: Engine, turnId: string, durationMs = 1_000, reason: 'answer' | 'aborted' | 'error' = 'answer', answer = 'Done.') =>
+  $.turn.complete({ answer, durationMs, isAborted: reason === 'aborted', turnId, reason })
+
+/** A prompt the person typed. */
+export const prompt = ($: Engine, text: string) => $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
 
 /**
  * Lets time pass a second at a time, as it does for a running session: one
@@ -137,6 +149,7 @@ export function seeded(patch: Partial<Save>): Save {
     gems: 0,
     veins: 0,
     events: {},
+    secrets: [],
     idleAt: 0,
     writes: {},
     chain: '',

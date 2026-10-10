@@ -3,7 +3,7 @@
 // neither is redrawn when nothing it shows has changed.
 
 import type { Amount, Band, EventKind, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
-import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
+import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, FINDS, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate } from './format.ts'
 import * as game from './game.ts'
 
@@ -171,7 +171,8 @@ export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopMo
     },
     layers: shown.map((b, i) => ({ name: b.name, from: b.from, color: b.color, text: b.text, isReached: i <= here, isHere: i === here })),
     deeper: BIOMES.length - shown.length,
-    achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: a.name, isEarned: won.has(a.id) })),
+    // A secret keeps its name to itself until found.
+    achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: won.has(a.id) || a.goal.kind !== 'secret' ? a.name : '???', isEarned: won.has(a.id) })),
     nextAchievement: goal === null ? null : { name: goal.name, text: goal.text },
     shaft:
       save.shafts > 0 || metres >= SHAFT_DEPTH - SHAFT_LEAD
@@ -291,7 +292,10 @@ export function veinProps(view: View, now: number, surface: VeinProps['surface']
   const vein = view.vein !== null && now <= view.vein.until ? view.vein : null
   const frenzy = view.frenzy !== null && now < view.frenzy.until ? view.frenzy : null
   return {
-    vein: vein === null ? null : { id: vein.id, kind: vein.kind, left: Math.ceil((vein.until - now) / 1000) },
+    vein:
+      vein === null
+        ? null
+        : { id: vein.id, kind: vein.kind, left: Math.ceil((vein.until - now) / 1000), label: vein.find === undefined ? 'Vein!' : FINDS[vein.find].label },
     frenzy: frenzy === null ? null : { mult: frenzy.mult, left: Math.ceil((frenzy.until - now) / 1000) },
     surface,
   }

@@ -40,6 +40,9 @@ type State = {
   pop: Pop | null
   /** Frames the gold sign stays pressed in after a press. */
   pressed: number
+  /** The counter's thousands (K, M, B ...), and frames of gold left since it passed into new ones. */
+  tier?: number
+  shimmer?: number
 }
 
 const POLL_MS = 100
@@ -58,6 +61,12 @@ const GEM_COLOR = '#5dcaa5'
 const REWARD_COLOR = '#ffd36e'
 const BAR = 10
 const PRESS_FRAMES = 2
+/** Frames the counter shines when it passes 1K, 1M, 1B and on. */
+const SHIMMER_FRAMES = 10
+const SHIMMER = ['#ffe08a', '#f2b632'] as const
+
+/** Which thousands a count is in: 0 under a thousand, 1 for K, 2 for M, 3 for B. */
+const tierOf = (n: number): number => (n >= 1000 ? Math.floor(Math.log10(n) / 3) : 0)
 
 /** The desktop's Mine sign: gold ore while Claude works, dull while it waits. */
 const GOLD = { face: '#f2b632', lit: '#ffcd52', pressed: '#d9951f', edge: '#a8691a', ink: '#3a2410' }
@@ -107,19 +116,19 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
   let s = old !== undefined && typeof old.taps === 'number' && typeof old.pressed === 'number' ? old : undefined
   if (s === undefined) {
     const instance = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`
-    s = { instance, total: 0, recent: [], taps, gemSeq: gem?.seq ?? 0, pop: null, pressed: 0 }
+    s = { instance, total: 0, recent: [], taps, gemSeq: gem?.seq ?? 0, pop: null, pressed: 0, tier: tierOf(props.sparks), shimmer: 0 }
     surface.setState(s)
     surface.every(POLL_MS, () => surface.post({ instance, total: surface.state?.total ?? 0 }))
-    // Ages the pop and lets the sign back up; does nothing at all while neither is showing.
+    // Ages the pop, lets the sign back up and dims the shine; does nothing at all while none is showing.
     surface.every(FRAME_MS, () => {
       const now = surface.state
-      if (now === undefined || (now.pop === null && now.pressed === 0)) return
+      if (now === undefined || (now.pop === null && now.pressed === 0 && (now.shimmer ?? 0) === 0)) return
       let pop = now.pop
       if (pop !== null) {
         const age = pop.age + 1
         pop = age >= (pop.isGem ? GEM_FRAMES : POP_FRAMES) ? null : { ...pop, age }
       }
-      surface.setState({ ...now, pop, pressed: Math.max(0, now.pressed - 1) })
+      surface.setState({ ...now, pop, pressed: Math.max(0, now.pressed - 1), shimmer: Math.max(0, (now.shimmer ?? 0) - 1) })
     })
     surface.post({ instance, total: 0 })
   } else {
@@ -131,6 +140,15 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
       const mined = Math.max(0, taps - s.taps) * props.click + (isGem ? gem.bonus : 0)
       const pop = props.variant === 'band' && mined > 0 ? { value: (s.pop?.value ?? 0) + mined, age: 0, isGem: isGem || s.pop?.isGem === true } : s.pop
       s = { ...s, taps, gemSeq: isGem ? gem.seq : s.gemSeq, pop }
+      surface.setState(s)
+    }
+    // Passing into new thousands, the counter shines a moment; a new shaft's fall says nothing.
+    const tier = tierOf(props.sparks)
+    if (tier !== (s.tier ?? tier)) {
+      s = { ...s, tier, shimmer: tier > (s.tier ?? tier) ? SHIMMER_FRAMES : (s.shimmer ?? 0) }
+      surface.setState(s)
+    } else if (s.tier === undefined) {
+      s = { ...s, tier }
       surface.setState(s)
     }
   }
@@ -162,7 +180,8 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
   const box = (children: unknown[]) => Box({ height: props.height, flexDirection: 'column', children: children as never[] })
   const line = (children: unknown[]) => Box({ flexDirection: 'row', columnGap: 1, children: children as never[] })
   const dim = (text: string) => Text({ dimColor: true, wrap: 'truncate-end', children: [text] })
-  const count = Text({ color: 'claude', bold: true, children: [counter] })
+  const shine = s.shimmer ?? 0
+  const count = Text({ color: shine > 0 ? SHIMMER[shine % 2] : 'claude', bold: true, children: [counter] })
   const goal = props.goal === null ? null : `Next: ${props.goal.name}`
 
   // How deep the mine is, in the color of its layer; a reward for a moment; a frenzy on the rate.

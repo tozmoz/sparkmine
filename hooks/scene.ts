@@ -9,7 +9,7 @@
 // pixels, so when the slide wraps around the picture is the same and the loop
 // never shows a seam.
 
-import type { Mode } from '../types'
+import type { FindId, Mode, Season } from '../types'
 
 export const W = 64
 export const H = 24
@@ -32,8 +32,19 @@ export type SceneSpec = {
   gloves?: boolean
   warm?: boolean
   coffee?: boolean
-  /** How the miner waits: facing you while Claude asks, with a coffee after a while idle, asleep after a long one. */
-  pose?: 'facing' | 'coffee' | 'sleep'
+  /** Claude asked to ultrathink: the lanterns flare. */
+  flare?: boolean
+  /** A find on the rock, there to catch. */
+  find?: FindId
+  /** A pumpkin on the cart the last week of October; a Santa hat, and snow on the topsoil, in December. */
+  season?: Season
+  /** A pull request merged: confetti falls for a moment. */
+  confetti?: boolean
+  /**
+   * How the miner stands still: facing you while Claude asks, tipping his
+   * helmet when thanked, with a coffee a while into Claude's idle, asleep after a long one.
+   */
+  pose?: 'facing' | 'tip' | 'coffee' | 'sleep'
 }
 
 /** One pose of the miner: `t` runs from the strike (0) to the raised pick (1); null rests. */
@@ -394,6 +405,30 @@ const MINER_FRONT = [
   '.KKKKK.KKKKK..',
 ] as const
 
+// Thanked: facing you, bald as an egg, his helmet raised in his right hand.
+const MINER_TIP = [
+  '.........KKKK.',
+  '........KYYYYK',
+  '........KyLyyK',
+  '....KKKKK.KHK.',
+  '...KSSSSSK.HK.',
+  '..KSSSSSSSKHK.',
+  '..KSESSSESKRK.',
+  '..KSSSSSSSKRK.',
+  '..KBSSSSSBRRK.',
+  '..KBBBBBBBRK..',
+  '..KRBBBBBRK...',
+  '.KRRRBBBRRK...',
+  '.KRROOOOORK...',
+  '.KHrOOOOOrK...',
+  '.KKKGGGGGKK...',
+  '..KOOOOOOOK...',
+  '..KOOoKoOOK...',
+  '..KOOK.KOOK...',
+  '.KGGGK.KGGGK..',
+  '.KKKKK.KKKKK..',
+] as const
+
 // Sitting with a mug, legs out toward the wall.
 const MINER_SIT = [
   '..............',
@@ -451,6 +486,31 @@ const NOTE = ['.LL', '.L.', 'LL.', 'LL.'] as const
 const MUG = ['LLL.', 'RRRK', 'RRR.'] as const
 const MUG_STEAMING = ['..z.', '.z..', 'LLL.', 'RRRK', 'RRR.'] as const
 const ZBIG = ['LLLL', '..L.', '.L..', 'LLLL'] as const
+// What three layers hide in the rock: an ammonite, a rubber duck, a pharaoh's gold mask.
+const FIND_SPRITES: Readonly<Record<FindId, readonly string[]>> = {
+  fossil: ['..bbb.', '.b...b', 'b.dd.b', 'b.d..b', '.b..b.', '..bb..'],
+  'rubber-duck': ['..YYY.', '..YKYO', 'Y.YYY.', 'YYYYYY', '.YYYY.'],
+  pharaoh: ['.ABBA.', 'ABAABA', 'BAKAKB', 'BAAAAB', '.AAAA.', '..AA..'],
+}
+const FIND_AT = [55, 9] as const
+// A jack-o'-lantern, its face lit from within.
+const PUMPKIN = ['..vv..', '.OOOO.', 'OfOOfO', 'OOOOOO', 'OffffO', '.OOOO.'] as const
+const PUMPKIN_AT = [13, 5] as const
+const SANTA_RED = 0xd03a2f
+const SNOW = 0xf4f8fb
+
+/** Confetti for a merged pull request: where each bit starts, and its color. */
+const CONFETTI_COLORS = [0xff6b6b, 0xffd93d, 0x6bcbff, 0xc77dff, 0x7dff9a] as const
+const CONFETTI: readonly (readonly [number, number])[] = [
+  [3, 3], [9, 6], [15, 2], [21, 8], [27, 4], [12, 11], [24, 13], [6, 15], [18, 16], [30, 10], [36, 2], [42, 7], [45, 13], [39, 15], [33, 5], [48, 3],
+]
+/** How far the confetti falls each step, and in how many steps it loops. */
+const CONFETTI_FALL = 2
+const CONFETTI_STEPS = 4
+
+function confetti(px: Pixels, step: number): void {
+  CONFETTI.forEach(([x, y], i) => px.set(x, y + step * CONFETTI_FALL, CONFETTI_COLORS[i % CONFETTI_COLORS.length] ?? GOLD[0]))
+}
 const ZSMALL = ['LLL', '.L.', 'LLL'] as const
 
 const DETAIL_PALETTE: Readonly<Record<string, number>> = {
@@ -466,6 +526,12 @@ const DETAIL_PALETTE: Readonly<Record<string, number>> = {
   W: WOOD[1],
   L: LAMP,
   z: 0xb4b2a9,
+  b: 0xeadfc4,
+  d: 0xb8a888,
+  f: 0xffd36e,
+  v: 0x4f8a2a,
+  A: GOLD[0],
+  B: 0x3a6ea5,
 }
 
 /** Where the bug crawls on the rock, a quarter of the loop at each. */
@@ -484,6 +550,8 @@ function fixedDetails(px: Pixels, spec: SceneSpec): void {
   }
   if (spec.coffee === true && spec.pose === undefined) px.sprite(MUG_STEAMING, DETAIL_PALETTE, MUG_AT[0], MUG_AT[1])
   if (spec.bug === 'splat') px.sprite(SPLAT, DETAIL_PALETTE, SPLAT_AT[0], SPLAT_AT[1])
+  if (spec.find !== undefined) px.sprite(FIND_SPRITES[spec.find], DETAIL_PALETTE, FIND_AT[0], FIND_AT[1])
+  if (spec.season === 'halloween' && spec.carts > 0) px.sprite(PUMPKIN, DETAIL_PALETTE, PUMPKIN_AT[0], PUMPKIN_AT[1])
 }
 
 const GOBLIN_PALETTE: Readonly<Record<string, number>> = {
@@ -695,34 +763,57 @@ const STRIP = W + PERIOD
 const lanterns = Array.from({ length: Math.ceil(STRIP / PERIOD) }, (_, k) => LANTERN_X + k * PERIOD)
 
 const worlds = new Map<string, { tunnel: Pixels; rock: Pixels }>()
-/** Brighter lanterns burn warmer and wider. */
-const WARM_GLOW = 0xffa63d
 
-/** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once a layer. */
-function world(withGlow: boolean, biome: number, warm = false): { tunnel: Pixels; rock: Pixels } {
-  const key = `${biome}:${withGlow}:${warm}`
+/** How the lanterns burn: as dug, warmer once Brighter lanterns are bought, flaring while Claude ultrathinks. */
+type Glow = 'plain' | 'warm' | 'flare'
+
+/**
+ * Each glow's color; how much of it the terminal's tunnel takes near the
+ * lantern and further out, and how far; the SVG's two rings and their opacity.
+ */
+const GLOWS: Readonly<Record<Glow, { color: number; near: number; far: number; inner: number; reach: number; rings: readonly [number, number]; opacity: string }>> = {
+  plain: { color: GLOW, near: 0.12, far: 0.06, inner: 6, reach: 10, rings: [10, 6], opacity: '.07' },
+  warm: { color: 0xffa63d, near: 0.22, far: 0.11, inner: 6, reach: 10, rings: [12, 7], opacity: '.13' },
+  flare: { color: 0xfff2c4, near: 0.3, far: 0.15, inner: 8, reach: 13, rings: [14, 8], opacity: '.15' },
+}
+
+const glowOf = (spec: SceneSpec): Glow => (spec.flare === true ? 'flare' : spec.warm === true ? 'warm' : 'plain')
+
+/** In December snow lies on the topsoil: on its ceiling, its spoil heaps and the rock ahead. */
+const isSnowy = (spec: SceneSpec): boolean => spec.season === 'winter' && spec.biome === 0
+
+/** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once a layer, glow and snow. */
+function world(withGlow: boolean, biome: number, glow: Glow = 'plain', snowy = false): { tunnel: Pixels; rock: Pixels } {
+  const key = `${biome}:${withGlow}:${glow}:${snowy}`
   const hit = worlds.get(key)
   if (hit !== undefined) return hit
-  const built = buildWorld(withGlow, strataOf(biome), warm)
+  const built = buildWorld(withGlow, strataOf(biome), GLOWS[glow], snowy)
   worlds.set(key, built)
   return built
 }
 
-function buildWorld(withGlow: boolean, st: Strata, warm = false): { tunnel: Pixels; rock: Pixels } {
+function buildWorld(withGlow: boolean, st: Strata, glow: (typeof GLOWS)[Glow], snowy: boolean): { tunnel: Pixels; rock: Pixels } {
   const tunnel = strip(tunnelTile(st), STRIP)
+  const rock = strip(rockTile(st), STRIP)
+  if (snowy) {
+    for (let x = 0; x < STRIP; x += 1) {
+      if (x % 3 !== 1) tunnel.set(x, 0, SNOW)
+      if (x % 2 === 0) rock.set(x, 0, SNOW)
+      for (let y = 0; y < H; y += 1) if (tunnel.get(x, y) === st.pileTop) tunnel.set(x, y, SNOW)
+    }
+  }
   if (withGlow && st.sky === undefined) {
-    const [near, far, glow] = warm ? [0.22, 0.11, WARM_GLOW] : [0.12, 0.06, GLOW]
     for (const lx of lanterns) {
       for (let y = 0; y < H; y += 1) {
-        for (let x = lx - 10; x <= lx + 10; x += 1) {
+        for (let x = lx - glow.reach; x <= lx + glow.reach; x += 1) {
           const d = Math.hypot(x - lx, y - LANTERN_Y)
           const color = tunnel.get(x, y)
-          if (d <= 10 && color !== CLEAR && color !== LAMP) tunnel.set(x, y, mix(color, glow, d <= 6 ? near : far))
+          if (d <= glow.reach && color !== CLEAR && color !== LAMP) tunnel.set(x, y, mix(color, glow.color, d <= glow.inner ? glow.near : glow.far))
         }
       }
     }
   }
-  return { tunnel, rock: strip(rockTile(st), STRIP) }
+  return { tunnel, rock }
 }
 
 /** The face's dark edge: the line between the tunnel and the rock. */
@@ -800,12 +891,13 @@ function pickaxe(px: Pixels, hx: number, hy: number, angle: number, look: PickLo
 
 function miner(px: Pixels, frame: Frame, look: PickLook, spec?: SceneSpec): void {
   const hand = spec?.gloves === true ? GLOVE : SKIN
-  // His hands, a shut eye, an unlit lamp, and the mug he holds: the one by the cart.
-  const palette = { ...MINER_PALETTE, H: hand, e: 0xc89a6a, l: 0x8a8460, W: MUG_RED }
-  if (spec?.pose === 'facing') {
+  // His hands, a shut eye, an unlit lamp, and the mug he holds: the one by the cart. In December his helmet is a Santa hat.
+  const hat: Readonly<Record<string, number>> = spec?.season === 'winter' ? { Y: SANTA_RED, y: SNOW } : {}
+  const palette = { ...MINER_PALETTE, H: hand, e: 0xc89a6a, l: 0x8a8460, W: MUG_RED, ...hat }
+  if (spec?.pose === 'facing' || spec?.pose === 'tip') {
     // The pick stands head down beside him while he looks out at you.
     pickaxe(px, SX + 13, SY + 10, 90, look)
-    px.sprite(MINER_FRONT, palette, SX, SY)
+    px.sprite(spec.pose === 'tip' ? MINER_TIP : MINER_FRONT, palette, SX, SY)
     return
   }
   if (spec?.pose === 'coffee' || spec?.pose === 'sleep') {
@@ -826,7 +918,9 @@ function miner(px: Pixels, frame: Frame, look: PickLook, spec?: SceneSpec): void
   const hx = SX + p.hx
   const hy = SY + p.hy + frame.bob
   pickaxe(px, hx, hy, p.angle, look)
-  px.sprite(MINER, MINER_PALETTE, SX, SY + frame.bob)
+  px.sprite(MINER, palette, SX, SY + frame.bob)
+  // The hat's white bobble hangs at its back.
+  if (spec?.season === 'winter') px.set(SX + 3, SY + 1 + frame.bob, SNOW)
   px.line(SX + 9, SY + 11 + frame.bob, hx, hy, SHIRT)
   px.set(hx, hy, hand)
   if (spec?.gloves === true) {
@@ -871,7 +965,7 @@ function paths(px: Pixels): string {
   return [...runs].map(([color, d]) => `<path fill="${hex(color)}" d="${d.join('')}"/>`).join('')
 }
 
-function glowPath(cx: number, radius: number, warm = false): string {
+function glowPath(cx: number, radius: number, glow: (typeof GLOWS)[Glow]): string {
   const d: string[] = []
   for (let dy = -radius; dy <= radius; dy += 1) {
     const w = Math.floor(Math.sqrt(radius * radius - dy * dy))
@@ -879,7 +973,7 @@ function glowPath(cx: number, radius: number, warm = false): string {
     if (y < 0 || y >= H) continue
     d.push(`M${cx - w} ${y}h${2 * w + 1}v1h-${2 * w + 1}z`)
   }
-  return `<path fill="${hex(warm ? WARM_GLOW : GLOW)}" fill-opacity="${warm ? '.13' : '.07'}" d="${d.join('')}"/>`
+  return `<path fill="${hex(glow.color)}" fill-opacity="${glow.opacity}" d="${d.join('')}"/>`
 }
 
 /** Keyframes that switch a property at the given shares of the loop and hold it between. */
@@ -901,7 +995,7 @@ function windowKeyframes(name: string, from: number, to: number): string {
  */
 export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string {
   const st = strataOf(spec.biome)
-  const { tunnel, rock } = world(false, spec.biome, spec.warm === true)
+  const { tunnel, rock } = world(false, spec.biome, glowOf(spec), isSnowy(spec))
   const look = lookOf(spec.pick)
   const { frames, ms } = framesFor(spec.mode)
   const isDigging = spec.mode === 'work'
@@ -927,8 +1021,8 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
   }
   const slide = isDigging ? ' class="slide"' : ''
   // Under the sky no lantern burns, so nothing flickers.
-  const warm = spec.warm === true
-  const glows = st.sky === undefined ? `<g class="glow">${lanterns.map(lx => `${glowPath(lx, warm ? 12 : 10, warm)}${glowPath(lx, warm ? 7 : 6, warm)}`).join('')}</g>` : ''
+  const glow = GLOWS[glowOf(spec)]
+  const glows = st.sky === undefined ? `<g class="glow">${lanterns.map(lx => `${glowPath(lx, glow.rings[0], glow)}${glowPath(lx, glow.rings[1], glow)}`).join('')}</g>` : ''
   body.push(`<g${slide}>${paths(tunnel)}${glows}</g>`)
   body.push(`<g clip-path="url(#rock)"><g${slide}>${paths(rock)}</g></g>`)
   body.push(paths(faceEdge(st)))
@@ -972,6 +1066,17 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
       body.push(`<g class="bug">${paths(bug)}</g>`)
     } else {
       body.push(paths(bug))
+    }
+  }
+  if (spec.confetti === true) {
+    const bits = new Pixels()
+    confetti(bits, 0)
+    if (isDigging) {
+      const steps = Array.from({ length: CONFETTI_STEPS - 1 }, (_, k) => [(k + 1) / CONFETTI_STEPS, `translate(0px,${(k + 1) * CONFETTI_FALL}px)`] as const)
+      css.push(`.cf{animation:cf ${SWING_MS}ms step-end infinite}`, stepKeyframes('cf', 'transform', 'translate(0px,0px)', steps))
+      body.push(`<g class="cf">${paths(bits)}</g>`)
+    } else {
+      body.push(paths(bits))
     }
   }
   if (spec.canary === true && isDigging) {
@@ -1030,7 +1135,7 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
 /** The scene at one moment, as pixels: what the terminal paints and the tests read. */
 export function compose(spec: SceneSpec, m: Moment): Pixels {
   const st = strataOf(spec.biome)
-  const { tunnel, rock } = world(true, spec.biome, spec.warm === true)
+  const { tunnel, rock } = world(true, spec.biome, glowOf(spec), isSnowy(spec))
   const px = new Pixels()
   for (let y = 0; y < H; y += 1) {
     for (let x = 0; x < W; x += 1) px.set(x, y, (x >= faceAt(y) ? rock : tunnel).get(x + m.scroll, y))
@@ -1044,6 +1149,7 @@ export function compose(spec: SceneSpec, m: Moment): Pixels {
     px.sprite(BUG, DETAIL_PALETTE, bx, by)
   }
   if (spec.canary === true && spec.mode === 'work' && (m.scroll === 6 || m.scroll === 22)) px.sprite(NOTE, DETAIL_PALETTE, 29, 6)
+  if (spec.confetti === true) confetti(px, spec.mode === 'work' ? (m.scroll / CUT) % CONFETTI_STEPS : 0)
   const look = lookOf(spec.pick)
   const { frames } = framesFor(spec.mode)
   const frame = frames[m.frame] ?? frames[0]

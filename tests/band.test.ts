@@ -1,15 +1,23 @@
 import { expect, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 import * as game from '../hooks/game.ts'
 import { sceneSvg } from '../hooks/scene.ts'
 import * as state from '../hooks/state.ts'
-import { band, command, committed, endSession, failed, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
+import { CONFETTI_MS, TIP_MS } from '../hooks/data.ts'
+import { band, command, committed, endSession, failed, finishTurn, pane, prompt, seeded, start, wait, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
 const POLL = 150
 
 /** Lets the vein poll once: it asks less often than the HUD. */
 const VEIN_POLL = 300
+
+/** The confetti's sky blue: no rock, ore or detail has it. */
+const CONFETTI_BLUE = '#6bcbff'
+
+/** The fossil's bone, on the stone. */
+const FOSSIL_BONE = '#eadfc4'
 
 /** The bug's pink and the splat's green: no rock or ore has either. */
 const BUG_PINK = '#ff4fa3'
@@ -291,6 +299,29 @@ test('/mine hide and /mine show', async ($, on) => {
   expect(await ui.find({ in: 'shopbtn', key: 'shop' })).toBeDefined()
 })
 
+test('now and then a turn has a rarer spinner word', async ($, on) => {
+  world(on, { save: seeded({ allTime: 2_000 }) })
+  const seen: string[] = []
+  on('ui.render', { component: 'Spinner' }, ($, e) => {
+    seen.push(e.props.word)
+    const { Text } = $.ui.resolve(e)
+    return Text({ children: [e.props.word] })
+  })
+  let turnId = 'turn-0'
+  for (let i = 0; game.rareWord(turnId) === null; i += 1) turnId = `turn-${i}`
+  const word = game.rareWord(turnId)
+  await start($)
+  const spinner = { plugin: 'sparkmine', component: 'Spinner' as const, surface: 'terminal' as const, props: { word: 'Sauteing', message: null, suffix: '…', mode: 'thinking' as const } }
+  await $.turn.start({ text: 'go', turnId })
+  await $.ui.mount(spinner)
+  expect(seen).toEqual([word])
+  // The turn over, the spinner says the mine's own word again.
+  await finishTurn($, turnId)
+  await $.ui.mount(spinner)
+  expect(seen.at(-1)).toBe('Mining')
+  expect(['Spelunking', 'Panning for gold', 'Dowsing']).toContain(word)
+})
+
 test('the spinner takes the word the mine unlocked', async ($, on) => {
   world(on, { save: seeded({ allTime: 2_000 }) })
   const seen: string[] = []
@@ -370,6 +401,7 @@ test('a failing test run puts a bug on the rock, and squashing it leaves a splat
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   expect(await scene()).not.toContain(BUG_PINK)
   expect(await scene()).toContain(SPLAT_GREEN)
+  expect(w.sounds).toEqual(['sounds/squash.wav'])
   await w.clock.advance(state.SPLAT_MS)
   expect(await scene()).not.toContain(SPLAT_GREEN)
 })
@@ -409,6 +441,128 @@ test("a while into Claude's idle the miner has a coffee, then a nap: the line sh
   expect(await ui.find({ in: 'hud', type: 'Text', text: /· ☕$/ })).toBeDefined()
   const shop = await $.ui.mount(pane('desktop'))
   expect((await shop.find({ type: 'Svg' }))?.props.source).toBe(sceneSvg({ mode: 'pause', carts: 0, goblins: 0, pick: 0, biome: 0, pose: 'coffee' }, 2))
+})
+
+/** The band's scene as a still mine of no crew would draw it, the details given. */
+const still = (patch: object) => sceneSvg({ mode: 'pause', carts: 0, goblins: 0, pick: 0, biome: 0, ...patch }, 3, true)
+
+/** The secrets the store holds once the session syncs. */
+async function secretsStored($: Engine, w: ReturnType<typeof world>): Promise<unknown> {
+  await endSession($)
+  return (w.store.get('save') as { secrets?: unknown }).secrets
+}
+
+test('thanks make the miner tip his helmet a moment, and the first time is a secret', async ($, on) => {
+  const w = world(on)
+  await start($)
+  const ui = await $.ui.mount(band('desktop'))
+  await prompt($, 'thanks, that fixed it')
+  await $.turn.start({ text: 'thanks, that fixed it', turnId: 't1' })
+  await ui.advance(POLL)
+  expect((await ui.find({ type: 'Svg' }))?.props.source).toBe(still({ pose: 'tip' }))
+  await w.clock.advance(TIP_MS)
+  await ui.advance(POLL)
+  expect((await ui.find({ type: 'Svg' }))?.props.source).toBe(sceneSvg({ mode: 'work', carts: 0, goblins: 0, pick: 0, biome: 0 }, 3, true))
+  expect(w.toasts).toContain('Achievement: Good manners. Everything mines 2% more.')
+  expect(await secretsStored($, w)).toEqual(['good-manners'])
+})
+
+test('a secret chimes, and /mine sound turns the sounds off in every session, and on', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await prompt($, 'thank you!')
+  await w.clock.advance(100)
+  expect(w.sounds).toEqual(['sounds/secret.wav'])
+  expect((await command($, 'sound')).text).toBe('Sounds are off in every session. /mine sound turns them back on.')
+  expect(w.store.get('muted')).toBe(true)
+  await prompt($, 'ultrathink this one')
+  await w.clock.advance(100)
+  expect(w.sounds).toEqual(['sounds/secret.wav'])
+  expect((await command($, 'sound')).text).toBe('Sounds are on.')
+  expect(w.store.get('muted')).toBe(false)
+})
+
+test('ultrathink flares the lanterns for the turn', async ($, on) => {
+  const w = world(on)
+  await start($)
+  const ui = await $.ui.mount(band('desktop'))
+  await prompt($, 'ultrathink: why does the sync lose writes?')
+  await $.turn.start({ text: 'ultrathink', turnId: 't1' })
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain('#fff2c4')
+  await finishTurn($, 't1')
+  await $.turn.start({ text: 'go on', turnId: 't2' })
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).not.toContain('#fff2c4')
+  expect(await secretsStored($, w)).toEqual(['deep-thinker'])
+})
+
+test("Claude's catchphrase and a turn worked through midnight are secrets", async ($, on) => {
+  // The session starts half a minute after midnight, where the person is.
+  const w = world(on, {}, new Date(2026, 9, 17, 0, 0, 30).getTime())
+  await start($)
+  await $.turn.start({ text: 'is this right?', turnId: 't1' })
+  await finishTurn($, 't1', 60_000, 'answer', "You're absolutely right! The cache was stale.")
+  expect(await secretsStored($, w)).toEqual(['absolutely-right', 'midnight-oil'])
+})
+
+test('a pull request merged on a Friday after four, and an initial commit, are secrets', async ($, on) => {
+  const w = world(on, {}, new Date(2026, 9, 16, 17, 0).getTime())
+  await start($)
+  await $.turn.start({ text: 'ship it', turnId: 't1' })
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7 --squash' })
+  w.bash = () => committed
+  await $.tool.call({ tool: 'Bash', command: 'git init && git add -A && git commit -m "Initial commit"' })
+  expect(await secretsStored($, w)).toEqual(['friday-deploy', 'groundbreaking'])
+})
+
+/** The band's scene as a crew of one cart draws it on a day of the person's calendar. */
+async function sceneOn($: Engine, on: Parameters<typeof world>[0], date: Date): Promise<string> {
+  const w = world(on, { save: seeded({ producers: { cart: 1 } }) }, date.getTime())
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await w.clock.advance(200)
+  await ui.advance(POLL)
+  return String((await ui.find({ type: 'Svg' }))?.props.source)
+}
+
+test('the last week of October puts a pumpkin on the cart', async ($, on) => {
+  expect(await sceneOn($, on, new Date(2026, 9, 25, 12))).toContain('#4f8a2a')
+})
+
+test('December puts a Santa hat on the miner, and snow on the topsoil', async ($, on) => {
+  const scene = await sceneOn($, on, new Date(2026, 11, 5, 12))
+  expect(scene).toContain('#d03a2f')
+  expect(scene).toContain('#f4f8fb')
+})
+
+test('a merged pull request rains confetti a moment', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'ship it', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7 --squash' })
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(CONFETTI_BLUE)
+  expect(w.sounds).toEqual(['sounds/party.wav'])
+  await w.clock.advance(CONFETTI_MS)
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).not.toContain(CONFETTI_BLUE)
+})
+
+test('the counter shines a moment as it passes 1K, 1M, 1B', async ($, on) => {
+  world(on, { save: seeded({ sparks: 999, lifetime: 999, allTime: 999 }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  expect((await ui.find({ in: 'hud', type: 'Text', text: '✻ 999' }))?.props.color).toBe('claude')
+  await $.tool.call({ tool: 'Bash', command: 'ls' })
+  await ui.advance(POLL)
+  expect(['#ffe08a', '#f2b632']).toContain((await ui.find({ in: 'hud', type: 'Text', text: '✻ 1,001' }))?.props.color)
+  await ui.advance(1_000)
+  expect((await ui.find({ in: 'hud', type: 'Text', text: '✻ 1,001' }))?.props.color).toBe('claude')
 })
 
 test('a build, a clean lint, a pull request opened and one merged each pay once a turn', async ($, on) => {
@@ -498,6 +652,32 @@ test('a vein shows after a while of work, and a press catches it', async ($, on)
   // The first vein is an achievement, and the next tick says so.
   await w.clock.advance(200)
   expect(w.toasts).toEqual(['Achievement: First vein. Everything mines 2% more.'])
+  expect(w.sounds).toEqual(['sounds/vein.wav'])
+})
+
+/** A run in the stone whose first vein is its fossil. */
+function runWithFossil(): string {
+  for (let i = 0; ; i += 1) if (game.findAt(seeded({ runId: `fossil-run-${i}`, lifetime: 9_000 }), 1) === 'fossil') return `fossil-run-${i}`
+}
+
+test('in the stone a vein may be a fossil: it shows on the rock, and catching it is a secret', async ($, on) => {
+  const runId = runWithFossil()
+  const w = world(on, { save: seeded({ runId, lifetime: 9_000, allTime: 9_000 }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await wait(w, game.veinAfter(runId, 0).seconds + 1)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /^✦ Fossil! \d+s$/ })).toBeDefined()
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(FOSSIL_BONE)
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'vein' })
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /^★ A fossil \+/ })).toBeDefined()
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).not.toContain(FOSSIL_BONE)
+  // A find is a vein caught too: the next tick says both.
+  await w.clock.advance(200)
+  expect(w.toasts).toEqual(['Achievements: First vein and Paleontologist. Everything mines 4% more.'])
+  expect(w.sounds).toEqual(['sounds/find.wav'])
 })
 
 test('a vein not caught in time goes', async ($, on) => {

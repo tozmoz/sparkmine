@@ -27,7 +27,26 @@ export type SourceKind = 'crew' | 'click' | 'tool' | 'turn' | 'event' | 'vein'
  */
 export type EventKind = 'tests' | 'fix' | 'build' | 'lint' | 'commit' | 'pr' | 'merge' | 'longShift' | 'streak'
 
-export type VeinKind = 'rich' | 'frenzy'
+/** A vein pays at once, starts a frenzy, or is a find: a secret of the layer it shows in. */
+export type VeinKind = 'rich' | 'frenzy' | 'find'
+
+/** A time of year the mine dresses up for, by the person's own calendar. */
+export type Season = 'halloween' | 'winter'
+
+/** What a layer hides in its rock, once for good. */
+export type FindId = 'fossil' | 'rubber-duck' | 'pharaoh'
+
+/** A secret found: an achievement that shows as ??? until then. */
+export type SecretId =
+  | 'absolutely-right'
+  | 'good-manners'
+  | 'deep-thinker'
+  | 'groundbreaking'
+  | 'friday-deploy'
+  | 'midnight-oil'
+  | 'fossil'
+  | 'rubber-duck'
+  | 'pharaoh'
 
 /** The mine as $.store keeps it, shared by every session on the machine. */
 export type Save = {
@@ -60,6 +79,8 @@ export type Save = {
   gems: number
   veins: number
   events: Counts<EventKind>
+  /** Secrets found, for good. */
+  secrets: SecretId[]
   /**
    * The crew's idle pace is the mine's, not a session's: every open session
    * mines it, and the save holds it up to this moment. A session adds only
@@ -98,6 +119,7 @@ export type Delta = {
   gems: number
   veins: number
   events: Counts<EventKind>
+  secrets: SecretId[]
   /**
    * The idle pace this session mined since it last synced. The save takes
    * only the part of it that no other session gave it yet: see Save `idleAt`.
@@ -138,7 +160,7 @@ export type View = {
   /** Gems struck so far this session, and what the latest ones added beyond their clicks. */
   gem: { seq: number; bonus: number } | null
   /** The vein showing now, until when it can be caught. */
-  vein: { id: number; kind: VeinKind; until: number } | null
+  vein: { id: number; kind: VeinKind; until: number; find?: FindId } | null
   /** Seconds of work since the last vein showed, and how many have shown this session. */
   veinWork: number
   veinCount: number
@@ -158,6 +180,14 @@ export type View = {
   squashedAt: number
   /** Since when Claude has done nothing here: a turn's end, a tool call, or the session's start. */
   restSince: number
+  /** Thanked: the miner tips his hat until then. */
+  tipUntil: number
+  /** Asked to ultrathink: the lantern flares until the turn ends. */
+  flare: boolean
+  /** When a pull request last merged: confetti for a moment. */
+  confettiAt: number
+  /** Now and then a turn's spinner says something rarer than the mine's word. */
+  word: string | null
 }
 
 /** How long Claude has been idle shows on the miner: a coffee after a while, asleep after a long while. */
@@ -183,11 +213,21 @@ export type Band = {
   isCompact: boolean
   /** Stopped by `/mine stop`: nothing mines and the band is gone. */
   isStopped: boolean
+  /** Sounds off, by `/mine sound`, in every session. */
+  isMuted: boolean
   /** A bug on the rock while tests fail, and the splat a moment after the pick got it. */
   bug: 'crawl' | 'splat' | null
   extras: Extras
   /** Only while Claude is idle. */
   nap: Nap | null
+  tip: boolean
+  flare: boolean
+  /** A find showing on the rock, until it is caught or gone. */
+  find: FindId | null
+  season: Season | null
+  confetti: boolean
+  /** This turn's rare spinner word, if it has one. */
+  word: string | null
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */
@@ -266,7 +306,8 @@ export type IconId =
 
 /** What the vein Client draws: a vein to catch, or the frenzy one started. */
 export type VeinProps = {
-  vein: { id: number; kind: VeinKind; left: number } | null
+  /** What the vein's button says it is: a vein, or a find. */
+  vein: { id: number; kind: VeinKind; left: number; label: string } | null
   frenzy: { mult: number; left: number } | null
   surface: 'terminal' | 'desktop' | 'other'
 }

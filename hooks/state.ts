@@ -2,8 +2,8 @@
 // live in game.ts and what the drawings show in model.ts; this file holds the
 // store sync and the actions the hooks and buttons call.
 
-import type { Amount, Band, EventKind, Extras, Mine, Mode, Nap, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
-import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, VEIN, type Achievement } from './data.ts'
+import type { Amount, Band, EventKind, Extras, FindId, Mine, Mode, Nap, ProducerId, Save, SecretId, ShopModel, VeinKind, View } from '../types'
+import { ACHIEVEMENT_BONUS, CONFETTI_MS, EVENTS, FINDS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, TIP_MS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
 import * as model from './model.ts'
@@ -12,11 +12,16 @@ import * as model from './model.ts'
  * What the actions need from the engine. The hooks module builds it from `$`
  * once a session starts, since `$` itself is only ever spelled at a call site.
  */
+/** The few moments that make a sound, each a file in `sounds/`. */
+export type Sound = 'vein' | 'find' | 'secret' | 'squash' | 'party'
+
 export type Io = {
   now: () => Promise<number>
   get: (key: string) => Promise<unknown>
   put: (key: string, value: unknown) => Promise<void>
   toast: (text: string) => void
+  /** Plays a sound unless they are off; it never waits for it to end. */
+  sound: (name: Sound) => void
   ask: (question: string, options: readonly string[]) => Promise<string>
   mine: (change: (mine: Mine) => Mine) => Promise<Mine>
   view: (change: (view: View) => View) => Promise<View>
@@ -34,6 +39,7 @@ export const SAVE_KEY = 'save'
 /** The person's settings, kept beside the save so every session follows them. */
 export const COMPACT_KEY = 'compact'
 export const STOPPED_KEY = 'stopped'
+export const MUTED_KEY = 'muted'
 export const TICK_MS = 100
 export const SYNC_MS = 5_000
 /**
@@ -80,6 +86,10 @@ export const INITIAL_VIEW: View = {
   testsFailing: false,
   squashedAt: 0,
   restSince: 0,
+  tipUntil: 0,
+  flare: false,
+  confettiAt: 0,
+  word: null,
 }
 
 export const INITIAL_BAND: Band = {
@@ -93,9 +103,16 @@ export const INITIAL_BAND: Band = {
   biome: 0,
   isCompact: false,
   isStopped: false,
+  isMuted: false,
   bug: null,
   extras: { canary: false, gloves: false, warm: false, coffee: false },
   nap: null,
+  tip: false,
+  flare: false,
+  find: null,
+  season: null,
+  confetti: false,
+  word: null,
 }
 
 /** A shop amount as this version reads it: ×100 is gone, and Max buys a lot in its place. */
@@ -156,6 +173,12 @@ export async function refresh(io: Io, now?: number, force = false): Promise<Band
       bug,
       extras: extrasOf(mine.save),
       nap: mode.mode === 'idle' && view.restSince > 0 ? napOf(at - view.restSince) : null,
+      tip: at < view.tipUntil,
+      flare: view.flare && view.isTurn,
+      find: view.vein?.kind === 'find' && at <= view.vein.until ? (view.vein.find ?? null) : null,
+      season: game.seasonOf(at),
+      confetti: view.confettiAt > 0 && at - view.confettiAt < CONFETTI_MS,
+      word: view.word,
       carts: Math.min(6, game.owned(mine.save, 'cart')),
       goblins: Math.min(1, game.owned(mine.save, 'goblin')),
       pick: game.pickTier(mine.save),
@@ -298,7 +321,10 @@ async function growVeins(io: Io, mode: Mode, seconds: number, now: number, save:
     const due = game.veinAfter(save.runId, next.veinCount, speed)
     if (work < due.seconds) return { ...next, veinWork: work }
     const id = next.veinCount + 1
-    return { ...next, veinWork: 0, veinCount: id, vein: { id, kind: due.kind, until: now + VEIN.showMs } }
+    // In a layer with a find not yet made, the vein may be that instead.
+    const find = game.findAt(save, id)
+    const vein = find === null ? { id, kind: due.kind, until: now + VEIN.showMs } : { id, kind: 'find' as const, find, until: now + VEIN.showMs }
+    return { ...next, veinWork: 0, veinCount: id, vein }
   })
 }
 
@@ -307,22 +333,26 @@ export async function catchVein(io: Io, id: number): Promise<VeinKind | null> {
   const now = await io.now()
   if ((await io.readBand()).isStopped) return null
   const frenzyMs = VEIN.frenzyMs * game.multipliers((await io.readMine()).save).frenzyTime
-  const hit: { kind: VeinKind | null } = { kind: null }
+  const hit: { kind: VeinKind | null; find?: FindId } = { kind: null }
   await patchView(io, view => {
     hit.kind = null
     if (view.vein === null || view.vein.id !== id || now > view.vein.until) return view
     hit.kind = view.vein.kind
+    if (view.vein.find !== undefined) hit.find = view.vein.find
     const frenzy = view.vein.kind === 'frenzy' ? { mult: VEIN.frenzyMult, until: now + frenzyMs } : view.frenzy
     return { ...view, vein: null, frenzy }
   })
   const kind = hit.kind
   if (kind === null) return null
+  // A find pays as a rich vein does, and is a secret for good.
   let value = 0
   await io.mine(m => {
-    value = kind === 'rich' ? game.veinValue(m.save) : 0
+    value = kind === 'frenzy' ? 0 : game.veinValue(m.save)
     return game.earn(m, value, { kind: 'vein' })
   })
-  const label = kind === 'rich' ? 'Rich vein' : `Frenzy ×${VEIN.frenzyMult}`
+  if (hit.find !== undefined) await findSecrets(io, [hit.find])
+  io.sound(hit.find !== undefined ? 'find' : 'vein')
+  const label = hit.find !== undefined ? FINDS[hit.find].name : kind === 'rich' ? 'Rich vein' : `Frenzy ×${VEIN.frenzyMult}`
   await io.view(view => ({ ...view, event: { label, value, at: now } }))
   await refresh(io, now)
   return kind
@@ -421,8 +451,47 @@ export async function minedTool(io: Io, outcome: game.ToolOutcome): Promise<numb
   const events = game.workEvents(outcome)
   if (squashed.yes) events.push('fix')
   if (events.length > 0) await reward(io, events, now)
+  if (events.includes('merge')) await io.view(view => ({ ...view, confettiAt: now }))
+  const found = await findSecrets(io, [
+    ...(game.isInitialCommit(outcome) ? (['groundbreaking'] as const) : []),
+    ...(events.includes('merge') && game.isFridayAfternoon(now) ? (['friday-deploy'] as const) : []),
+  ])
+  // One sound for the call's news, the rarest: a secret, a merge, a bug squashed.
+  if (found.length > 0) io.sound('secret')
+  else if (events.includes('merge')) io.sound('party')
+  else if (squashed.yes) io.sound('squash')
   await refresh(io, now)
   return value
+}
+
+/** Records the secrets found that were not yet: each is an achievement, which the tick toasts. */
+async function findSecrets(io: Io, ids: readonly SecretId[]): Promise<SecretId[]> {
+  const found: { ids: SecretId[] } = { ids: [] }
+  if (ids.length === 0) return found.ids
+  await io.mine(mine => {
+    found.ids = ids.filter(id => !mine.save.secrets.includes(id))
+    return found.ids.reduce((next, id) => game.findSecret(next, id), mine)
+  })
+  return found.ids
+}
+
+/**
+ * The person's prompt, read for a few words and left as it is: thanks make
+ * the miner tip his hat, and ultrathink flares his lantern for the turn.
+ * Both are secrets the first time.
+ */
+export async function promptSeen(io: Io, text: string): Promise<void> {
+  const secrets = game.promptSecrets(text)
+  if (secrets.length === 0) return
+  await ensureLoaded(io)
+  const now = await io.now()
+  await patchView(io, view => ({
+    ...view,
+    tipUntil: secrets.includes('good-manners') ? now + TIP_MS : view.tipUntil,
+    flare: view.flare || secrets.includes('deep-thinker'),
+  }))
+  if ((await findSecrets(io, secrets)).length > 0) io.sound('secret')
+  await refresh(io, now)
 }
 
 /** Marks a tool call that waits on the person (a permission prompt, a question), or clears it. */
@@ -435,10 +504,11 @@ export async function setWaiting(io: Io, id: string, isWaiting: boolean): Promis
   if (view.waiting.includes(id) === isWaiting) await refresh(io)
 }
 
-export async function startTurn(io: Io): Promise<void> {
+export async function startTurn(io: Io, turnId = ''): Promise<void> {
   await ensureLoaded(io)
   const mine = await io.readMine()
-  await io.view(view => ({ ...view, isTurn: true, turnStart: mine.save.lifetime, turnEvents: [], turnTools: 0 }))
+  const word = game.rareWord(turnId)
+  await io.view(view => ({ ...view, isTurn: true, turnStart: mine.save.lifetime, turnEvents: [], turnTools: 0, word }))
   await refresh(io)
 }
 
@@ -451,8 +521,14 @@ export type TurnEnd = 'answer' | 'aborted' | 'refusal' | 'error'
  * work; every STREAK_TURNS of them in a row pay. One without work leaves the
  * streak as it was, and one cut short or failed ends it.
  */
-export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer'): Promise<number> {
+export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer', answer = ''): Promise<number> {
   await ensureLoaded(io)
+  const at = await io.now()
+  const found = await findSecrets(io, [
+    ...(game.isAbsolutelyRight(answer) ? (['absolutely-right'] as const) : []),
+    ...(game.crossesMidnight(at, durationMs) ? (['midnight-oil'] as const) : []),
+  ])
+  if (found.length > 0) io.sound('secret')
   const isStopped = (await io.readBand()).isStopped
   let bonus = 0
   if (!isStopped) {
@@ -485,6 +561,8 @@ export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer'
     lastToolAt: 0,
     lastTurn: earned,
     restSince: endedAt,
+    flare: false,
+    word: null,
   }))
   await refresh(io)
   void sync(io).catch(() => undefined)
@@ -563,9 +641,16 @@ export async function setStopped(io: Io, isStopped: boolean): Promise<void> {
 async function readSettings(io: Io): Promise<void> {
   const isCompact = (await io.get(COMPACT_KEY)) === true
   const isStopped = (await io.get(STOPPED_KEY)) === true
+  const isMuted = (await io.get(MUTED_KEY)) === true
   await patch(io.readBand, io.band, band =>
-    band.isCompact === isCompact && band.isStopped === isStopped ? band : { ...band, isCompact, isStopped },
+    band.isCompact === isCompact && band.isStopped === isStopped && band.isMuted === isMuted ? band : { ...band, isCompact, isStopped, isMuted },
   )
+}
+
+/** Sounds off or on, in every session. */
+export async function setMuted(io: Io, isMuted: boolean): Promise<void> {
+  await io.put(MUTED_KEY, isMuted)
+  await patch(io.readBand, io.band, band => (band.isMuted === isMuted ? band : { ...band, isMuted }))
 }
 
 async function confirm(io: Io, question: string, yes: string, no: string): Promise<boolean> {

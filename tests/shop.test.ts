@@ -154,7 +154,7 @@ test('a shaft above 500 m says how deep it must go, and the layers say what each
   // The layers past the next one stay a surprise.
   expect(await ui.find({ type: 'Text', text: 'Groundwater' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: '6 more layers below' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '3/33 · +6% to everything' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '3/42 · +6% to everything' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '★ First vein' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '☆ Vein hunter' })).toBeDefined()
 })
@@ -214,7 +214,7 @@ test('/mine share puts a card of the mine in the conversation, and on the clipbo
   const card = [
     '⛏️ Sparkmine · 453 m in the Crystal caves',
     '🟫⬜🟪🟧⬛⬛⬛⬛⬛⬛ deepest 528 m',
-    '✻ 224.5M mined · ◈ 5 stones · ★ 9/33',
+    '✻ 224.5M mined · ◈ 5 stones · ★ 9/42',
     'Best turn +75.47M · 543 gems · 8 veins',
     'github.com/tozmoz/sparkmine',
   ].join('\n')
