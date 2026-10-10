@@ -27,7 +27,11 @@ export type SourceKind = 'crew' | 'click' | 'tool' | 'turn' | 'event' | 'vein'
  */
 export type EventKind = 'tests' | 'fix' | 'build' | 'lint' | 'commit' | 'pr' | 'merge' | 'longShift' | 'streak'
 
-export type VeinKind = 'rich' | 'frenzy'
+/** A vein pays at once, starts a frenzy, or is a find: a secret of the layer it shows in. */
+export type VeinKind = 'rich' | 'frenzy' | 'find'
+
+/** What a layer hides in its rock, once for good. */
+export type FindId = 'fossil' | 'rubber-duck' | 'pharaoh'
 
 /** A secret found: an achievement that shows as ??? until then. */
 export type SecretId =
@@ -153,7 +157,7 @@ export type View = {
   /** Gems struck so far this session, and what the latest ones added beyond their clicks. */
   gem: { seq: number; bonus: number } | null
   /** The vein showing now, until when it can be caught. */
-  vein: { id: number; kind: VeinKind; until: number } | null
+  vein: { id: number; kind: VeinKind; until: number; find?: FindId } | null
   /** Seconds of work since the last vein showed, and how many have shown this session. */
   veinWork: number
   veinCount: number
@@ -209,6 +213,8 @@ export type Band = {
   nap: Nap | null
   tip: boolean
   flare: boolean
+  /** A find showing on the rock, until it is caught or gone. */
+  find: FindId | null
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */
@@ -287,7 +293,8 @@ export type IconId =
 
 /** What the vein Client draws: a vein to catch, or the frenzy one started. */
 export type VeinProps = {
-  vein: { id: number; kind: VeinKind; left: number } | null
+  /** What the vein's button says it is: a vein, or a find. */
+  vein: { id: number; kind: VeinKind; left: number; label: string } | null
   frenzy: { mult: number; left: number } | null
   surface: 'terminal' | 'desktop' | 'other'
 }

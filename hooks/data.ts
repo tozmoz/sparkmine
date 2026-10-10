@@ -1,6 +1,6 @@
 // Everything the shop sells, and the numbers behind it.
 
-import type { EventKind, ProducerId, SecretId, ToolKind } from '../types'
+import type { EventKind, FindId, ProducerId, SecretId, ToolKind } from '../types'
 
 export type Producer = {
   id: ProducerId
@@ -358,6 +358,19 @@ export const SECRET_IDS: readonly SecretId[] = ACHIEVEMENTS.flatMap(a => (a.goal
 
 /** How long the miner tips his hat when thanked. */
 export const TIP_MS = 3_000
+
+/**
+ * What three layers hide: a vein in one may be its find instead, until it is
+ * caught. `biome` is an index of BIOMES; `label` names it on its button.
+ */
+export const FINDS: Readonly<Record<FindId, { biome: number; name: string; label: string }>> = {
+  fossil: { biome: 1, name: 'A fossil', label: 'Fossil!' },
+  'rubber-duck': { biome: 4, name: 'A rubber duck', label: 'Rubber duck!' },
+  pharaoh: { biome: 5, name: "A pharaoh's mask", label: "Pharaoh's mask!" },
+}
+
+/** The chance a vein in such a layer is its find, while it is not found. */
+export const FIND_CHANCE = 0.2
 
 /** Spinner words, unlocked by all-time sparks. */
 export const REWARDS: readonly { at: number; word: string }[] = [

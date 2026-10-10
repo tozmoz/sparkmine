@@ -13,6 +13,9 @@ const POLL = 150
 /** Lets the vein poll once: it asks less often than the HUD. */
 const VEIN_POLL = 300
 
+/** The fossil's bone, on the stone. */
+const FOSSIL_BONE = '#eadfc4'
+
 /** The bug's pink and the splat's green: no rock or ore has either. */
 const BUG_PINK = '#ff4fa3'
 const SPLAT_GREEN = '#b5e08a'
@@ -558,6 +561,30 @@ test('a vein shows after a while of work, and a press catches it', async ($, on)
   // The first vein is an achievement, and the next tick says so.
   await w.clock.advance(200)
   expect(w.toasts).toEqual(['Achievement: First vein. Everything mines 2% more.'])
+})
+
+/** A run in the stone whose first vein is its fossil. */
+function runWithFossil(): string {
+  for (let i = 0; ; i += 1) if (game.findAt(seeded({ runId: `fossil-run-${i}`, lifetime: 9_000 }), 1) === 'fossil') return `fossil-run-${i}`
+}
+
+test('in the stone a vein may be a fossil: it shows on the rock, and catching it is a secret', async ($, on) => {
+  const runId = runWithFossil()
+  const w = world(on, { save: seeded({ runId, lifetime: 9_000, allTime: 9_000 }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await wait(w, game.veinAfter(runId, 0).seconds + 1)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /^✦ Fossil! \d+s$/ })).toBeDefined()
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(FOSSIL_BONE)
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'vein' })
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /^★ A fossil \+/ })).toBeDefined()
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).not.toContain(FOSSIL_BONE)
+  // A find is a vein caught too: the next tick says both.
+  await w.clock.advance(200)
+  expect(w.toasts).toEqual(['Achievements: First vein and Paleontologist. Everything mines 4% more.'])
 })
 
 test('a vein not caught in time goes', async ($, on) => {

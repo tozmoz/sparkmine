@@ -1,12 +1,14 @@
 // The economy, as pure functions over plain data. No `$` in here, so the
 // rules can be tested on their own and shared by every drawing.
 
-import type { Counts, Delta, EventKind, IdleSpan, Mine, ProducerId, Save, SecretId, SourceKind, ToolKind, VeinKind } from '../types'
+import type { Counts, Delta, EventKind, FindId, IdleSpan, Mine, ProducerId, Save, SecretId, SourceKind, ToolKind, VeinKind } from '../types'
 import {
   ACHIEVEMENT_BONUS,
   ACHIEVEMENTS,
   BIOMES,
   EVENTS,
+  FIND_CHANCE,
+  FINDS,
   GEM_WORTH,
   GROWTH,
   PRODUCERS,
@@ -473,6 +475,15 @@ export function veinAfter(runId: string, n: number, speed = 1): { seconds: numbe
     seconds: Math.round((wait.min + Math.floor(wait.spread * roll(runId, `vein-${n}`))) / speed),
     kind: roll(runId, `vein-kind-${n}`) < 0.5 ? 'rich' : 'frenzy',
   }
+}
+
+/** The find the `n`th vein of a run is instead, in a layer that hides one not found yet; the run decides, as for veins. */
+export function findAt(save: Save, n: number): FindId | null {
+  const here = biomeAt(depth(save))
+  for (const [id, find] of Object.entries(FINDS) as [FindId, (typeof FINDS)[FindId]][]) {
+    if (find.biome === here && !save.secrets.includes(id) && roll(save.runId, `find-${n}`) < FIND_CHANCE) return id
+  }
+  return null
 }
 
 /** A test runner at the head of one step of a shell command. */

@@ -53,7 +53,7 @@ const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 const flag = (on: boolean | undefined) => (on === true ? 1 : 0)
 const specKey = (spec: SceneSpec) =>
   `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}:${spec.bug ?? ''}:` +
-  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}${flag(spec.flare)}:${spec.pose ?? ''}`
+  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}${flag(spec.flare)}:${spec.pose ?? ''}:${spec.find ?? ''}`
 const svgs = new Map<string, string>()
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
@@ -82,6 +82,7 @@ function bandSpec(band: Band, mode: Band['mode'], pose?: SceneSpec['pose']): Sce
     ...(band.bug === null ? {} : { bug: band.bug }),
     ...band.extras,
     ...(band.flare ? { flare: true } : {}),
+    ...(band.find === null ? {} : { find: band.find }),
     ...(pose === undefined ? {} : { pose }),
   }
 }

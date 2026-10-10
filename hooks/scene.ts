@@ -9,7 +9,7 @@
 // pixels, so when the slide wraps around the picture is the same and the loop
 // never shows a seam.
 
-import type { Mode } from '../types'
+import type { FindId, Mode } from '../types'
 
 export const W = 64
 export const H = 24
@@ -34,6 +34,8 @@ export type SceneSpec = {
   coffee?: boolean
   /** Claude asked to ultrathink: the lanterns flare. */
   flare?: boolean
+  /** A find on the rock, there to catch. */
+  find?: FindId
   /**
    * How the miner stands still: facing you while Claude asks, tipping his
    * helmet when thanked, with a coffee a while into Claude's idle, asleep after a long one.
@@ -480,6 +482,13 @@ const NOTE = ['.LL', '.L.', 'LL.', 'LL.'] as const
 const MUG = ['LLL.', 'RRRK', 'RRR.'] as const
 const MUG_STEAMING = ['..z.', '.z..', 'LLL.', 'RRRK', 'RRR.'] as const
 const ZBIG = ['LLLL', '..L.', '.L..', 'LLLL'] as const
+// What three layers hide in the rock: an ammonite, a rubber duck, a pharaoh's gold mask.
+const FIND_SPRITES: Readonly<Record<FindId, readonly string[]>> = {
+  fossil: ['..bbb.', '.b...b', 'b.dd.b', 'b.d..b', '.b..b.', '..bb..'],
+  'rubber-duck': ['..YYY.', '..YKYO', 'Y.YYY.', 'YYYYYY', '.YYYY.'],
+  pharaoh: ['.ABBA.', 'ABAABA', 'BAKAKB', 'BAAAAB', '.AAAA.', '..AA..'],
+}
+const FIND_AT = [55, 9] as const
 const ZSMALL = ['LLL', '.L.', 'LLL'] as const
 
 const DETAIL_PALETTE: Readonly<Record<string, number>> = {
@@ -495,6 +504,10 @@ const DETAIL_PALETTE: Readonly<Record<string, number>> = {
   W: WOOD[1],
   L: LAMP,
   z: 0xb4b2a9,
+  b: 0xeadfc4,
+  d: 0xb8a888,
+  A: GOLD[0],
+  B: 0x3a6ea5,
 }
 
 /** Where the bug crawls on the rock, a quarter of the loop at each. */
@@ -513,6 +526,7 @@ function fixedDetails(px: Pixels, spec: SceneSpec): void {
   }
   if (spec.coffee === true && spec.pose === undefined) px.sprite(MUG_STEAMING, DETAIL_PALETTE, MUG_AT[0], MUG_AT[1])
   if (spec.bug === 'splat') px.sprite(SPLAT, DETAIL_PALETTE, SPLAT_AT[0], SPLAT_AT[1])
+  if (spec.find !== undefined) px.sprite(FIND_SPRITES[spec.find], DETAIL_PALETTE, FIND_AT[0], FIND_AT[1])
 }
 
 const GOBLIN_PALETTE: Readonly<Record<string, number>> = {

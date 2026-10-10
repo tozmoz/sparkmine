@@ -2,8 +2,8 @@
 // live in game.ts and what the drawings show in model.ts; this file holds the
 // store sync and the actions the hooks and buttons call.
 
-import type { Amount, Band, EventKind, Extras, Mine, Mode, Nap, ProducerId, Save, SecretId, ShopModel, VeinKind, View } from '../types'
-import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, TIP_MS, VEIN, type Achievement } from './data.ts'
+import type { Amount, Band, EventKind, Extras, FindId, Mine, Mode, Nap, ProducerId, Save, SecretId, ShopModel, VeinKind, View } from '../types'
+import { ACHIEVEMENT_BONUS, EVENTS, FINDS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, TIP_MS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
 import * as model from './model.ts'
@@ -100,6 +100,7 @@ export const INITIAL_BAND: Band = {
   nap: null,
   tip: false,
   flare: false,
+  find: null,
 }
 
 /** A shop amount as this version reads it: ×100 is gone, and Max buys a lot in its place. */
@@ -162,6 +163,7 @@ export async function refresh(io: Io, now?: number, force = false): Promise<Band
       nap: mode.mode === 'idle' && view.restSince > 0 ? napOf(at - view.restSince) : null,
       tip: at < view.tipUntil,
       flare: view.flare && view.isTurn,
+      find: view.vein?.kind === 'find' && at <= view.vein.until ? (view.vein.find ?? null) : null,
       carts: Math.min(6, game.owned(mine.save, 'cart')),
       goblins: Math.min(1, game.owned(mine.save, 'goblin')),
       pick: game.pickTier(mine.save),
@@ -304,7 +306,10 @@ async function growVeins(io: Io, mode: Mode, seconds: number, now: number, save:
     const due = game.veinAfter(save.runId, next.veinCount, speed)
     if (work < due.seconds) return { ...next, veinWork: work }
     const id = next.veinCount + 1
-    return { ...next, veinWork: 0, veinCount: id, vein: { id, kind: due.kind, until: now + VEIN.showMs } }
+    // In a layer with a find not yet made, the vein may be that instead.
+    const find = game.findAt(save, id)
+    const vein = find === null ? { id, kind: due.kind, until: now + VEIN.showMs } : { id, kind: 'find' as const, find, until: now + VEIN.showMs }
+    return { ...next, veinWork: 0, veinCount: id, vein }
   })
 }
 
@@ -313,22 +318,25 @@ export async function catchVein(io: Io, id: number): Promise<VeinKind | null> {
   const now = await io.now()
   if ((await io.readBand()).isStopped) return null
   const frenzyMs = VEIN.frenzyMs * game.multipliers((await io.readMine()).save).frenzyTime
-  const hit: { kind: VeinKind | null } = { kind: null }
+  const hit: { kind: VeinKind | null; find?: FindId } = { kind: null }
   await patchView(io, view => {
     hit.kind = null
     if (view.vein === null || view.vein.id !== id || now > view.vein.until) return view
     hit.kind = view.vein.kind
+    if (view.vein.find !== undefined) hit.find = view.vein.find
     const frenzy = view.vein.kind === 'frenzy' ? { mult: VEIN.frenzyMult, until: now + frenzyMs } : view.frenzy
     return { ...view, vein: null, frenzy }
   })
   const kind = hit.kind
   if (kind === null) return null
+  // A find pays as a rich vein does, and is a secret for good.
   let value = 0
   await io.mine(m => {
-    value = kind === 'rich' ? game.veinValue(m.save) : 0
+    value = kind === 'frenzy' ? 0 : game.veinValue(m.save)
     return game.earn(m, value, { kind: 'vein' })
   })
-  const label = kind === 'rich' ? 'Rich vein' : `Frenzy ×${VEIN.frenzyMult}`
+  if (hit.find !== undefined) await findSecrets(io, [hit.find])
+  const label = hit.find !== undefined ? FINDS[hit.find].name : kind === 'rich' ? 'Rich vein' : `Frenzy ×${VEIN.frenzyMult}`
   await io.view(view => ({ ...view, event: { label, value, at: now } }))
   await refresh(io, now)
   return kind

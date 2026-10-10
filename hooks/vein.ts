@@ -54,7 +54,7 @@ const Vein: ClientModule<VeinProps, State> = (props, surface) => {
       ...(props.surface === 'terminal' ? {} : { borderStyle: 'round', borderColor: ORE.edge }),
       backgroundColor: isLit ? ORE.lit : ORE.face,
       paddingX: 1,
-      children: [Text({ bold: true, color: ORE.ink, children: [`✦ Vein! ${vein.left}s`] })],
+      children: [Text({ bold: true, color: ORE.ink, children: [`✦ ${vein.label ?? 'Vein!'} ${vein.left}s`] })],
     })
   }
   if (frenzy !== null) return Text({ bold: true, color: FRENZY, children: [`Frenzy ×${frenzy.mult} · ${frenzy.left}s`] })

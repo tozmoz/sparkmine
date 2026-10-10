@@ -261,6 +261,19 @@ describe('secrets', () => {
     expect(game.normalize({ v: 1, runId: 'x', secrets: ['good-manners', 'nonsense', 'good-manners'] })?.secrets).toEqual(['good-manners'])
   })
 
+  test('three layers hide a find: a vein there may be it, until it is found', () => {
+    // 9K is 100 m, the stone; 10B is 700 m, the groundwater.
+    const stone = saveWith({ lifetime: 9_000 })
+    const finds = Array.from({ length: 200 }, (_, n) => game.findAt(stone, n))
+    expect(new Set(finds.filter(f => f !== null))).toEqual(new Set(['fossil']))
+    const share = finds.filter(f => f !== null).length / finds.length
+    expect(share > 0.1 && share < 0.3).toBe(true)
+    expect(Array.from({ length: 200 }, (_, n) => game.findAt(saveWith({ lifetime: 1e10 }), n)).some(f => f === 'rubber-duck')).toBe(true)
+    // The topsoil hides nothing, and a find made is not made again.
+    expect(Array.from({ length: 200 }, (_, n) => game.findAt(saveWith({}), n)).every(f => f === null)).toBe(true)
+    expect(Array.from({ length: 200 }, (_, n) => game.findAt({ ...stone, secrets: ['fossil'] }, n)).every(f => f === null)).toBe(true)
+  })
+
   test('a secret shows as ??? until found, and is never the next goal', () => {
     const names = (save: Save) => model.shopModel(save, 1, true).achievements.filter(a => a.id === 'good-manners').map(a => a.name)
     expect(names(saveWith({}))).toEqual(['???'])

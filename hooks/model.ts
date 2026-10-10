@@ -3,7 +3,7 @@
 // neither is redrawn when nothing it shows has changed.
 
 import type { Amount, Band, EventKind, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
-import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
+import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, FINDS, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate } from './format.ts'
 import * as game from './game.ts'
 
@@ -292,7 +292,10 @@ export function veinProps(view: View, now: number, surface: VeinProps['surface']
   const vein = view.vein !== null && now <= view.vein.until ? view.vein : null
   const frenzy = view.frenzy !== null && now < view.frenzy.until ? view.frenzy : null
   return {
-    vein: vein === null ? null : { id: vein.id, kind: vein.kind, left: Math.ceil((vein.until - now) / 1000) },
+    vein:
+      vein === null
+        ? null
+        : { id: vein.id, kind: vein.kind, left: Math.ceil((vein.until - now) / 1000), label: vein.find === undefined ? 'Vein!' : FINDS[vein.find].label },
     frenzy: frenzy === null ? null : { mult: frenzy.mult, left: Math.ceil((frenzy.until - now) / 1000) },
     surface,
   }
