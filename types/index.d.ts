@@ -154,7 +154,17 @@ export type View = {
   streak: number
   /** A test run failed and none has passed since: the next green run squashes a bug. */
   testsFailing: boolean
+  /** When the pick last squashed that bug: the splat shows for a moment. */
+  squashedAt: number
+  /** Since when Claude has done nothing here: a turn's end, a tool call, or the session's start. */
+  restSince: number
 }
+
+/** How long Claude has been idle shows on the miner: a coffee after a while, asleep after a long while. */
+export type Nap = 'coffee' | 'sleep'
+
+/** Upgrades there to see in the mine: the caged canary, work gloves, warmer lanterns, a coffee mug. */
+export type Extras = { canary: boolean; gloves: boolean; warm: boolean; coffee: boolean }
 
 /** What the band's drawing depends on. It changes rarely, so the scene is not redrawn on every click. */
 export type Band = {
@@ -173,6 +183,11 @@ export type Band = {
   isCompact: boolean
   /** Stopped by `/mine stop`: nothing mines and the band is gone. */
   isStopped: boolean
+  /** A bug on the rock while tests fail, and the splat a moment after the pick got it. */
+  bug: 'crawl' | 'splat' | null
+  extras: Extras
+  /** Only while Claude is idle. */
+  nap: Nap | null
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */
@@ -217,6 +232,8 @@ export type HudProps = {
   goal: { name: string; have: number; need: number } | null
   tools: number
   turns: number
+  /** Claude idle a while: the one-line band says so with a cup, then a snooze. */
+  nap: Nap | null
   /** The HUD's fixed height in rows: a surface unmounts a Client whose size keeps changing. */
   height: number
 }

@@ -19,7 +19,22 @@ export const ROWS = H / 2
 const CLEAR = -1
 
 /** `pick` is the miner's pick, 0 worn iron to 4 obsidian, as the pick upgrades make it. */
-export type SceneSpec = { mode: Mode; carts: number; goblins: number; pick: number; biome: number }
+export type SceneSpec = {
+  mode: Mode
+  carts: number
+  goblins: number
+  pick: number
+  biome: number
+  /** A bug on the rock while tests fail, or the splat where the pick got it. */
+  bug?: 'crawl' | 'splat'
+  /** What upgrades bought, there to see: a caged canary, work gloves, warmer lanterns, a coffee mug. */
+  canary?: boolean
+  gloves?: boolean
+  warm?: boolean
+  coffee?: boolean
+  /** How the miner waits: facing you while Claude asks, with a coffee after a while idle, asleep after a long one. */
+  pose?: 'facing' | 'coffee' | 'sleep'
+}
 
 /** One pose of the miner: `t` runs from the strike (0) to the raised pick (1); null rests. */
 export type Frame = { at: number; t: number | null; bob: number; chips: boolean }
@@ -352,6 +367,125 @@ const MINER = [
   '.KKKKK.KKKKK..',
 ] as const
 
+const GLOVE = 0xc8862a
+const MUG_RED = 0xe24b4a
+
+// Facing you, the lamp in the middle of his helmet and a hand at each side.
+const MINER_FRONT = [
+  '....KKKKK.....',
+  '...KYYYYYK....',
+  '..KYYLLLYYK...',
+  '..KYYYYYYYK...',
+  '.KyyyyyyyyyK..',
+  '..KSSSSSSSK...',
+  '..KSESSSESK...',
+  '..KSSSSSSSK...',
+  '..KBSSSSSBK...',
+  '..KBBBBBBBK...',
+  '..KRBBBBBRK...',
+  '.KRRRBBBRRRK..',
+  '.KRROOOOORRK..',
+  '.KHrOOOOOrHK..',
+  '.KKKGGGGGKKK..',
+  '..KOOOOOOOK...',
+  '..KOOoKoOOK...',
+  '..KOOK.KOOK...',
+  '.KGGGK.KGGGK..',
+  '.KKKKK.KKKKK..',
+] as const
+
+// Sitting with a mug, legs out toward the wall.
+const MINER_SIT = [
+  '..............',
+  '..............',
+  '..............',
+  '..............',
+  '....KKKKK.....',
+  '...KYYYYYK....',
+  '..KYYYYYYYKLL.',
+  '.KyyyyyyyyyKK.',
+  '..KSSSSSSSK...',
+  '..KSSSSSESK...',
+  '..KSSSSSSSSK..',
+  '..KBBSSSSSK...',
+  '..KBBBBBBBK...',
+  '..KRBBBBBRKWWK',
+  '.KRRRBBBRHWWK.',
+  '.KRROOOOORRK..',
+  '.KKKGGGGGKKK..',
+  '..KOOOOOOOOOK.',
+  '..KOOOOOOOGGK.',
+  '..KKKKKKKKKKK.',
+] as const
+
+// Asleep where he sat, his lamp out and his eye shut.
+const MINER_SLEEP = [
+  '..............',
+  '..............',
+  '..............',
+  '..............',
+  '..............',
+  '....KKKKK.....',
+  '...KYYYYYK....',
+  '..KYYYYYYYKll.',
+  '.KyyyyyyyyyKK.',
+  '..KSSSSSSSK...',
+  '..KSSSSSeSK...',
+  '..KSSSSSSSSK..',
+  '..KBBSSSSSK...',
+  '..KBBBBBBBK...',
+  '.KRRRBBBRRRK..',
+  '.KRROOOOORRK..',
+  '.KKKGGGGGKKK..',
+  '..KOOOOOOOOOK.',
+  '..KOOOOOOOGGK.',
+  '..KKKKKKKKKKK.',
+] as const
+
+// A beetle seen from above, in a pink no layer's rock or ore has, so it shows on every one.
+const BUG = ['.K..K.', '..KK..', 'KPPPPK', '.PpPP.', 'KPPPPK', '.K..K.'] as const
+const SPLAT = ['g..G.g', '.GgGG.', 'GgGGgG', '.G.gG.'] as const
+// Steel bars, so the yellow bird inside stands out.
+const CAGE = ['...K...', '..MMM..', '.M...M.', 'M..YY.M', 'M.YYKOM', 'MYYYY.M', 'M.WWW.M', 'MMMMMMM'] as const
+const NOTE = ['.LL', '.L.', 'LL.', 'LL.'] as const
+const MUG = ['LLL.', 'RRRK', 'RRR.'] as const
+const MUG_STEAMING = ['..z.', '.z..', 'LLL.', 'RRRK', 'RRR.'] as const
+const ZBIG = ['LLLL', '..L.', '.L..', 'LLLL'] as const
+const ZSMALL = ['LLL', '.L.', 'LLL'] as const
+
+const DETAIL_PALETTE: Readonly<Record<string, number>> = {
+  K: OUTLINE,
+  R: MUG_RED,
+  P: 0xff4fa3,
+  p: 0xb0306f,
+  g: 0xb5e08a,
+  G: 0x6fa84a,
+  M: 0x9aa3ad,
+  Y: 0xffd84a,
+  O: 0xff7a2f,
+  W: WOOD[1],
+  L: LAMP,
+  z: 0xb4b2a9,
+}
+
+/** Where the bug crawls on the rock, a quarter of the loop at each. */
+const BUG_AT: readonly (readonly [number, number])[] = [[56, 2], [57, 7], [54, 12], [56, 16]]
+const SPLAT_AT = [51, 9] as const
+/** The canary's pole stands at the cart's front, its cage hung between the cart and the miner. */
+const CAGE_AT = [22, 4] as const
+const MUG_AT = [23, 16] as const
+
+/** The details that stay put on screen: the canary on its pole, the mug on the ground. */
+function fixedDetails(px: Pixels, spec: SceneSpec): void {
+  if (spec.canary === true) {
+    for (let y = 3; y < 13; y += 1) px.set(21, y, WOOD[1])
+    for (let x = 21; x <= 25; x += 1) px.set(x, 3, WOOD[0])
+    px.sprite(CAGE, DETAIL_PALETTE, CAGE_AT[0], CAGE_AT[1])
+  }
+  if (spec.coffee === true && spec.pose === undefined) px.sprite(MUG_STEAMING, DETAIL_PALETTE, MUG_AT[0], MUG_AT[1])
+  if (spec.bug === 'splat') px.sprite(SPLAT, DETAIL_PALETTE, SPLAT_AT[0], SPLAT_AT[1])
+}
+
 const GOBLIN_PALETTE: Readonly<Record<string, number>> = {
   g: 0x6fa84a,
   E: 0xffe08a,
@@ -561,26 +695,29 @@ const STRIP = W + PERIOD
 const lanterns = Array.from({ length: Math.ceil(STRIP / PERIOD) }, (_, k) => LANTERN_X + k * PERIOD)
 
 const worlds = new Map<string, { tunnel: Pixels; rock: Pixels }>()
+/** Brighter lanterns burn warmer and wider. */
+const WARM_GLOW = 0xffa63d
 
 /** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once a layer. */
-function world(withGlow: boolean, biome: number): { tunnel: Pixels; rock: Pixels } {
-  const key = `${biome}:${withGlow}`
+function world(withGlow: boolean, biome: number, warm = false): { tunnel: Pixels; rock: Pixels } {
+  const key = `${biome}:${withGlow}:${warm}`
   const hit = worlds.get(key)
   if (hit !== undefined) return hit
-  const built = buildWorld(withGlow, strataOf(biome))
+  const built = buildWorld(withGlow, strataOf(biome), warm)
   worlds.set(key, built)
   return built
 }
 
-function buildWorld(withGlow: boolean, st: Strata): { tunnel: Pixels; rock: Pixels } {
+function buildWorld(withGlow: boolean, st: Strata, warm = false): { tunnel: Pixels; rock: Pixels } {
   const tunnel = strip(tunnelTile(st), STRIP)
   if (withGlow && st.sky === undefined) {
+    const [near, far, glow] = warm ? [0.22, 0.11, WARM_GLOW] : [0.12, 0.06, GLOW]
     for (const lx of lanterns) {
       for (let y = 0; y < H; y += 1) {
         for (let x = lx - 10; x <= lx + 10; x += 1) {
           const d = Math.hypot(x - lx, y - LANTERN_Y)
           const color = tunnel.get(x, y)
-          if (d <= 10 && color !== CLEAR && color !== LAMP) tunnel.set(x, y, mix(color, GLOW, d <= 6 ? 0.12 : 0.06))
+          if (d <= 10 && color !== CLEAR && color !== LAMP) tunnel.set(x, y, mix(color, glow, d <= 6 ? near : far))
         }
       }
     }
@@ -661,14 +798,41 @@ function pickaxe(px: Pixels, hx: number, hy: number, angle: number, look: PickLo
   }
 }
 
-function miner(px: Pixels, frame: Frame, look: PickLook): void {
+function miner(px: Pixels, frame: Frame, look: PickLook, spec?: SceneSpec): void {
+  const hand = spec?.gloves === true ? GLOVE : SKIN
+  // His hands, a shut eye, an unlit lamp, and the mug he holds: the one by the cart.
+  const palette = { ...MINER_PALETTE, H: hand, e: 0xc89a6a, l: 0x8a8460, W: MUG_RED }
+  if (spec?.pose === 'facing') {
+    // The pick stands head down beside him while he looks out at you.
+    pickaxe(px, SX + 13, SY + 10, 90, look)
+    px.sprite(MINER_FRONT, palette, SX, SY)
+    return
+  }
+  if (spec?.pose === 'coffee' || spec?.pose === 'sleep') {
+    // The pick leans on the rock, its head on the ground.
+    pickaxe(px, 48, 9, 80, look)
+    px.sprite(spec.pose === 'coffee' ? MINER_SIT : MINER_SLEEP, palette, SX, SY)
+    if (spec.pose === 'coffee') {
+      px.set(SX + 11, SY + 11, 0xb4b2a9)
+      px.set(SX + 12, SY + 10, 0xb4b2a9)
+    } else {
+      px.sprite(MUG, DETAIL_PALETTE, SX + 14, SY + 16)
+      px.sprite(ZBIG, DETAIL_PALETTE, SX + 11, SY + 1)
+      px.sprite(ZSMALL, DETAIL_PALETTE, SX + 15, SY - 1)
+    }
+    return
+  }
   const p = pose(frame)
   const hx = SX + p.hx
   const hy = SY + p.hy + frame.bob
   pickaxe(px, hx, hy, p.angle, look)
   px.sprite(MINER, MINER_PALETTE, SX, SY + frame.bob)
   px.line(SX + 9, SY + 11 + frame.bob, hx, hy, SHIRT)
-  px.set(hx, hy, SKIN)
+  px.set(hx, hy, hand)
+  if (spec?.gloves === true) {
+    px.set(hx + 1, hy, hand)
+    px.set(hx, hy + 1, hand)
+  }
 }
 
 function chips(px: Pixels, look: PickLook, st: Strata): void {
@@ -707,7 +871,7 @@ function paths(px: Pixels): string {
   return [...runs].map(([color, d]) => `<path fill="${hex(color)}" d="${d.join('')}"/>`).join('')
 }
 
-function glowPath(cx: number, radius: number): string {
+function glowPath(cx: number, radius: number, warm = false): string {
   const d: string[] = []
   for (let dy = -radius; dy <= radius; dy += 1) {
     const w = Math.floor(Math.sqrt(radius * radius - dy * dy))
@@ -715,7 +879,7 @@ function glowPath(cx: number, radius: number): string {
     if (y < 0 || y >= H) continue
     d.push(`M${cx - w} ${y}h${2 * w + 1}v1h-${2 * w + 1}z`)
   }
-  return `<path fill="${hex(GLOW)}" fill-opacity=".07" d="${d.join('')}"/>`
+  return `<path fill="${hex(warm ? WARM_GLOW : GLOW)}" fill-opacity="${warm ? '.13' : '.07'}" d="${d.join('')}"/>`
 }
 
 /** Keyframes that switch a property at the given shares of the loop and hold it between. */
@@ -737,7 +901,7 @@ function windowKeyframes(name: string, from: number, to: number): string {
  */
 export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string {
   const st = strataOf(spec.biome)
-  const { tunnel, rock } = world(false, spec.biome)
+  const { tunnel, rock } = world(false, spec.biome, spec.warm === true)
   const look = lookOf(spec.pick)
   const { frames, ms } = framesFor(spec.mode)
   const isDigging = spec.mode === 'work'
@@ -763,7 +927,8 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
   }
   const slide = isDigging ? ' class="slide"' : ''
   // Under the sky no lantern burns, so nothing flickers.
-  const glows = st.sky === undefined ? `<g class="glow">${lanterns.map(lx => `${glowPath(lx, 10)}${glowPath(lx, 6)}`).join('')}</g>` : ''
+  const warm = spec.warm === true
+  const glows = st.sky === undefined ? `<g class="glow">${lanterns.map(lx => `${glowPath(lx, warm ? 12 : 10, warm)}${glowPath(lx, warm ? 7 : 6, warm)}`).join('')}</g>` : ''
   body.push(`<g${slide}>${paths(tunnel)}${glows}</g>`)
   body.push(`<g clip-path="url(#rock)"><g${slide}>${paths(rock)}</g></g>`)
   body.push(paths(faceEdge(st)))
@@ -794,15 +959,37 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
     })
   }
 
+  const fixed = new Pixels()
+  fixedDetails(fixed, spec)
+  body.push(paths(fixed))
+  if (spec.bug === 'crawl') {
+    const bug = new Pixels()
+    const [bx, by] = BUG_AT[0] ?? [56, 2]
+    bug.sprite(BUG, DETAIL_PALETTE, bx, by)
+    if (isDigging) {
+      const steps = BUG_AT.slice(1).map(([x, y], i) => [(i + 1) / BUG_AT.length, `translate(${x - bx}px,${y - by}px)`] as const)
+      css.push(`.bug{animation:bug ${LOOP_MS}ms step-end infinite}`, stepKeyframes('bug', 'transform', 'translate(0px,0px)', steps))
+      body.push(`<g class="bug">${paths(bug)}</g>`)
+    } else {
+      body.push(paths(bug))
+    }
+  }
+  if (spec.canary === true && isDigging) {
+    const note = new Pixels()
+    note.sprite(NOTE, DETAIL_PALETTE, 29, 6)
+    css.push(`.nt{opacity:0;animation:nt ${LOOP_MS}ms step-end infinite}`, stepKeyframes('nt', 'opacity', '0', [[0.19, '1'], [0.31, '0'], [0.69, '1'], [0.81, '0']]))
+    body.push(`<g class="nt">${paths(note)}</g>`)
+  }
+
   if (frames.length === 1) {
     const layer = new Pixels()
-    miner(layer, frames[0] as Frame, look)
+    miner(layer, frames[0] as Frame, look, spec)
     body.push(paths(layer))
   } else {
     css.push(`.m{opacity:0;animation-duration:${ms}ms;animation-timing-function:step-end;animation-iteration-count:infinite}`)
     frames.forEach((frame, i) => {
       const layer = new Pixels()
-      miner(layer, frame, look)
+      miner(layer, frame, look, spec)
       const to = frames[i + 1]?.at ?? 1
       css.push(`.m${i}{animation-name:m${i}}`, windowKeyframes(`m${i}`, frame.at, to))
       body.push(`<g class="m m${i}">${paths(layer)}</g>`)
@@ -843,7 +1030,7 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
 /** The scene at one moment, as pixels: what the terminal paints and the tests read. */
 export function compose(spec: SceneSpec, m: Moment): Pixels {
   const st = strataOf(spec.biome)
-  const { tunnel, rock } = world(true, spec.biome)
+  const { tunnel, rock } = world(true, spec.biome, spec.warm === true)
   const px = new Pixels()
   for (let y = 0; y < H; y += 1) {
     for (let x = 0; x < W; x += 1) px.set(x, y, (x >= faceAt(y) ? rock : tunnel).get(x + m.scroll, y))
@@ -851,11 +1038,17 @@ export function compose(spec: SceneSpec, m: Moment): Pixels {
   px.stamp(faceEdge(st))
   if (spec.carts > 0) cart(px, spec.carts, m.wheel)
   if (spec.goblins > 0) goblin(px, 0)
+  fixedDetails(px, spec)
+  if (spec.bug === 'crawl') {
+    const [bx, by] = BUG_AT[spec.mode === 'work' ? Math.floor(m.scroll / (PERIOD / BUG_AT.length)) % BUG_AT.length : 0] ?? [56, 2]
+    px.sprite(BUG, DETAIL_PALETTE, bx, by)
+  }
+  if (spec.canary === true && spec.mode === 'work' && (m.scroll === 6 || m.scroll === 22)) px.sprite(NOTE, DETAIL_PALETTE, 29, 6)
   const look = lookOf(spec.pick)
   const { frames } = framesFor(spec.mode)
   const frame = frames[m.frame] ?? frames[0]
   if (frame !== undefined) {
-    miner(px, frame, look)
+    miner(px, frame, look, spec)
     if (frame.chips) chips(px, look, st)
   }
   if (m.spark) sparkle(px, look, st)

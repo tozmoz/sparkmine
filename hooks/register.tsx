@@ -3,7 +3,7 @@
 import { atom, read, update } from 'claude-code'
 import type { RenderElement, Register, Timer } from 'claude-code'
 
-import type { HudProps, StatsProps } from '../types'
+import type { Band, HudProps, StatsProps } from '../types'
 import { newMine, normalizeMine, outcomeOf, producer } from './game.ts'
 import { iconSvg } from './icons.ts'
 import { EMPTY_HUD, EMPTY_SHOP, EMPTY_STATS, hudProps, shareCard, statsProps, veinProps } from './model.ts'
@@ -50,17 +50,39 @@ const surfaceOf = (surface: string): HudProps['surface'] => (surface === 'termin
  */
 const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
-const specKey = (spec: SceneSpec) => `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}`
+const flag = (on: boolean | undefined) => (on === true ? 1 : 0)
+const specKey = (spec: SceneSpec) =>
+  `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}:${spec.bug ?? ''}:` +
+  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}:${spec.pose ?? ''}`
 const svgs = new Map<string, string>()
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
   const key = `${specKey(spec)}@${scale}${fluid ? ':fluid' : ''}`
   let svg = svgs.get(key)
   if (svg === undefined) {
+    // A long session sees many: the details multiply them.
+    if (svgs.size > 64) svgs.clear()
     svg = sceneSvg(spec, scale, fluid)
     svgs.set(key, svg)
   }
   return svg
+}
+
+/**
+ * The mine as a band says it is: the bug while tests fail, the upgrades there
+ * to see, and the miner facing you while Claude asks.
+ */
+function bandSpec(band: Band, mode: Band['mode'], pose?: SceneSpec['pose']): SceneSpec {
+  return {
+    mode,
+    carts: band.carts,
+    goblins: band.goblins,
+    pick: band.pick,
+    biome: band.biome,
+    ...(band.bug === null ? {} : { bug: band.bug }),
+    ...band.extras,
+    ...(pose === undefined ? {} : { pose }),
+  }
 }
 
 const cells = new Map<string, string>()
@@ -312,7 +334,7 @@ export const register: Register = on => {
     const surface = surfaceOf(e.surface)
     // The Mine button is the HUD's own, so a press answers without a round trip.
     const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, taps, isCompact: band.isCompact, ...hudSize }
-    const spec: SceneSpec = { mode: band.mode, carts: band.carts, goblins: band.goblins, pick: band.pick, biome: band.biome }
+    const spec = bandSpec(band, band.mode, band.mode === 'pause' ? 'facing' : undefined)
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
     let ours: RenderElement
 
@@ -447,7 +469,8 @@ export const register: Register = on => {
     const notice = band.isStopped ? <Text color="warning">Sparkmine is stopped. /mine start sets it going again.</Text> : null
     if (e.surface === 'desktop') {
       const { Client, Svg } = $.ui.resolve(e)
-      const header: SceneSpec = { mode: 'pause', carts: band.carts, goblins: band.goblins, pick: band.pick, biome: band.biome }
+      // A still picture of the mine; a while into Claude's idle, the miner has a coffee, then a nap.
+      const header = bandSpec(band, 'pause', band.nap ?? undefined)
       return ui.keepHandles(
         ui.shopTree($.ui.resolve(e), shop, {
           icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
