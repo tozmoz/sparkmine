@@ -73,23 +73,25 @@ test('a redraw keeps every shop button under its handle, so a press already sent
   expect(await ui.find({ type: 'Text', text: 'Apprentice ×11' })).toBeDefined()
 })
 
-test('×100 buys a hundred or none, and its button lights only when all of it is affordable', async ($, on) => {
+test('Max buys as many as the purse allows, and says what one costs when it allows none', async ($, on) => {
   const w = world(on, { save: seeded({ sparks: 2_000 }) })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
-  await ui.press({ key: 'amount-100' })
+  expect(await ui.find({ key: 'amount-100' })).toBeUndefined()
+  await ui.press({ key: 'amount-max' })
+  // Twenty apprentices cost 1,962: the twenty-first would cost 347 more.
+  expect((await ui.find({ key: 'buy-apprentice' }))?.props).toMatchObject({ label: '×20 1,962 ✻', variant: 'primary' })
+  await ui.press({ key: 'buy-apprentice' })
+  await ui.advance(250)
+  expect(await ui.find({ type: 'Text', text: 'Apprentice ×20' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 38' })).toBeDefined()
   const button = await ui.find({ key: 'buy-apprentice' })
-  expect(button?.props).toMatchObject({ dimColor: true })
-  expect(button?.props.variant).toBeUndefined()
+  expect(button?.props).toMatchObject({ label: '×1 347 ✻', dimColor: true })
   await ui.press({ key: 'buy-apprentice' })
-  expect(w.toasts).toHaveLength(1)
-  expect(w.toasts[0]).toMatch(/^Need [\d.,]+[KMB]? more ✻$/)
-  expect(await ui.find({ type: 'Text', text: 'Apprentice' })).toBeDefined()
-  // ×10 fits the purse, so it lights and buys all ten.
+  expect(w.toasts).toEqual(['Need 309 more ✻'])
+  // ×10 buys ten or none.
   await ui.press({ key: 'amount-10' })
-  expect((await ui.find({ key: 'buy-apprentice' }))?.props.variant).toBe('primary')
-  await ui.press({ key: 'buy-apprentice' })
-  expect(await ui.find({ type: 'Text', text: 'Apprentice ×10' })).toBeDefined()
+  expect((await ui.find({ key: 'buy-apprentice' }))?.props.variant).toBeUndefined()
 })
 
 test('a short purse says how much is missing', async ($, on) => {

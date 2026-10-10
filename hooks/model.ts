@@ -2,7 +2,7 @@
 // draws its model and the HUD its props, so neither reads the mine itself and
 // neither is redrawn when nothing it shows has changed.
 
-import type { Band, EventKind, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
+import type { Amount, Band, EventKind, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
 import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate } from './format.ts'
 import * as game from './game.ts'
@@ -112,20 +112,23 @@ export const EMPTY_SHOP: ShopModel = {
   shaft: null,
 }
 
-export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopModel {
+export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopModel {
   const m = game.multipliers(save)
   const top = PRODUCERS.reduce((high, p, i) => (game.owned(save, p.id) > 0 ? i : high), -1)
   const producers = PRODUCERS.slice(0, top + 2).map(p => {
     const owned = game.owned(save, p.id)
+    const count = amount === 'max' ? game.maxCount(p, owned, save.sparks) : amount
+    const price = game.priceOf(p, owned, count)
     return {
       id: p.id,
       icon: p.id,
       name: p.name,
       detail: `${fmtRate(game.unitRate(save, p.id, m))}/s each · ${p.blurb}`,
       owned,
-      price: game.priceOf(p, owned, amount),
-      // Lit only when the whole amount is affordable: ×100 buys a hundred or none.
-      canBuy: save.sparks >= game.priceOf(p, owned, amount),
+      count,
+      price,
+      // Lit only when the whole count is affordable: ×10 buys ten or none.
+      canBuy: save.sparks >= price,
     }
   })
   const { onSale, next } = game.shopUpgrades(save)
@@ -135,6 +138,7 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
     name: u.name,
     detail: u.blurb,
     owned: 0,
+    count: 1,
     price: u.cost,
     canBuy: save.sparks >= u.cost,
   }))

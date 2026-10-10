@@ -2,7 +2,7 @@
 // live in game.ts and what the drawings show in model.ts; this file holds the
 // store sync and the actions the hooks and buttons call.
 
-import type { Band, EventKind, Mine, Mode, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
+import type { Amount, Band, EventKind, Mine, Mode, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
 import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
@@ -88,8 +88,11 @@ export const INITIAL_BAND: Band = {
   isStopped: false,
 }
 
+/** A shop amount as this version reads it: ×100 is gone, and Max buys a lot in its place. */
+const amountOf = (value: unknown): Amount => (value === 10 ? 10 : value === 'max' || value === 100 ? 'max' : 1)
+
 /** A view or a band as this version reads it: one kept from before an update lacks the newer fields. */
-export const fillView = (view: View): View => ({ ...INITIAL_VIEW, ...view })
+export const fillView = (view: View): View => ({ ...INITIAL_VIEW, ...view, amount: amountOf(view.amount) })
 export const fillBand = (band: Band): Band => ({ ...INITIAL_BAND, ...band })
 
 /** The multiplier a caught frenzy puts on everything until it runs out. */
@@ -458,20 +461,26 @@ export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer'
   return bonus
 }
 
-/** Buys the amount the shop is set to, all of it or none: a short purse says how short. */
+/**
+ * Buys the amount the shop is set to, all of it or none, or for Max as many as
+ * the purse allows: a short purse says how short.
+ */
 export async function buyProducer(io: Io, id: ProducerId): Promise<number> {
   const { amount } = await io.readView()
+  const p = game.producer(id)
+  const countFor = (save: Save) => (amount === 'max' ? game.maxCount(p, game.owned(save, id), save.sparks) : amount)
   let bought = 0
   await io.mine(mine => {
     bought = 0
-    const next = game.buyProducer(mine, id, amount)
+    const count = countFor(mine.save)
+    const next = game.buyProducer(mine, id, count)
     if (next === null) return mine
-    bought = amount
+    bought = count
     return next
   })
   if (bought === 0) {
     const { save } = await io.readMine()
-    const short = game.priceOf(game.producer(id), game.owned(save, id), amount) - save.sparks
+    const short = game.priceOf(p, game.owned(save, id), countFor(save)) - save.sparks
     io.toast(`Need ${fmt(Math.max(1, short))} more ✻`)
   } else {
     await showPurchase(io)
@@ -498,7 +507,7 @@ export async function buyUpgrade(io: Io, id: string): Promise<boolean> {
   return isBought
 }
 
-export async function setAmount(io: Io, amount: number): Promise<void> {
+export async function setAmount(io: Io, amount: Amount): Promise<void> {
   await patchView(io, view => (view.amount === amount ? view : { ...view, amount }))
   await refresh(io, undefined, true)
 }

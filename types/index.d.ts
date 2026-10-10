@@ -120,6 +120,9 @@ export type Mine = {
 
 export type Mode = 'idle' | 'work' | 'pause'
 
+/** How many producers one press of a buy button buys: one, ten, or as many as the purse allows. */
+export type Amount = 1 | 10 | 'max'
+
 /** What changes while Claude works. Nothing draws from it directly, so it can change often. */
 export type View = {
   isTurn: boolean
@@ -131,7 +134,7 @@ export type View = {
   turnStart: number
   lastTurn: number
   /** How many producers one press of a buy button buys. */
-  amount: number
+  amount: Amount
   /** Gems struck so far this session, and what the latest ones added beyond their clicks. */
   gem: { seq: number; bonus: number } | null
   /** The vein showing now, until when it can be caught. */
@@ -273,6 +276,8 @@ export type ShopItem = {
   name: string
   detail: string
   owned: number
+  /** How many one press buys, and what they cost: for Max, as many as the purse allows, and one when it allows none. */
+  count: number
   price: number
   canBuy: boolean
 }
@@ -280,7 +285,7 @@ export type ShopItem = {
 /** What the shop pane draws. Rebuilt on every change, written only when it differs. */
 export type ShopModel = {
   isLoaded: boolean
-  amount: number
+  amount: Amount
   producers: ShopItem[]
   /** The price of the next producer, still hidden. */
   teaser: number | null

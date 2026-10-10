@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import * as game from '../hooks/game.ts'
+import * as state from '../hooks/state.ts'
 import { band, command, committed, endSession, failed, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
@@ -11,6 +12,11 @@ const VEIN_POLL = 300
 
 /** A press of the desktop's gold Mine sign: the pointer going down on the HUD. */
 const DOWN = { type: 'down', x: 1, y: 0, button: 'left', in: 'hud' } as const
+
+test('a session kept from before an update reads its ×100 as Max', () => {
+  expect(state.fillView({ ...state.INITIAL_VIEW, amount: 100 as never }).amount).toBe('max')
+  expect(state.fillView({ ...state.INITIAL_VIEW, amount: 10 }).amount).toBe(10)
+})
 
 test('the band keeps one line while Claude is idle', async ($, on) => {
   world(on)

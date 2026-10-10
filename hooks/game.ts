@@ -217,6 +217,30 @@ export function priceOf(producer: Producer, have: number, n = 1): number {
   return total
 }
 
+/** How many of a producer `sparks` buys, when `have` are owned: none when it is short of one. */
+export function affordable(p: Producer, have: number, sparks: number): number {
+  if (!(sparks >= priceOf(p, have))) return 0
+  // The sum of the prices without their rounding up says nearly how many; the rounding is checked one by one.
+  let n = Math.max(1, Math.floor(Math.log(1 + (sparks * (GROWTH - 1)) / (p.cost * GROWTH ** have)) / Math.log(GROWTH)))
+  while (n > 1 && priceOf(p, have, n) > sparks) n -= 1
+  while (priceOf(p, have, n + 1) <= sparks) n += 1
+  return n
+}
+
+/**
+ * What a press of Max buys: as many as `sparks` buys, rounded down to a step
+ * (every count to nine, then fives, twenty-fives and hundreds), so its label
+ * changes now and then rather than with every spark; one when none fits, so
+ * the button still says what one costs.
+ */
+export function maxCount(p: Producer, have: number, sparks: number): number {
+  const n = affordable(p, have, sparks)
+  if (n < 10) return Math.max(1, n)
+  if (n < 50) return Math.floor(n / 5) * 5
+  if (n < 300) return Math.floor(n / 25) * 25
+  return Math.floor(n / 100) * 100
+}
+
 export function producer(id: ProducerId): Producer {
   const found = PRODUCERS.find(p => p.id === id)
   if (found === undefined) throw new Error(`no producer ${id}`)

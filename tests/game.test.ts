@@ -19,6 +19,23 @@ describe('prices', () => {
     expect(game.priceOf(apprentice, 10)).toBe(73)
     expect(game.priceOf(apprentice, 0, 10)).toBe(341)
   })
+
+  test('Max buys all the purse allows, in steps the label keeps a while', () => {
+    const apprentice = game.producer('apprentice')
+    for (const have of [0, 37, 111]) {
+      for (const sparks of [1e3, 1e6, 1e9, 1e12]) {
+        const n = game.affordable(apprentice, have, sparks)
+        expect(game.priceOf(apprentice, have, n) <= sparks && game.priceOf(apprentice, have, n + 1) > sparks).toBe(true)
+      }
+    }
+    expect(game.affordable(apprentice, 0, 14)).toBe(0)
+    expect(game.maxCount(apprentice, 0, 14)).toBe(1)
+    expect(game.maxCount(apprentice, 0, 2_000)).toBe(20)
+    // 63 fit in two million: the label says 50, until 75 fit.
+    expect(game.affordable(apprentice, 0, 2e6)).toBe(63)
+    expect(game.maxCount(apprentice, 0, 2e6)).toBe(50)
+    expect(game.maxCount(apprentice, 0, 1e9)).toBe(100)
+  })
 })
 
 describe('income', () => {
