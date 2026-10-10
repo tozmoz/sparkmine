@@ -5,7 +5,6 @@
 import type { ElementTable, RenderElement, RenderSurface } from 'claude-code'
 
 import type { IconId, ProducerId, ShopItem, ShopModel } from '../types'
-import { STONE_BONUS } from './data.ts'
 import { fmt } from './format.ts'
 
 type Elements = ElementTable<RenderSurface>
@@ -161,9 +160,11 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
         <Box flexDirection="row" columnGap={1} alignItems="center" paddingX={1}>
           {parts.icon('stone', model.shaft.gain < 1)}
           <Text dimColor>
-            {model.shaft.gain > 0
-              ? `Start over in fresh rock for ${model.shaft.gain} ◈ ancient stones. Each adds ${Math.round(STONE_BONUS * 100)}% to everything, for good; achievements and stats stay.`
-              : `A new shaft opens once this one reaches ${model.shaft.at} m, and pays more ◈ the deeper it gets.`}
+            {model.shaft.gain === 0
+              ? `A new shaft opens once this one reaches ${model.shaft.at} m, and pays more ◈ the deeper it gets.`
+              : model.bonus.stones === 0
+                ? `Start over in fresh rock for ${model.shaft.gain} ◈ ancient stones. They add ${model.shaft.pct}% to everything, for good; achievements and stats stay.`
+                : `Start over in fresh rock for ${model.shaft.gain} ◈ ancient stones. Your stones then add ${model.shaft.pct}% to everything, up from ${model.bonus.stonesPct}%; achievements and stats stay.`}
           </Text>
           {priceButton(el, 'shaft', model.shaft.gain > 0 ? `Open for ${model.shaft.gain} ◈` : 'Open a new shaft', model.shaft.gain > 0, () => act.shaft())}
         </Box>
@@ -183,6 +184,11 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
             {layer.isHere ? <Text color={layer.color}>◀ here</Text> : null}
           </Box>
         ))}
+        {model.deeper > 0 ? (
+          <Box paddingX={1}>
+            <Text dimColor>{`${model.deeper} more ${model.deeper === 1 ? 'layer' : 'layers'} below`}</Text>
+          </Box>
+        ) : null}
       </Box>
     )
 

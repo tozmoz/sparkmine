@@ -438,7 +438,11 @@ test('a vein not caught in time goes', async ($, on) => {
   await wait(w, game.veinAfter(runId, 0).seconds + 1)
   await ui.advance(VEIN_POLL)
   expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeDefined()
-  await w.clock.advance(11_000)
+  // It shows for twenty seconds.
+  await w.clock.advance(15_000)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeDefined()
+  await w.clock.advance(6_000)
   await ui.advance(VEIN_POLL)
   expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeUndefined()
 })
@@ -463,6 +467,25 @@ test('a frenzy vein makes every click count five times for half a minute', async
   await ui.pointer(DOWN)
   await ui.advance(VEIN_POLL)
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 6' })).toBeDefined()
+})
+
+test('with gold fever a frenzy lasts a minute', async ($, on) => {
+  const runId = runWithVein('frenzy')
+  const w = world(on, { save: seeded({ runId, upgrades: ['vein-2'] }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await wait(w, game.veinAfter(runId, 0).seconds + 1)
+  await ui.advance(VEIN_POLL)
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'vein' })
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: 'Frenzy ×5 · 60s' })).toBeDefined()
+  await w.clock.advance(31_000)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /^Frenzy ×5 · \d+s$/ })).toBeDefined()
+  await w.clock.advance(30_000)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /Frenzy/ })).toBeUndefined()
 })
 
 test('the mine gets deeper, and its rock turns with the layer', async ($, on) => {

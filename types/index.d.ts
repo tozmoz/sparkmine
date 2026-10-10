@@ -12,6 +12,8 @@ export type ProducerId =
   | 'cache'
   | 'refinery'
   | 'core'
+  | 'furnace'
+  | 'datacenter'
 
 export type Counts<K extends string> = { [P in K]?: number }
 
@@ -59,6 +61,12 @@ export type Save = {
   veins: number
   events: Counts<EventKind>
   /**
+   * The crew's idle pace is the mine's, not a session's: every open session
+   * mines it, and the save holds it up to this moment. A session adds only
+   * what came after, so it is paid once however many sessions are open.
+   */
+  idleAt: number
+  /**
    * The number of each session's last write this save holds, newest last. A
    * session whose write is missing knows another wrote over it.
    */
@@ -69,6 +77,9 @@ export type Save = {
    */
   chain: string
 }
+
+/** Sparks of the crew's idle pace a session mined, and the moments they span. */
+export type IdleSpan = { amount: number; from: number; to: number }
 
 /** What this session changed since it last synced with the store. */
 export type Delta = {
@@ -87,6 +98,11 @@ export type Delta = {
   gems: number
   veins: number
   events: Counts<EventKind>
+  /**
+   * The idle pace this session mined since it last synced. The save takes
+   * only the part of it that no other session gave it yet: see Save `idleAt`.
+   */
+  idle: IdleSpan | null
 }
 
 export type Mine = {
@@ -148,7 +164,7 @@ export type Band = {
   pick: number
   /** The producers owned, in shop order: the crew the band shows on its right. */
   crew: { id: ProducerId; owned: number }[]
-  /** The layer the mine has reached, an index of BIOMES: 0 topsoil, 1 stone, ... 6 the core. */
+  /** The layer the mine has reached, an index of BIOMES: 0 topsoil, 1 stone, ... 9 the far side. */
   biome: number
   /** One line even while Claude works: `/mine compact`. */
   isCompact: boolean
@@ -225,6 +241,8 @@ export type IconId =
   | 'whistle'
   | 'bolt'
   | 'gem'
+  | 'check'
+  | 'rod'
 
 /** What the vein Client draws: a vein to catch, or the frenzy one started. */
 export type VeinProps = {
@@ -273,16 +291,18 @@ export type ShopModel = {
   values: { click: number; read: number; edit: number }
   /** Ancient stones held, achievements earned, and what each adds to everything, in percent. */
   bonus: { stones: number; stonesPct: number; achievements: number; achievementsPct: number }
-  /** The layers, deepest last: the ones this run reached, and the one it is in. */
+  /** The layers this run reached and the next one, deepest last, and how many lie beyond that. */
   layers: { name: string; from: number; color: string; text: string; isReached: boolean; isHere: boolean }[]
+  deeper: number
   /** Every achievement in order, earned or not, and the closest unearned one. */
   achievements: { id: string; name: string; isEarned: boolean }[]
   nextAchievement: { name: string; text: string } | null
   /**
    * The new shaft, once the run is deep enough to think of one: the stones it
-   * pays now, none until SHAFT_DEPTH. Its depth lives in the live counter.
+   * pays now, none until SHAFT_DEPTH, and what all the stones would add to
+   * everything then, in percent. Its depth lives in the live counter.
    */
-  shaft: { gain: number; at: number } | null
+  shaft: { gain: number; at: number; pct: number } | null
 }
 
 declare module 'claude-code' {

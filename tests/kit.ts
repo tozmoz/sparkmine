@@ -137,6 +137,7 @@ export function seeded(patch: Partial<Save>): Save {
     gems: 0,
     veins: 0,
     events: {},
+    idleAt: 0,
     writes: {},
     chain: '',
     ...patch,

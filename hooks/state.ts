@@ -3,7 +3,7 @@
 // store sync and the actions the hooks and buttons call.
 
 import type { Band, EventKind, Mine, Mode, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
-import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STONE_BONUS, STREAK_TURNS, VEIN, type Achievement } from './data.ts'
+import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
 import * as model from './model.ts'
@@ -243,9 +243,13 @@ export async function tick(io: Io): Promise<void> {
   const band = await refresh(io, now)
   if (band.isStopped) return
   const view = await io.readView()
-  const share = band.mode === 'idle' ? game.idleShare(mine.save) : 1
-  const amount = game.rate(mine.save) * share * seconds * boostAt(view, now)
-  if (amount > 0) await io.mine(m => game.earn(m, amount, { kind: 'crew' }))
+  const rate = game.rate(mine.save)
+  // The idle pace runs whatever Claude does, and it is the mine's: the save
+  // takes it once, however many sessions are open. Claude's work lifts this
+  // session's crew to the full rate, and a frenzy multiplies it: those are its own.
+  const idle = rate * game.idleShare(mine.save) * seconds
+  const amount = (band.mode === 'idle' ? idle : rate * seconds) * boostAt(view, now)
+  if (amount > 0) await io.mine(m => game.payCrew(m, idle, amount - idle, now - seconds * 1000, now))
   await growVeins(io, band.mode, seconds, now, mine.save)
 }
 
@@ -272,12 +276,13 @@ async function growVeins(io: Io, mode: Mode, seconds: number, now: number, save:
 export async function catchVein(io: Io, id: number): Promise<VeinKind | null> {
   const now = await io.now()
   if ((await io.readBand()).isStopped) return null
+  const frenzyMs = VEIN.frenzyMs * game.multipliers((await io.readMine()).save).frenzyTime
   const hit: { kind: VeinKind | null } = { kind: null }
   await patchView(io, view => {
     hit.kind = null
     if (view.vein === null || view.vein.id !== id || now > view.vein.until) return view
     hit.kind = view.vein.kind
-    const frenzy = view.vein.kind === 'frenzy' ? { mult: VEIN.frenzyMult, until: now + VEIN.frenzyMs } : view.frenzy
+    const frenzy = view.vein.kind === 'frenzy' ? { mult: VEIN.frenzyMult, until: now + frenzyMs } : view.frenzy
     return { ...view, vein: null, frenzy }
   })
   const kind = hit.kind
@@ -535,14 +540,16 @@ async function confirm(io: Io, question: string, yes: string, no: string): Promi
 /** Prestige: trade this run for ancient stones in a new shaft, after the person confirms. */
 export async function newShaft(io: Io): Promise<boolean> {
   await sync(io)
-  const gain = game.stoneGain((await io.readMine()).save)
+  const { save } = await io.readMine()
+  const gain = game.stoneGain(save)
   if (gain < 1) {
     io.toast(`A new shaft opens once this one reaches ${SHAFT_DEPTH} m`)
     return false
   }
+  const pct = Math.round(game.stoneBonus(save.stones + gain) * 100)
   const isSure = await confirm(
     io,
-    `Open a new shaft for ${gain} ◈? Sparks, producers, upgrades and depth start over. Ancient stones, achievements and stats stay, and each ◈ adds ${Math.round(STONE_BONUS * 100)}% to everything.`,
+    `Open a new shaft for ${gain} ◈? Sparks, producers, upgrades and depth start over. Ancient stones, achievements and stats stay, and your stones will add ${pct}% to everything.`,
     'Open it',
     'Keep digging',
   )

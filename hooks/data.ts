@@ -24,6 +24,8 @@ export const PRODUCERS: readonly Producer[] = [
   { id: 'cache', name: 'Cache vein', plural: 'Cache veins', blurb: 'Ore you already mined, mined again.', cost: 1_500_000, rate: 700 },
   { id: 'refinery', name: 'Token refinery', plural: 'Token refineries', blurb: 'Smelts raw tokens into sparks.', cost: 21_000_000, rate: 3_900 },
   { id: 'core', name: 'Context core', plural: 'Context cores', blurb: 'A million tokens of solid ore.', cost: 340_000_000, rate: 22_000 },
+  { id: 'furnace', name: 'GPU furnace', plural: 'GPU furnaces', blurb: 'Smelts ore at a thousand teraflops.', cost: 100_000_000_000, rate: 250_000 },
+  { id: 'datacenter', name: 'Datacenter', plural: 'Datacenters', blurb: 'A building full of miners, cooled by the groundwater.', cost: 2_500_000_000_000, rate: 1_500_000 },
 ]
 
 /** Sparks one tool call mines before any upgrade. */
@@ -63,6 +65,12 @@ export type Effect =
   | { kind: 'ore'; seconds: number }
   /** The share of the rate the crew mines while Claude is idle. */
   | { kind: 'idle'; share: number }
+  /** These work events pay this many times as much. */
+  | { kind: 'events'; events: readonly EventKind[]; mult: number }
+  /** Veins show this many times as often. */
+  | { kind: 'veinSpeed'; mult: number }
+  /** A frenzy lasts this many times as long. */
+  | { kind: 'frenzy'; mult: number }
   /** Each finished turn mines this many seconds of the rate. */
   | { kind: 'shift'; seconds: number }
   | { kind: 'global'; mult: number }
@@ -75,6 +83,9 @@ export type Unlock =
   | { kind: 'owned'; id: ProducerId; n: number }
   | { kind: 'crew'; n: number }
   | { kind: 'earned'; n: number }
+  | { kind: 'veins'; n: number }
+  /** So many of these work events, all told; `label` names them in the shop. */
+  | { kind: 'events'; events: readonly EventKind[]; n: number; label: string }
 
 /** What a gem is worth, in clicks, before any upgrade. */
 export const GEM_WORTH = 10
@@ -106,6 +117,8 @@ const TIER_NAMES: Readonly<Record<ProducerId, readonly [string, string, string, 
   cache: ['Warm cache', 'Longer TTL', 'Prefix reuse', 'Perfect hit rate'],
   refinery: ['Better tokenizer', 'Batch smelting', 'Speculative pours', 'Distillation'],
   core: ['Long context', 'Auto compaction', 'Memory files', 'Total recall'],
+  furnace: ['Liquid cooling', 'Tensor cores', 'Overclocking', 'Wafer-scale'],
+  datacenter: ['Hot aisles', 'Fiber backbone', 'Own power plant', 'Planet-scale'],
 }
 
 const producerUpgrades: Upgrade[] = PRODUCERS.flatMap(p =>
@@ -124,11 +137,12 @@ const otherUpgrades: Upgrade[] = [
   { id: 'pick-2', name: 'Steel pick', blurb: 'Clicks mine twice as much again.', cost: 500, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 100 } },
   { id: 'grip-1', name: 'Work gloves', blurb: 'Clicks mine twice as much again.', cost: 3_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 250 } },
   { id: 'pick-3', name: 'Diamond pick', blurb: 'Clicks mine twice as much again.', cost: 10_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 500 } },
-  { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 1% of your rate.', cost: 50_000, effect: { kind: 'clickRate', pct: 1 }, unlock: { kind: 'clicks', n: 1_000 } },
-  { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 2% of your rate.', cost: 5_000_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 3_000 } },
+  { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 2% of your rate.', cost: 50_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 1_000 } },
+  { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 4% of your rate.', cost: 5_000_000, effect: { kind: 'clickRate', pct: 4 }, unlock: { kind: 'clicks', n: 3_000 } },
   { id: 'pick-6', name: 'Obsidian edge', blurb: 'Clicks mine twice as much again.', cost: 500_000_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 10_000 } },
-  { id: 'strike-1', name: 'Seismic tap', blurb: 'Each click mines another 3% of your rate.', cost: 50_000_000, effect: { kind: 'clickRate', pct: 3 }, unlock: { kind: 'clicks', n: 6_000 } },
-  { id: 'strike-2', name: 'Fault line', blurb: 'Each click mines another 5% of your rate.', cost: 10_000_000_000, effect: { kind: 'clickRate', pct: 5 }, unlock: { kind: 'clicks', n: 15_000 } },
+  { id: 'strike-1', name: 'Seismic tap', blurb: 'Each click mines another 6% of your rate.', cost: 50_000_000, effect: { kind: 'clickRate', pct: 6 }, unlock: { kind: 'clicks', n: 6_000 } },
+  { id: 'strike-2', name: 'Fault line', blurb: 'Each click mines another 10% of your rate.', cost: 10_000_000_000, effect: { kind: 'clickRate', pct: 10 }, unlock: { kind: 'clicks', n: 15_000 } },
+  { id: 'strike-3', name: 'Tectonic strike', blurb: 'Each click mines another 15% of your rate.', cost: 1_000_000_000_000, effect: { kind: 'clickRate', pct: 15 }, unlock: { kind: 'clicks', n: 30_000 } },
 
   // The crew cheers you on: clicks grow with every producer owned.
   { id: 'foreman-1', name: "Foreman's whistle", blurb: 'Each click also mines 0.2 for every producer you own.', cost: 10_000, effect: { kind: 'clickCrew', per: 0.2 }, unlock: { kind: 'crew', n: 25 } },
@@ -153,11 +167,22 @@ const otherUpgrades: Upgrade[] = [
   { id: 'idle-1', name: 'Night shift', blurb: 'Your crew mines at 10% while Claude is idle.', cost: 10_000, effect: { kind: 'idle', share: 0.1 }, unlock: { kind: 'crew', n: 10 } },
   { id: 'idle-2', name: 'Graveyard shift', blurb: 'Your idle crew mines at 25%.', cost: 1_000_000, effect: { kind: 'idle', share: 0.25 }, unlock: { kind: 'crew', n: 50 } },
   { id: 'idle-3', name: 'Automation', blurb: 'Your idle crew mines at 50%.', cost: 1_000_000_000, effect: { kind: 'idle', share: 0.5 }, unlock: { kind: 'crew', n: 200 } },
+  { id: 'idle-4', name: 'Lights-out mining', blurb: 'Your idle crew mines at 70%.', cost: 1_000_000_000_000, effect: { kind: 'idle', share: 0.7 }, unlock: { kind: 'crew', n: 400 } },
   { id: 'shift-1', name: 'Overtime pay', blurb: 'Each finished turn pays 10s of your rate.', cost: 50_000, effect: { kind: 'shift', seconds: 10 }, unlock: { kind: 'turns', n: 50 } },
   { id: 'shift-2', name: 'Hazard pay', blurb: 'Each finished turn pays another 30s.', cost: 5_000_000, effect: { kind: 'shift', seconds: 30 }, unlock: { kind: 'turns', n: 250 } },
 
   { id: 'lamp-1', name: 'Brighter lanterns', blurb: 'Everything mines 10% more.', cost: 250_000, effect: { kind: 'global', mult: 1.1 }, unlock: { kind: 'earned', n: 1_000_000 } },
   { id: 'lamp-2', name: 'Canary in the mine', blurb: 'Everything mines 15% more.', cost: 25_000_000, effect: { kind: 'global', mult: 1.15 }, unlock: { kind: 'earned', n: 100_000_000 } },
+
+  // Claude's work pays more once it is a habit.
+  { id: 'ci-1', name: 'CI pipeline', blurb: 'Passing builds and clean lints pay double.', cost: 5_000_000_000, effect: { kind: 'events', events: ['build', 'lint'], mult: 2 }, unlock: { kind: 'events', events: ['build', 'lint'], n: 25, label: 'passing builds and lints' } },
+  { id: 'coverage-1', name: 'Test coverage', blurb: 'Passing tests and squashed bugs pay double.', cost: 10_000_000_000, effect: { kind: 'events', events: ['tests', 'fix'], mult: 2 }, unlock: { kind: 'events', events: ['tests', 'fix'], n: 50, label: 'passing test runs' } },
+  { id: 'flow-1', name: 'Flow state', blurb: 'Commits, long shifts and streaks pay double.', cost: 25_000_000_000, effect: { kind: 'events', events: ['commit', 'longShift', 'streak'], mult: 2 }, unlock: { kind: 'events', events: ['commit'], n: 50, label: 'commits' } },
+  { id: 'review-1', name: 'Code review', blurb: 'Pull requests opened and merged pay double.', cost: 50_000_000_000, effect: { kind: 'events', events: ['pr', 'merge'], mult: 2 }, unlock: { kind: 'events', events: ['pr', 'merge'], n: 10, label: 'pull requests opened or merged' } },
+
+  // Veins come more often to those who catch them.
+  { id: 'vein-1', name: 'Divining rod', blurb: 'Veins show 50% more often.', cost: 1_000_000_000, effect: { kind: 'veinSpeed', mult: 1.5 }, unlock: { kind: 'veins', n: 10 } },
+  { id: 'vein-2', name: 'Gold fever', blurb: 'A frenzy lasts twice as long.', cost: 20_000_000_000, effect: { kind: 'frenzy', mult: 2 }, unlock: { kind: 'veins', n: 25 } },
 ]
 
 /**
@@ -179,8 +204,13 @@ function inLines(list: Upgrade[]): Upgrade[] {
 
 export const UPGRADES: readonly Upgrade[] = inLines([...otherUpgrades, ...producerUpgrades])
 
-/** Each ancient stone adds this share to everything the mine earns, for good. */
+/**
+ * Ancient stones add to everything the mine earns, for good: the first this
+ * share, and each next one a little less, as their number to STONE_POWER. Ten
+ * add 50% and a hundred 251%, so a late run still pays, but slower.
+ */
 export const STONE_BONUS = 0.1
+export const STONE_POWER = 0.7
 /** A new shaft pays the cube root of the run's sparks over this, in ancient stones. */
 export const STONE_UNIT = 1_000_000
 /** How deep a run must reach before a new shaft can be opened, in metres: the magma. */
@@ -210,7 +240,7 @@ export const LONG_SHIFT_MS = 5 * 60_000
 
 /** Veins: how long one shows, the seconds of work before one shows, and what one pays. */
 export const VEIN = {
-  showMs: 10_000,
+  showMs: 20_000,
   first: { min: 90, spread: 90 },
   next: { min: 300, spread: 300 },
   richSeconds: 120,
@@ -232,9 +262,19 @@ export type Perk =
   /** Work events pay this many times as much. */
   | { kind: 'events'; mult: number }
   | { kind: 'global'; mult: number }
+  /** Gems are worth this many times as much. */
+  | { kind: 'gemWorth'; mult: number }
+  /** Every tool call mines this many times as much. */
+  | { kind: 'tools'; mult: number }
+  /** A new shaft opened from here pays this many times the stones. */
+  | { kind: 'stones'; mult: number }
 
-/** A layer: where it starts, its color, its perk, and the emoji square a shared card draws it with. */
-export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string }
+/**
+ * A layer: where it starts, its color, its perk, and the emoji square a shared
+ * card draws it with. `place` is how the card says where the mine is, when
+ * "in the" and the name would read badly.
+ */
+export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string; place?: string }
 
 /**
  * The layers the mine digs through, from the depth where each starts, in
@@ -249,6 +289,9 @@ export const BIOMES: readonly Biome[] = [
   { name: 'Groundwater', from: 700, color: '#4fb3d9', square: '🟦', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
   { name: 'Ancient ruins', from: 850, color: '#d9b45f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double." },
   { name: 'The core', from: 1_000, color: '#ffe9a8', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
+  { name: 'Inner core', from: 1_100, color: '#d7f4ff', square: '💎', perk: { kind: 'gemWorth', mult: 2 }, text: 'Gems are worth twice as much.' },
+  { name: 'Hollow earth', from: 1_200, color: '#5fd47a', square: '🟩', perk: { kind: 'tools', mult: 2 }, text: 'Tool calls mine twice as much.' },
+  { name: 'The far side', from: 1_300, color: '#9cc9ff', square: '🌏', perk: { kind: 'stones', mult: 1.5 }, text: 'A new shaft from here pays 50% more ◈.', place: 'on the far side' },
 ]
 
 /** What an achievement counts: a record of the save, or how often a work event paid. */
@@ -265,25 +308,35 @@ export const ACHIEVEMENT_BONUS = 0.02
 export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'first-vein', name: 'First vein', text: 'Catch a vein.', goal: { kind: 'veins', n: 1 } },
   { id: 'vein-hunter', name: 'Vein hunter', text: 'Catch 25 veins.', goal: { kind: 'veins', n: 25 } },
+  { id: 'veins-100', name: 'Gold rush', text: 'Catch 100 veins.', goal: { kind: 'veins', n: 100 } },
   { id: 'hard-rock', name: 'Hard rock', text: 'Dig down to the stone, 100 m.', goal: { kind: 'deepest', n: 100 } },
   { id: 'crystal-caves', name: 'Crystal caves', text: 'Reach the crystal caves, 300 m.', goal: { kind: 'deepest', n: 300 } },
   { id: 'magma', name: 'Into the magma', text: 'Reach the magma, 500 m.', goal: { kind: 'deepest', n: 500 } },
   { id: 'groundwater', name: 'Underground river', text: 'Reach the groundwater, 700 m.', goal: { kind: 'deepest', n: 700 } },
   { id: 'ruins', name: 'Lost ruins', text: 'Reach the ancient ruins, 850 m.', goal: { kind: 'deepest', n: 850 } },
   { id: 'core', name: 'The core', text: 'Reach the core, 1,000 m.', goal: { kind: 'deepest', n: 1_000 } },
+  { id: 'inner-core', name: 'Under pressure', text: 'Reach the inner core, 1,100 m.', goal: { kind: 'deepest', n: 1_100 } },
+  { id: 'hollow-earth', name: 'Lost world', text: 'Reach the hollow earth, 1,200 m.', goal: { kind: 'deepest', n: 1_200 } },
+  { id: 'far-side', name: 'Out the other side', text: 'Dig through to the far side, 1,300 m.', goal: { kind: 'deepest', n: 1_300 } },
   { id: 'tests-100', name: 'Green streak', text: 'Pass the tests 100 times.', goal: { kind: 'event', event: 'tests', n: 100 } },
   { id: 'commits-100', name: 'Ship it', text: 'Commit 100 times.', goal: { kind: 'event', event: 'commit', n: 100 } },
   { id: 'long-shifts-10', name: 'Night owl', text: 'Work 10 long shifts.', goal: { kind: 'event', event: 'longShift', n: 10 } },
   { id: 'fixes-25', name: 'Exterminator', text: 'Squash 25 bugs: tests that failed, then passed.', goal: { kind: 'event', event: 'fix', n: 25 } },
   { id: 'merges-10', name: 'Release train', text: 'Merge 10 pull requests.', goal: { kind: 'event', event: 'merge', n: 10 } },
   { id: 'streak-10', name: 'On fire', text: 'Work 10 good turns in a row.', goal: { kind: 'bestStreak', n: 10 } },
+  { id: 'streak-25', name: 'Unstoppable', text: 'Work 25 good turns in a row.', goal: { kind: 'bestStreak', n: 25 } },
   { id: 'turn-1m', name: 'Big turn', text: 'Mine 1M sparks in one turn.', goal: { kind: 'bestTurn', n: 1e6 } },
   { id: 'turn-1b', name: 'Legendary turn', text: 'Mine 1B sparks in one turn.', goal: { kind: 'bestTurn', n: 1e9 } },
   { id: 'clicks-10k', name: 'Calloused hands', text: 'Click 10,000 times.', goal: { kind: 'clicks', n: 10_000 } },
   { id: 'gems-100', name: 'Jeweler', text: 'Strike 100 gems.', goal: { kind: 'gems', n: 100 } },
+  { id: 'gems-1k', name: 'Crown jewels', text: 'Strike 1,000 gems.', goal: { kind: 'gems', n: 1_000 } },
   { id: 'tools-1k', name: 'Busy Claude', text: 'Mine 1,000 tool calls.', goal: { kind: 'tools', n: 1_000 } },
   { id: 'shaft', name: 'Fresh rock', text: 'Open a new shaft.', goal: { kind: 'shafts', n: 1 } },
+  { id: 'shafts-5', name: 'Shaft sinker', text: 'Open 5 new shafts.', goal: { kind: 'shafts', n: 5 } },
+  { id: 'shafts-10', name: 'Mining magnate', text: 'Open 10 new shafts.', goal: { kind: 'shafts', n: 10 } },
   { id: 'stones-25', name: 'Stone collector', text: 'Hold 25 ancient stones.', goal: { kind: 'stones', n: 25 } },
+  { id: 'stones-100', name: 'Stone circle', text: 'Hold 100 ancient stones.', goal: { kind: 'stones', n: 100 } },
+  { id: 'stones-500', name: 'Pyramid builder', text: 'Hold 500 ancient stones.', goal: { kind: 'stones', n: 500 } },
   { id: 'billion', name: 'Billionaire', text: 'Mine 1B sparks in all.', goal: { kind: 'allTime', n: 1e9 } },
   { id: 'trillion', name: 'Trillionaire', text: 'Mine 1T sparks in all.', goal: { kind: 'allTime', n: 1e12 } },
 ]

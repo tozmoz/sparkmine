@@ -207,11 +207,26 @@ type Strata = {
   pileTop: number
   /** The two ores in the rock: the first is the one the pick throws sparks of. */
   ores: readonly [Ore, Ore]
+  /** Daylight where the tunnel's back wall would be: the far side, out through the planet. */
+  sky?: Sky
+}
+
+/**
+ * The far side's sky, seen upside down: its bands from the top row down, palest
+ * by the turf overhead, the clouds' color, the sun low in the frame, and the turf.
+ */
+type Sky = {
+  bands: readonly (readonly [number, number])[]
+  cloud: number
+  sun: readonly [number, number]
+  turf: readonly [number, number, number]
 }
 
 /**
  * Deeper is stranger: the mine passes from topsoil through stone and crystal
- * caves into magma, then groundwater, ancient ruins and the core. One per BIOMES entry.
+ * caves into magma, then groundwater, ancient ruins and the core, and on through
+ * the inner core and a hollow earth out into daylight on the far side. One per
+ * BIOMES entry.
  */
 const STRATA: readonly Strata[] = [
   // Topsoil: warm brown earth with gold and teal.
@@ -262,6 +277,34 @@ const STRATA: readonly Strata[] = [
     rock: [0x5a1608, 0x9a2e10, 0xd9531c], ceiling: [0x4a1208, 0x6e200c, 0x9a2e10],
     dirt: 0x3a120a, dirtSpeck: 0x6e200c, pebble: 0x9a2e10, pile: 0xc2411a, pileTop: 0xffd36e,
     ores: [[0xffe9a8, 0xffffff, 0xf2b632], [0xffd36e, 0xfff4b8, 0xff7a2f]],
+  },
+  // Inner core: white-hot gold under such pressure that it grows diamonds.
+  {
+    cave: 0x2b1d08, caveDark: 0x1f1405, caveLight: 0x3b2a0e,
+    rock: [0x7a4e10, 0xc48a26, 0xf2c45a], ceiling: [0x5e3c0c, 0x7a4e10, 0xa86e1a],
+    dirt: 0x3b2a0e, dirtSpeck: 0x7a4e10, pebble: 0xa86e1a, pile: 0xc48a26, pileTop: 0xfff0b8,
+    ores: [[0xe8fbff, 0xffffff, 0x8fd8e8], [0xfff4b8, 0xffffff, 0xf2b632]],
+  },
+  // Hollow earth: a lost green world inside the planet, its rock lit by emerald and glowing spores.
+  {
+    cave: 0x0d1f15, caveDark: 0x08150d, caveLight: 0x15301f,
+    rock: [0x14281a, 0x24472c, 0x3a6a3e], ceiling: [0x14281a, 0x1c3a24, 0x24472c],
+    dirt: 0x112418, dirtSpeck: 0x24472c, pebble: 0x3a6a3e, pile: 0x3a6a3e, pileTop: 0x7bd88f,
+    ores: [[0x3ecf6e, 0xc8f7d4, 0x1d8a45], [0xd08cff, 0xf3e0ff, 0x8a4fc0]],
+  },
+  // The far side: through the planet and out. Daylight behind the timbers, the
+  // other side's turf overhead, and its last crust ahead, set with sapphire.
+  {
+    cave: 0x7cb8ec, caveDark: 0x5598dc, caveLight: 0xa8d4f7,
+    rock: [0x3b2a1c, 0x6b4a2f, 0x8a6240], ceiling: [0x5e3b1d, 0x5e3b1d, 0x6b4a2f],
+    dirt: 0x3b2a1c, dirtSpeck: 0x5e3b1d, pebble: 0x6b4a2f, pile: 0x6b4a2f, pileTop: 0x5fb84a,
+    ores: [[0x7fd3ff, 0xe0f6ff, 0x3a8fd0], GOLD],
+    sky: {
+      bands: [[0, 0xd6ecff], [7, 0xa8d4f7], [11, 0x7cb8ec], [16, 0x5598dc]],
+      cloud: 0xffffff,
+      sun: [25, 17],
+      turf: [0x2f6e2c, 0x3f8f3a, 0x5fb84a],
+    },
   },
 ]
 
@@ -387,11 +430,40 @@ function mix(a: number, b: number, share: number): number {
   return ch(16) | ch(8) | ch(0)
 }
 
+/** The far side's sky behind the timbers: its bands, clouds and sun, and its turf hanging overhead. */
+function skyTile(t: Pixels, sky: Sky, r: () => number): void {
+  for (let y = 0; y < H; y += 1) {
+    let color = sky.bands[0]?.[1] ?? 0
+    for (const [from, band] of sky.bands) if (y >= from) color = band
+    for (let x = 0; x < PERIOD; x += 1) t.set(x, y, color)
+  }
+  for (const y of [5, 9, 13]) {
+    let x = Math.floor(r() * 8)
+    while (x < PERIOD) {
+      const len = 3 + Math.floor(r() * 4)
+      for (let i = 0; i < len; i += 1) t.set(x + i, y, sky.cloud)
+      for (let i = 1; i < len - 1; i += 1) t.set(x + i, y - 1, sky.cloud)
+      x += len + 6 + Math.floor(r() * 8)
+    }
+  }
+  const [sx, sy] = sky.sun
+  for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const) t.set(sx + dx, sy + dy, GOLD[0])
+  t.set(sx, sy, LAMP)
+  const [deep, mid, light] = sky.turf
+  for (let x = 0; x < PERIOD; x += 1) {
+    t.set(x, 1, deep)
+    t.set(x, 2, mid)
+    if (x % 2 === 0) t.set(x, 3, light)
+    if (x % 5 === 1) t.set(x, 4, light)
+  }
+}
+
 /** One PERIOD-wide tile of the dug tunnel: back wall, timbers, lantern, rails, spoil. */
 function tunnelTile(st: Strata): Pixels {
   const r = rng(11)
   const pick = <T>(list: readonly T[]): T => list[Math.floor(r() * list.length)] as T
   const t = new Pixels(PERIOD, H)
+  if (st.sky !== undefined) return skyTunnel(t, st, st.sky, r, pick)
   t.data.fill(st.cave)
   for (const y of [5, 9, 13, 17]) {
     let x = Math.floor(r() * 4)
@@ -431,6 +503,27 @@ function tunnelTile(st: Strata): Pixels {
     t.set(LANTERN_X - 1, y, OUTLINE)
     t.set(LANTERN_X, y, LAMP)
     t.set(LANTERN_X + 1, y, OUTLINE)
+  }
+  return t
+}
+
+/** The far side's tunnel: open to the sky, its timbers and rails still there, no lantern needed. */
+function skyTunnel(t: Pixels, st: Strata, sky: Sky, r: () => number, pick: <T>(list: readonly T[]) => T): Pixels {
+  skyTile(t, sky, r)
+  for (let x = 0; x < PERIOD; x += 1) t.set(x, 0, pick(st.ceiling))
+  for (let y = 3; y < 21; y += 1) {
+    t.set(POST_X, y, WOOD[0])
+    t.set(POST_X + 1, y, WOOD[1])
+    t.set(POST_X + 2, y, WOOD[2])
+  }
+  SPOIL.heights.forEach((height, i) => {
+    for (let k = 0; k < height; k += 1) t.set(SPOIL.x + i, 20 - k, k === height - 1 ? st.pileTop : st.pile)
+  })
+  for (let y = 22; y < H; y += 1) for (let x = 0; x < PERIOD; x += 1) t.set(x, y, r() < 0.12 ? st.dirtSpeck : st.dirt)
+  for (let i = 0; i < 3; i += 1) t.set(Math.floor(r() * PERIOD), 22, st.pebble)
+  for (let x = 0; x < PERIOD; x += 1) {
+    t.set(x, 21, RAIL)
+    if (x % 4 < 2) t.set(x, 22, TIE)
   }
   return t
 }
@@ -481,7 +574,7 @@ function world(withGlow: boolean, biome: number): { tunnel: Pixels; rock: Pixels
 
 function buildWorld(withGlow: boolean, st: Strata): { tunnel: Pixels; rock: Pixels } {
   const tunnel = strip(tunnelTile(st), STRIP)
-  if (withGlow) {
+  if (withGlow && st.sky === undefined) {
     for (const lx of lanterns) {
       for (let y = 0; y < H; y += 1) {
         for (let x = lx - 10; x <= lx + 10; x += 1) {
@@ -669,8 +762,9 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
     )
   }
   const slide = isDigging ? ' class="slide"' : ''
-  const glows = lanterns.map(lx => `${glowPath(lx, 10)}${glowPath(lx, 6)}`).join('')
-  body.push(`<g${slide}>${paths(tunnel)}<g class="glow">${glows}</g></g>`)
+  // Under the sky no lantern burns, so nothing flickers.
+  const glows = st.sky === undefined ? `<g class="glow">${lanterns.map(lx => `${glowPath(lx, 10)}${glowPath(lx, 6)}`).join('')}</g>` : ''
+  body.push(`<g${slide}>${paths(tunnel)}${glows}</g>`)
   body.push(`<g clip-path="url(#rock)"><g${slide}>${paths(rock)}</g></g>`)
   body.push(paths(faceEdge(st)))
 

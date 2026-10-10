@@ -53,6 +53,15 @@ test('every scene fits the size an Svg may have', () => {
   expect(sceneSvg({ ...WORK, mode: 'idle' }, 3)).not.toContain('@keyframes slide')
 })
 
+test('on the far side the tunnel opens to the sky, where no lantern burns', () => {
+  const far: SceneSpec = { ...WORK, biome: BIOMES.length - 1 }
+  expect(sceneSvg(far, 3)).toContain('background:#7cb8ec')
+  expect(sceneSvg(far, 3)).not.toContain('class="glow"')
+  expect(sceneSvg(WORK, 3)).toContain('class="glow"')
+  // The far side's turf hangs overhead, in the terminal too.
+  expect(compose(far, momentAt('work', 0)).get(0, 1)).toBe(0x2f6e2c)
+})
+
 test('the pick the miner holds is the one the upgrades bought', () => {
   const strike = momentAt('work', (3 + 0.66) * SWING_MS)
   const looks = [0, 1, 2, 3, 4].map(pick => compose({ ...WORK, pick }, strike).data.join(','))

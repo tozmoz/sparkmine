@@ -1,7 +1,7 @@
 // The economy, as pure functions over plain data. No `$` in here, so the
 // rules can be tested on their own and shared by every drawing.
 
-import type { Counts, Delta, EventKind, Mine, ProducerId, Save, SourceKind, ToolKind, VeinKind } from '../types'
+import type { Counts, Delta, EventKind, IdleSpan, Mine, ProducerId, Save, SourceKind, ToolKind, VeinKind } from '../types'
 import {
   ACHIEVEMENT_BONUS,
   ACHIEVEMENTS,
@@ -13,6 +13,7 @@ import {
   REWARDS,
   SHAFT_DEPTH,
   STONE_BONUS,
+  STONE_POWER,
   STONE_UNIT,
   TOOL_BASE,
   UPGRADES,
@@ -50,6 +51,7 @@ export function fresh(runId: string): Save {
     gems: 0,
     veins: 0,
     events: {},
+    idleAt: 0,
     writes: {},
     chain: '',
   }
@@ -72,6 +74,7 @@ export function emptyDelta(runId: string): Delta {
     gems: 0,
     veins: 0,
     events: {},
+    idle: null,
   }
 }
 
@@ -141,9 +144,18 @@ export function normalize(raw: unknown): Save | null {
       ? [...new Set(r.upgrades.filter((id): id is string => typeof id === 'string' && UPGRADE_IDS.has(id)))]
       : [],
     ...stats(r),
+    idleAt: num(r.idleAt),
     writes: writes(r.writes),
     chain: typeof r.chain === 'string' ? r.chain : '',
   }
+}
+
+/** A delta's idle span read back; null where it has none, as one kept from before an update. */
+function idleSpan(value: unknown): IdleSpan | null {
+  if (value === null || typeof value !== 'object') return null
+  const r = value as Record<string, unknown>
+  const span = { amount: num(r.amount), from: num(r.from), to: num(r.to) }
+  return span.amount > 0 && span.to >= span.from ? span : null
 }
 
 /**
@@ -152,7 +164,7 @@ export function normalize(raw: unknown): Save | null {
  */
 export function normalizeMine(mine: Mine): Mine {
   const save = normalize(mine.save) ?? fresh('unloaded')
-  const delta = (d: Delta): Delta => ({ ...emptyDelta(save.runId), ...d, ...stats(d as unknown as Record<string, unknown>) })
+  const delta = (d: Delta): Delta => ({ ...emptyDelta(save.runId), ...d, ...stats(d as unknown as Record<string, unknown>), idle: idleSpan(d.idle) })
   return {
     save,
     pending: delta(mine.pending),
@@ -231,11 +243,19 @@ export type Multipliers = {
   veinSpeed: number
   idleMult: number
   events: number
+  /** From the upgrades: what each work event pays more, and how much longer a frenzy lasts. */
+  event: Record<EventKind, number>
+  frenzyTime: number
+  /** What a new shaft pays, from the layers: the far side pays more stones. */
+  stones: number
 }
+
+/** What ancient stones add to everything, as a share: each next one adds a little less. */
+export const stoneBonus = (stones: number): number => STONE_BONUS * Math.max(0, stones) ** STONE_POWER
 
 export function multipliers(save: Save): Multipliers {
   const m: Multipliers = {
-    global: (1 + STONE_BONUS * save.stones) * (1 + ACHIEVEMENT_BONUS * achievements(save).length),
+    global: (1 + stoneBonus(save.stones)) * (1 + ACHIEVEMENT_BONUS * achievements(save).length),
     click: 1,
     clickRate: 0,
     clickCrew: 0,
@@ -249,6 +269,9 @@ export function multipliers(save: Save): Multipliers {
     veinSpeed: 1,
     idleMult: 1,
     events: 1,
+    event: Object.fromEntries(EVENT_KINDS.map(k => [k, 1])) as Record<EventKind, number>,
+    frenzyTime: 1,
+    stones: 1,
   }
   // Every layer this run reached adds its perk.
   for (const biome of BIOMES.slice(0, biomeAt(depth(save)) + 1)) {
@@ -273,6 +296,15 @@ export function multipliers(save: Save): Multipliers {
         break
       case 'global':
         m.global *= perk.mult
+        break
+      case 'gemWorth':
+        m.gemWorth *= perk.mult
+        break
+      case 'tools':
+        for (const kind of TOOL_KINDS) m.tool[kind] *= perk.mult
+        break
+      case 'stones':
+        m.stones *= perk.mult
         break
     }
   }
@@ -312,6 +344,15 @@ export function multipliers(save: Save): Multipliers {
         break
       case 'global':
         m.global *= effect.mult
+        break
+      case 'events':
+        for (const kind of effect.events) m.event[kind] *= effect.mult
+        break
+      case 'veinSpeed':
+        m.veinSpeed *= effect.mult
+        break
+      case 'frenzy':
+        m.frenzyTime *= effect.mult
         break
     }
   }
@@ -363,7 +404,7 @@ export function roll(runId: string, label: string): number {
 /** How deep the mine is, in metres: a hundred more for every tenfold of this run's sparks. */
 export const depth = (save: Save): number => Math.round(100 * Math.log10(1 + save.lifetime / 1_000))
 
-/** The layer a depth is in, an index of BIOMES: 0 topsoil, 1 stone, ... 6 the core. */
+/** The layer a depth is in, an index of BIOMES: 0 topsoil, 1 stone, ... 9 the far side. */
 export function biomeAt(metres: number): number {
   let biome = 0
   BIOMES.forEach((b, i) => {
@@ -375,7 +416,7 @@ export function biomeAt(metres: number): number {
 /** What a work event pays: seconds of the crew's rate, and never less than its clicks. */
 export function eventValue(save: Save, kind: EventKind, m = multipliers(save)): number {
   const e = EVENTS[kind]
-  return Math.max(rate(save, m) * e.seconds, clickValue(save, m) * e.clicks) * m.events
+  return Math.max(rate(save, m) * e.seconds, clickValue(save, m) * e.clicks) * m.events * m.event[kind]
 }
 
 /** What a rich vein pays. */
@@ -523,6 +564,10 @@ function have(save: Save, unlock: Unlock): number {
       return crewSize(save)
     case 'earned':
       return save.allTime
+    case 'veins':
+      return save.veins
+    case 'events':
+      return unlock.events.reduce((sum, kind) => sum + (save.events[kind] ?? 0), 0)
   }
 }
 
@@ -571,7 +616,7 @@ export const deepestOf = (save: Save): number => Math.max(save.deepest, depth(sa
 
 /** How many ancient stones a new shaft would pay now: none until the run reaches SHAFT_DEPTH. */
 export function stoneGain(save: Save): number {
-  return depth(save) < SHAFT_DEPTH ? 0 : Math.floor(Math.cbrt(save.lifetime / STONE_UNIT))
+  return depth(save) < SHAFT_DEPTH ? 0 : Math.floor(Math.cbrt(save.lifetime / STONE_UNIT) * multipliers(save).stones)
 }
 
 /** How far a save has come toward a goal: the record or count it measures. */
@@ -686,6 +731,22 @@ export function earn(mine: Mine, amount: number, source: Source): Mine {
   }
 }
 
+/**
+ * The crew's pay for the moments from `from` to `to`. Its idle pace is the
+ * mine's: every open session mines it, so each one's counter runs smoothly, and
+ * the moments it spans go with it, so the save takes it once. What a session
+ * adds on top is its own: Claude's work lifting the crew to its full rate, a
+ * frenzy multiplying it.
+ */
+export function payCrew(mine: Mine, idle: number, more: number, from: number, to: number): Mine {
+  const paid = earn(mine, idle + more, { kind: 'crew' })
+  if (!(idle > 0) || !(to >= from)) return paid
+  const span = paid.pending.idle
+  const next: IdleSpan =
+    span === null ? { amount: idle, from, to } : { amount: span.amount + idle, from: Math.min(span.from, from), to: Math.max(span.to, to) }
+  return { ...paid, pending: { ...paid.pending, idle: next } }
+}
+
 /** Keeps the best turn yet, in the save and in what the next sync carries. */
 export function recordTurn(mine: Mine, earned: number): Mine {
   if (!(earned > mine.save.bestTurn)) return mine
@@ -756,7 +817,19 @@ export function openShaft(save: Save, runId: string): Save | null {
     gems: save.gems,
     veins: save.veins,
     events: save.events,
+    idleAt: save.idleAt,
   }
+}
+
+/**
+ * The part of a delta's idle pace the save holds already: another session
+ * mined the same moments and gave them first.
+ */
+function idlePaid(d: Delta, idleAt: number): number {
+  const span = d.idle
+  if (span === null || !(span.amount > 0) || idleAt <= span.from) return 0
+  if (idleAt >= span.to) return span.amount
+  return span.amount * ((idleAt - span.from) / (span.to - span.from))
 }
 
 /**
@@ -766,23 +839,28 @@ export function openShaft(save: Save, runId: string): Save | null {
  */
 export function applyDelta(stored: Save, d: Delta): Save {
   const sameRun = stored.runId === d.runId
+  // The idle pace of moments the save holds already is not paid again.
+  const paid = idlePaid(d, stored.idleAt)
+  const earned = Math.max(0, d.earned - paid)
+  const bySource = paid > 0 ? { ...d.bySource, crew: Math.max(0, (d.bySource.crew ?? 0) - paid) } : d.bySource
   return {
     ...stored,
-    sparks: sameRun ? Math.max(0, stored.sparks + d.sparks) : stored.sparks + d.earned,
-    lifetime: stored.lifetime + d.earned,
-    allTime: stored.allTime + d.earned,
+    sparks: sameRun ? Math.max(0, stored.sparks + d.sparks - paid) : stored.sparks + earned,
+    lifetime: stored.lifetime + earned,
+    allTime: stored.allTime + earned,
     clicks: stored.clicks + d.clicks,
     tools: stored.tools + d.tools,
     turns: stored.turns + d.turns,
     mined: add(stored.mined, d.mined),
     producers: sameRun ? add(stored.producers, d.producers) : stored.producers,
     upgrades: sameRun ? [...new Set([...stored.upgrades, ...d.upgrades])] : stored.upgrades,
-    bySource: add(stored.bySource, d.bySource),
+    bySource: add(stored.bySource, bySource),
     bestTurn: Math.max(stored.bestTurn, d.bestTurn),
     bestStreak: Math.max(stored.bestStreak, d.bestStreak),
     gems: stored.gems + d.gems,
     veins: stored.veins + d.veins,
     events: add(stored.events, d.events),
+    idleAt: Math.max(stored.idleAt, d.idle?.to ?? 0),
   }
 }
 
@@ -837,4 +915,5 @@ export const isEmptyDelta = (d: Delta): boolean =>
   d.bestStreak === 0 &&
   d.gems === 0 &&
   d.veins === 0 &&
-  Object.keys(d.events).length === 0
+  Object.keys(d.events).length === 0 &&
+  d.idle === null

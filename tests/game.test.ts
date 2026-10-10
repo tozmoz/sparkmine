@@ -25,16 +25,24 @@ describe('income', () => {
   test('producers, upgrades, ancient stones and achievements set the rate', () => {
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 } })))).toBe(0.5)
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, upgrades: ['apprentice-1'] })))).toBe(0.75)
-    expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, stones: 5 })))).toBe(0.75)
+    expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, stones: 1 })))).toBe(0.55)
     // First vein and Big turn: 2% each.
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, veins: 1, bestTurn: 2e6 })))).toBe(0.52)
+  })
+
+  test('each next ancient stone adds a little less: ten add half, a hundred two and a half times', () => {
+    expect(game.stoneBonus(0)).toBe(0)
+    expect(near(game.stoneBonus(1))).toBe(0.1)
+    expect(Math.round(game.stoneBonus(10) * 100)).toBe(50)
+    expect(Math.round(game.stoneBonus(100) * 100)).toBe(251)
   })
 
   test('picks multiply clicks, and muscle memory adds a share of the rate', () => {
     expect(game.clickValue(saveWith({}))).toBe(1)
     expect(game.clickValue(saveWith({ upgrades: ['pick-1', 'pick-2', 'grip-1'] }))).toBe(8)
-    expect(near(game.clickValue(saveWith({ producers: { cart: 100 }, upgrades: ['pick-4'] })))).toBe(1.5)
-    expect(near(game.clickValue(saveWith({ producers: { cart: 100 }, upgrades: ['pick-4', 'pick-5', 'strike-1'] })))).toBe(4)
+    // 100 carts mine 50/s: 2% of it, then 2 + 4 + 6%.
+    expect(near(game.clickValue(saveWith({ producers: { cart: 100 }, upgrades: ['pick-4'] })))).toBe(2)
+    expect(near(game.clickValue(saveWith({ producers: { cart: 100 }, upgrades: ['pick-4', 'pick-5', 'strike-1'] })))).toBe(7)
   })
 
   test("the foreman's upgrades grow each click with the crew, and the picks leave that share alone", () => {
@@ -129,9 +137,9 @@ describe('buying', () => {
     expect(new Set(effects).size).toBe(effects.length)
   })
 
-  test('there are 63 upgrades, each with its own id', () => {
-    expect(UPGRADES).toHaveLength(63)
-    expect(new Set(UPGRADES.map(u => u.id)).size).toBe(63)
+  test('there are 79 upgrades, each with its own id', () => {
+    expect(UPGRADES).toHaveLength(79)
+    expect(new Set(UPGRADES.map(u => u.id)).size).toBe(79)
   })
 
   test('a mine with a crew of 59 finds the new click upgrades on sale', () => {
@@ -154,10 +162,10 @@ describe('a new shaft', () => {
 
   test('starts the mine over, and the stones, records and counters stay', () => {
     const after = game.openShaft(
-      saveWith({ sparks: 5e6, lifetime: 125e6, allTime: 2e8, clicks: 40, producers: { cart: 9 }, upgrades: ['pick-1'], stones: 3, deepest: 450 }),
+      saveWith({ sparks: 5e6, lifetime: 125e6, allTime: 2e8, clicks: 40, producers: { cart: 9 }, upgrades: ['pick-1'], stones: 3, deepest: 450, idleAt: 9 }),
       'next',
     )
-    expect(after).toMatchObject({ runId: 'next', sparks: 0, lifetime: 0, allTime: 2e8, stones: 8, deepest: 510, shafts: 1, clicks: 40 })
+    expect(after).toMatchObject({ runId: 'next', sparks: 0, lifetime: 0, allTime: 2e8, stones: 8, deepest: 510, shafts: 1, clicks: 40, idleAt: 9 })
     expect(after?.producers).toEqual({})
     expect(after?.upgrades).toEqual([])
     expect(game.openShaft(saveWith({ lifetime: 50e6, allTime: 50e6 }), 'next')).toBeNull()
@@ -179,6 +187,11 @@ describe('layers', () => {
     expect(at(3.2e11)).toMatchObject({ idleMult: 1.25, events: 2 })
     // The core: 25% more, and six depth achievements add 12%.
     expect(near(at(1e13).global)).toBe(1.4)
+    // Past it: gems worth twice as much, tool calls mining twice as much, and on the far side half again the stones.
+    expect(at(1e14).gemWorth).toBe(20)
+    expect(at(1e15).tool).toMatchObject({ read: 2, edit: 2, bash: 2, mcp: 2 })
+    expect(game.stoneGain(saveWith({ lifetime: 1e15 }))).toBe(1_000)
+    expect(game.stoneGain(saveWith({ lifetime: 1e16 }))).toBe(3_231)
     expect(near(game.idleShare(saveWith({ lifetime: 1e10, upgrades: ['idle-1'] })))).toBe(0.125)
     expect(game.veinAfter('run', 1, 2).seconds).toBe(Math.round(game.veinAfter('run', 1).seconds / 2))
   })
@@ -186,9 +199,11 @@ describe('layers', () => {
 
 describe('the shared card', () => {
   test('leaves out what is not done yet, and names the core as a place', () => {
-    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/23', 'github.com/tozmoz/sparkmine'].join('\n'))
+    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/33', 'github.com/tozmoz/sparkmine'].join('\n'))
     const core = model.shareCard(saveWith({ lifetime: 1e13, allTime: 3e13, stones: 1, veins: 1 }))
-    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥', '✻ 30.00T mined · ◈ 1 stone · ★ 9/23', '1 vein'])
+    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥⬛⬛⬛', '✻ 30.00T mined · ◈ 1 stone · ★ 9/33', '1 vein'])
+    const far = model.shareCard(saveWith({ lifetime: 2e16, allTime: 2e16 }))
+    expect(far.split('\n').slice(0, 2)).toEqual(['⛏️ Sparkmine · 1,330 m on the far side', '🟫⬜🟪🟧🟦🟨🟥💎🟩🌏'])
   })
 })
 
@@ -199,6 +214,46 @@ describe('achievements', () => {
     expect(game.achievements(save).map(a => a.name)).toEqual(['First vein', 'Hard rock', 'Crystal caves', 'Into the magma', 'Big turn'])
     expect(game.nextAchievement(save)?.name).toBe('Vein hunter')
     expect(new Set(ACHIEVEMENTS.map(a => a.id)).size).toBe(ACHIEVEMENTS.length)
+  })
+})
+
+describe('the idle pace', () => {
+  // 100 carts mine 50/s, and Night shift keeps a tenth of it, 5/s, while Claude is idle.
+  const stored = saveWith({ producers: { cart: 100 }, upgrades: ['idle-1'], chain: 'c' })
+  const idleFor = (mine: Mine, from: number, to: number) => game.payCrew(mine, 5 * ((to - from) / 1000), 0, from, to)
+
+  test('is paid once, however many sessions mine it', () => {
+    // Two sessions idle through the same ten seconds, and sync one after the other.
+    const a = game.syncMine(stored, idleFor(mineWith(stored), 0, 10_000), 'a')
+    const b = idleFor(mineWith(stored), 0, 10_000)
+    expect(near(b.save.sparks)).toBe(50)
+    const synced = game.syncMine(a.save, b, 'b')
+    expect(near(synced.save.sparks)).toBe(50)
+    expect(near(synced.save.bySource.crew ?? 0)).toBe(50)
+    expect(synced.save.idleAt).toBe(10_000)
+    // Each counter ran on smoothly: the save holds just what each one showed.
+    expect(near(synced.mine.save.sparks)).toBe(50)
+    // Moments no other session reached yet are paid.
+    expect(near(game.syncMine(synced.save, idleFor(a.mine, 10_000, 14_000), 'a').save.sparks)).toBe(70)
+  })
+
+  test('a write another session wrote over does not pay it twice', () => {
+    // Both read the same save, and the other session's write lands last.
+    const first = game.syncMine(stored, idleFor(mineWith(stored), 0, 10_000), 'a')
+    const other = game.syncMine(stored, idleFor(mineWith(stored), 0, 12_000), 'b')
+    expect(near(other.save.sparks)).toBe(60)
+    // The first lays its lost write over again, but the other paid those moments already.
+    const again = game.syncMine(other.save, idleFor(first.mine, 10_000, 15_000), 'x')
+    expect(near(again.save.sparks)).toBe(75)
+    expect(again.save.idleAt).toBe(15_000)
+  })
+
+  test("Claude's work lifts the crew to its full rate on top of it, once", () => {
+    // One session idles while the other works: 50/s in all, as one session working alone.
+    const idle = game.syncMine(stored, idleFor(mineWith(stored), 0, 10_000), 'a')
+    const working = game.syncMine(idle.save, game.payCrew(mineWith(stored), 50, 450, 0, 10_000), 'b')
+    expect(near(working.save.sparks)).toBe(500)
+    expect(near(working.save.bySource.crew ?? 0)).toBe(500)
   })
 })
 
@@ -369,6 +424,18 @@ describe('the work behind the mine', () => {
     expect(near(game.eventValue(saveWith({ producers: { cart: 10 } }), 'longShift'))).toBe(450)
     expect(game.veinValue(saveWith({}))).toBe(30)
   })
+
+  test('the work upgrades double their own events once Claude has done enough of them', () => {
+    const ci = UPGRADES.find(u => u.id === 'ci-1')
+    if (ci === undefined) throw new Error('no CI pipeline')
+    expect(game.isUnlocked(saveWith({ events: { build: 20, lint: 4 } }), ci)).toBe(false)
+    expect(game.isUnlocked(saveWith({ events: { build: 20, lint: 5 } }), ci)).toBe(true)
+    expect(model.unlockText(ci)).toBe('after 25 passing builds and lints')
+    const crew = { producers: { cart: 10 }, upgrades: ['ci-1'] }
+    expect(near(game.eventValue(saveWith(crew), 'build'))).toBe(150)
+    expect(near(game.eventValue(saveWith(crew), 'lint'))).toBe(150)
+    expect(near(game.eventValue(saveWith(crew), 'tests'))).toBe(150)
+  })
 })
 
 describe('depth', () => {
@@ -377,7 +444,8 @@ describe('depth', () => {
     expect(game.depth(saveWith({ lifetime: 9_000 }))).toBe(100)
     expect(game.depth(saveWith({ lifetime: 999_000 }))).toBe(300)
     expect(game.depth(saveWith({ lifetime: 99_999_000 }))).toBe(500)
-    expect([0, 99, 100, 299, 300, 499, 500, 699, 700, 849, 850, 999, 1_000, 5_000].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
+    expect([0, 99, 100, 299, 300, 499, 500, 699, 700, 849, 850, 999, 1_000, 1_099].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
+    expect([1_100, 1_199, 1_200, 1_299, 1_300, 5_000].map(game.biomeAt)).toEqual([7, 7, 8, 8, 9, 9])
   })
 })
 
@@ -391,6 +459,16 @@ describe('veins', () => {
       else expect(seconds >= 300 && seconds < 600).toBe(true)
     }
     expect([...kinds].sort()).toEqual(['frenzy', 'rich'])
+  })
+
+  test('the divining rod brings them half again as often, and gold fever makes a frenzy last twice as long', () => {
+    const rod = game.multipliers(saveWith({ upgrades: ['vein-1'] }))
+    expect(rod.veinSpeed).toBe(1.5)
+    expect(game.veinAfter('run', 3, rod.veinSpeed).seconds).toBe(Math.round(game.veinAfter('run', 3).seconds / 1.5))
+    expect(game.multipliers(saveWith({ upgrades: ['vein-2'] })).frenzyTime).toBe(2)
+    const fever = UPGRADES.find(u => u.id === 'vein-2')
+    if (fever === undefined) throw new Error('no Gold fever')
+    expect(model.unlockText(fever)).toBe('after 25 veins caught')
   })
 })
 
@@ -417,6 +495,9 @@ describe('stats', () => {
     expect(game.normalizeMine(old).save).toMatchObject({ sparks: 5, bySource: {}, events: {} })
     expect(game.normalizeMine(old).pending).toMatchObject({ bySource: {}, gems: 0 })
     expect(game.normalizeMine(old)).toMatchObject({ writer: '', seq: 0, inflight: [] })
+    // Nothing of the idle pace is paid yet, and a delta kept from before an update carries none.
+    expect(game.normalize({ v: 1, runId: 'old' })?.idleAt).toBe(0)
+    expect(game.normalizeMine({ ...old, pending: { ...old.pending, idle: undefined } as never }).pending.idle).toBeNull()
     const many = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`w${i}`, i + 1]))
     expect(Object.keys(game.normalize({ v: 1, runId: 'x', writes: { ...many, bad: -1 } })?.writes ?? {})).toHaveLength(32)
   })
