@@ -1,7 +1,7 @@
 // The economy, as pure functions over plain data. No `$` in here, so the
 // rules can be tested on their own and shared by every drawing.
 
-import type { Counts, Delta, EventKind, FindId, IdleSpan, Mine, ProducerId, Save, SecretId, SourceKind, ToolKind, VeinKind } from '../types'
+import type { Counts, Delta, EventKind, FindId, IdleSpan, Mine, ProducerId, Save, SecretId, Season, SourceKind, ToolKind, VeinKind } from '../types'
 import {
   ACHIEVEMENT_BONUS,
   ACHIEVEMENTS,
@@ -859,6 +859,14 @@ export function isFridayAfternoon(ms: number): boolean {
 /** A turn that ended on another day than it began, where the person is. */
 export const crossesMidnight = (endMs: number, durationMs: number): boolean =>
   durationMs > 0 && new Date(endMs - durationMs).toDateString() !== new Date(endMs).toDateString()
+
+/** The season on the person's calendar: the last week of October, and December. */
+export function seasonOf(ms: number): Season | null {
+  const day = new Date(ms)
+  if (day.getMonth() === 9 && day.getDate() >= 24) return 'halloween'
+  if (day.getMonth() === 11) return 'winter'
+  return null
+}
 
 /** A commit that landed with "initial commit" in its command. */
 export const isInitialCommit = (o: ToolOutcome): boolean => o.committed && /initial commit/i.test(o.command ?? '')

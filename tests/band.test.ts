@@ -474,6 +474,27 @@ test('a pull request merged on a Friday after four, and an initial commit, are s
   expect(await secretsStored($, w)).toEqual(['friday-deploy', 'groundbreaking'])
 })
 
+/** The band's scene as a crew of one cart draws it on a day of the person's calendar. */
+async function sceneOn($: Engine, on: Parameters<typeof world>[0], date: Date): Promise<string> {
+  const w = world(on, { save: seeded({ producers: { cart: 1 } }) }, date.getTime())
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await w.clock.advance(200)
+  await ui.advance(POLL)
+  return String((await ui.find({ type: 'Svg' }))?.props.source)
+}
+
+test('the last week of October puts a pumpkin on the cart', async ($, on) => {
+  expect(await sceneOn($, on, new Date(2026, 9, 25, 12))).toContain('#4f8a2a')
+})
+
+test('December puts a Santa hat on the miner, and snow on the topsoil', async ($, on) => {
+  const scene = await sceneOn($, on, new Date(2026, 11, 5, 12))
+  expect(scene).toContain('#d03a2f')
+  expect(scene).toContain('#f4f8fb')
+})
+
 test('a build, a clean lint, a pull request opened and one merged each pay once a turn', async ($, on) => {
   world(on)
   await start($)

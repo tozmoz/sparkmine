@@ -252,6 +252,11 @@ describe('secrets', () => {
     expect(game.isInitialCommit({ ...commit, committed: false, command: 'git commit -m "Initial commit"' })).toBe(false)
   })
 
+  test('the mine dresses up the last week of October, and all December', () => {
+    const on = (month: number, day: number) => game.seasonOf(new Date(2026, month, day, 12).getTime())
+    expect([on(9, 23), on(9, 24), on(9, 31), on(10, 1), on(11, 1), on(11, 31), on(0, 1)]).toEqual([null, 'halloween', 'halloween', null, 'winter', 'winter', null])
+  })
+
   test('a secret is kept for good: through a sync, a new shaft and a save read back', () => {
     const found = game.findSecret(mineWith({ lifetime: 125e6 }), 'good-manners')
     expect(game.findSecret(found, 'good-manners')).toBe(found)

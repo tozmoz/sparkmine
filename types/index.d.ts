@@ -30,6 +30,9 @@ export type EventKind = 'tests' | 'fix' | 'build' | 'lint' | 'commit' | 'pr' | '
 /** A vein pays at once, starts a frenzy, or is a find: a secret of the layer it shows in. */
 export type VeinKind = 'rich' | 'frenzy' | 'find'
 
+/** A time of year the mine dresses up for, by the person's own calendar. */
+export type Season = 'halloween' | 'winter'
+
 /** What a layer hides in its rock, once for good. */
 export type FindId = 'fossil' | 'rubber-duck' | 'pharaoh'
 
@@ -215,6 +218,7 @@ export type Band = {
   flare: boolean
   /** A find showing on the rock, until it is caught or gone. */
   find: FindId | null
+  season: Season | null
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */

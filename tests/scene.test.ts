@@ -44,7 +44,18 @@ test('every scene fits the size an Svg may have', () => {
     for (const carts of [0, 6]) {
       for (let biome = 0; biome < BIOMES.length; biome += 1) {
         const plain: SceneSpec = { mode, carts, goblins: 1, pick: 4, biome }
-        const detailed: SceneSpec = { ...plain, bug: 'crawl', canary: true, gloves: true, warm: true, coffee: true, ...(mode === 'pause' ? { pose: 'facing' as const } : {}) }
+        const detailed: SceneSpec = {
+          ...plain,
+          bug: 'crawl',
+          canary: true,
+          gloves: true,
+          warm: true,
+          coffee: true,
+          flare: true,
+          find: 'rubber-duck',
+          season: biome % 2 === 0 ? 'winter' : 'halloween',
+          ...(mode === 'pause' ? { pose: 'facing' as const } : {}),
+        }
         for (const spec of [plain, detailed]) {
           const svg = sceneSvg(spec, 3)
           expect(svg.length).toBeLessThan(131_072)
@@ -88,7 +99,9 @@ test('the details add no frame for the terminal to paint', () => {
     for (let ms = 0; ms < LOOP_MS; ms += 10) seen.add(sceneCells(spec, momentAt('work', ms)))
     return seen.size
   }
-  expect(frames({ ...WORK, bug: 'crawl', canary: true, gloves: true, warm: true, coffee: true })).toBe(frames(WORK))
+  const rich: SceneSpec = { ...WORK, bug: 'crawl', canary: true, gloves: true, warm: true, coffee: true, flare: true, find: 'fossil', season: 'winter' }
+  expect(frames(rich)).toBe(frames(WORK))
+  expect(frames({ ...rich, season: 'halloween' })).toBe(frames(WORK))
 })
 
 test('the miner faces you while Claude asks, and sits down a while into its idle', () => {

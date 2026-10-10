@@ -9,7 +9,7 @@
 // pixels, so when the slide wraps around the picture is the same and the loop
 // never shows a seam.
 
-import type { FindId, Mode } from '../types'
+import type { FindId, Mode, Season } from '../types'
 
 export const W = 64
 export const H = 24
@@ -36,6 +36,8 @@ export type SceneSpec = {
   flare?: boolean
   /** A find on the rock, there to catch. */
   find?: FindId
+  /** A pumpkin on the cart the last week of October; a Santa hat, and snow on the topsoil, in December. */
+  season?: Season
   /**
    * How the miner stands still: facing you while Claude asks, tipping his
    * helmet when thanked, with a coffee a while into Claude's idle, asleep after a long one.
@@ -489,6 +491,11 @@ const FIND_SPRITES: Readonly<Record<FindId, readonly string[]>> = {
   pharaoh: ['.ABBA.', 'ABAABA', 'BAKAKB', 'BAAAAB', '.AAAA.', '..AA..'],
 }
 const FIND_AT = [55, 9] as const
+// A jack-o'-lantern, its face lit from within.
+const PUMPKIN = ['..vv..', '.OOOO.', 'OfOOfO', 'OOOOOO', 'OffffO', '.OOOO.'] as const
+const PUMPKIN_AT = [13, 5] as const
+const SANTA_RED = 0xd03a2f
+const SNOW = 0xf4f8fb
 const ZSMALL = ['LLL', '.L.', 'LLL'] as const
 
 const DETAIL_PALETTE: Readonly<Record<string, number>> = {
@@ -506,6 +513,8 @@ const DETAIL_PALETTE: Readonly<Record<string, number>> = {
   z: 0xb4b2a9,
   b: 0xeadfc4,
   d: 0xb8a888,
+  f: 0xffd36e,
+  v: 0x4f8a2a,
   A: GOLD[0],
   B: 0x3a6ea5,
 }
@@ -527,6 +536,7 @@ function fixedDetails(px: Pixels, spec: SceneSpec): void {
   if (spec.coffee === true && spec.pose === undefined) px.sprite(MUG_STEAMING, DETAIL_PALETTE, MUG_AT[0], MUG_AT[1])
   if (spec.bug === 'splat') px.sprite(SPLAT, DETAIL_PALETTE, SPLAT_AT[0], SPLAT_AT[1])
   if (spec.find !== undefined) px.sprite(FIND_SPRITES[spec.find], DETAIL_PALETTE, FIND_AT[0], FIND_AT[1])
+  if (spec.season === 'halloween' && spec.carts > 0) px.sprite(PUMPKIN, DETAIL_PALETTE, PUMPKIN_AT[0], PUMPKIN_AT[1])
 }
 
 const GOBLIN_PALETTE: Readonly<Record<string, number>> = {
@@ -754,18 +764,29 @@ const GLOWS: Readonly<Record<Glow, { color: number; near: number; far: number; i
 
 const glowOf = (spec: SceneSpec): Glow => (spec.flare === true ? 'flare' : spec.warm === true ? 'warm' : 'plain')
 
-/** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once a layer and glow. */
-function world(withGlow: boolean, biome: number, glow: Glow = 'plain'): { tunnel: Pixels; rock: Pixels } {
-  const key = `${biome}:${withGlow}:${glow}`
+/** In December snow lies on the topsoil: on its ceiling, its spoil heaps and the rock ahead. */
+const isSnowy = (spec: SceneSpec): boolean => spec.season === 'winter' && spec.biome === 0
+
+/** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once a layer, glow and snow. */
+function world(withGlow: boolean, biome: number, glow: Glow = 'plain', snowy = false): { tunnel: Pixels; rock: Pixels } {
+  const key = `${biome}:${withGlow}:${glow}:${snowy}`
   const hit = worlds.get(key)
   if (hit !== undefined) return hit
-  const built = buildWorld(withGlow, strataOf(biome), GLOWS[glow])
+  const built = buildWorld(withGlow, strataOf(biome), GLOWS[glow], snowy)
   worlds.set(key, built)
   return built
 }
 
-function buildWorld(withGlow: boolean, st: Strata, glow: (typeof GLOWS)[Glow]): { tunnel: Pixels; rock: Pixels } {
+function buildWorld(withGlow: boolean, st: Strata, glow: (typeof GLOWS)[Glow], snowy: boolean): { tunnel: Pixels; rock: Pixels } {
   const tunnel = strip(tunnelTile(st), STRIP)
+  const rock = strip(rockTile(st), STRIP)
+  if (snowy) {
+    for (let x = 0; x < STRIP; x += 1) {
+      if (x % 3 !== 1) tunnel.set(x, 0, SNOW)
+      if (x % 2 === 0) rock.set(x, 0, SNOW)
+      for (let y = 0; y < H; y += 1) if (tunnel.get(x, y) === st.pileTop) tunnel.set(x, y, SNOW)
+    }
+  }
   if (withGlow && st.sky === undefined) {
     for (const lx of lanterns) {
       for (let y = 0; y < H; y += 1) {
@@ -777,7 +798,7 @@ function buildWorld(withGlow: boolean, st: Strata, glow: (typeof GLOWS)[Glow]): 
       }
     }
   }
-  return { tunnel, rock: strip(rockTile(st), STRIP) }
+  return { tunnel, rock }
 }
 
 /** The face's dark edge: the line between the tunnel and the rock. */
@@ -855,8 +876,9 @@ function pickaxe(px: Pixels, hx: number, hy: number, angle: number, look: PickLo
 
 function miner(px: Pixels, frame: Frame, look: PickLook, spec?: SceneSpec): void {
   const hand = spec?.gloves === true ? GLOVE : SKIN
-  // His hands, a shut eye, an unlit lamp, and the mug he holds: the one by the cart.
-  const palette = { ...MINER_PALETTE, H: hand, e: 0xc89a6a, l: 0x8a8460, W: MUG_RED }
+  // His hands, a shut eye, an unlit lamp, and the mug he holds: the one by the cart. In December his helmet is a Santa hat.
+  const hat: Readonly<Record<string, number>> = spec?.season === 'winter' ? { Y: SANTA_RED, y: SNOW } : {}
+  const palette = { ...MINER_PALETTE, H: hand, e: 0xc89a6a, l: 0x8a8460, W: MUG_RED, ...hat }
   if (spec?.pose === 'facing' || spec?.pose === 'tip') {
     // The pick stands head down beside him while he looks out at you.
     pickaxe(px, SX + 13, SY + 10, 90, look)
@@ -881,7 +903,9 @@ function miner(px: Pixels, frame: Frame, look: PickLook, spec?: SceneSpec): void
   const hx = SX + p.hx
   const hy = SY + p.hy + frame.bob
   pickaxe(px, hx, hy, p.angle, look)
-  px.sprite(MINER, MINER_PALETTE, SX, SY + frame.bob)
+  px.sprite(MINER, palette, SX, SY + frame.bob)
+  // The hat's white bobble hangs at its back.
+  if (spec?.season === 'winter') px.set(SX + 3, SY + 1 + frame.bob, SNOW)
   px.line(SX + 9, SY + 11 + frame.bob, hx, hy, SHIRT)
   px.set(hx, hy, hand)
   if (spec?.gloves === true) {
@@ -956,7 +980,7 @@ function windowKeyframes(name: string, from: number, to: number): string {
  */
 export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string {
   const st = strataOf(spec.biome)
-  const { tunnel, rock } = world(false, spec.biome, glowOf(spec))
+  const { tunnel, rock } = world(false, spec.biome, glowOf(spec), isSnowy(spec))
   const look = lookOf(spec.pick)
   const { frames, ms } = framesFor(spec.mode)
   const isDigging = spec.mode === 'work'
@@ -1085,7 +1109,7 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
 /** The scene at one moment, as pixels: what the terminal paints and the tests read. */
 export function compose(spec: SceneSpec, m: Moment): Pixels {
   const st = strataOf(spec.biome)
-  const { tunnel, rock } = world(true, spec.biome, glowOf(spec))
+  const { tunnel, rock } = world(true, spec.biome, glowOf(spec), isSnowy(spec))
   const px = new Pixels()
   for (let y = 0; y < H; y += 1) {
     for (let x = 0; x < W; x += 1) px.set(x, y, (x >= faceAt(y) ? rock : tunnel).get(x + m.scroll, y))

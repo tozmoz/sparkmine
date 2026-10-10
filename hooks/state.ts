@@ -101,6 +101,7 @@ export const INITIAL_BAND: Band = {
   tip: false,
   flare: false,
   find: null,
+  season: null,
 }
 
 /** A shop amount as this version reads it: ×100 is gone, and Max buys a lot in its place. */
@@ -164,6 +165,7 @@ export async function refresh(io: Io, now?: number, force = false): Promise<Band
       tip: at < view.tipUntil,
       flare: view.flare && view.isTurn,
       find: view.vein?.kind === 'find' && at <= view.vein.until ? (view.vein.find ?? null) : null,
+      season: game.seasonOf(at),
       carts: Math.min(6, game.owned(mine.save, 'cart')),
       goblins: Math.min(1, game.owned(mine.save, 'goblin')),
       pick: game.pickTier(mine.save),
