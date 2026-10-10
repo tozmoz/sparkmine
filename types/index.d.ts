@@ -184,6 +184,10 @@ export type View = {
   tipUntil: number
   /** Asked to ultrathink: the lantern flares until the turn ends. */
   flare: boolean
+  /** When a pull request last merged: confetti for a moment. */
+  confettiAt: number
+  /** Now and then a turn's spinner says something rarer than the mine's word. */
+  word: string | null
 }
 
 /** How long Claude has been idle shows on the miner: a coffee after a while, asleep after a long while. */
@@ -219,6 +223,9 @@ export type Band = {
   /** A find showing on the rock, until it is caught or gone. */
   find: FindId | null
   season: Season | null
+  confetti: boolean
+  /** This turn's rare spinner word, if it has one. */
+  word: string | null
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */

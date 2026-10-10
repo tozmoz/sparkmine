@@ -3,7 +3,7 @@
 // store sync and the actions the hooks and buttons call.
 
 import type { Amount, Band, EventKind, Extras, FindId, Mine, Mode, Nap, ProducerId, Save, SecretId, ShopModel, VeinKind, View } from '../types'
-import { ACHIEVEMENT_BONUS, EVENTS, FINDS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, TIP_MS, VEIN, type Achievement } from './data.ts'
+import { ACHIEVEMENT_BONUS, CONFETTI_MS, EVENTS, FINDS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, TIP_MS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
 import * as model from './model.ts'
@@ -82,6 +82,8 @@ export const INITIAL_VIEW: View = {
   restSince: 0,
   tipUntil: 0,
   flare: false,
+  confettiAt: 0,
+  word: null,
 }
 
 export const INITIAL_BAND: Band = {
@@ -102,6 +104,8 @@ export const INITIAL_BAND: Band = {
   flare: false,
   find: null,
   season: null,
+  confetti: false,
+  word: null,
 }
 
 /** A shop amount as this version reads it: ×100 is gone, and Max buys a lot in its place. */
@@ -166,6 +170,8 @@ export async function refresh(io: Io, now?: number, force = false): Promise<Band
       flare: view.flare && view.isTurn,
       find: view.vein?.kind === 'find' && at <= view.vein.until ? (view.vein.find ?? null) : null,
       season: game.seasonOf(at),
+      confetti: view.confettiAt > 0 && at - view.confettiAt < CONFETTI_MS,
+      word: view.word,
       carts: Math.min(6, game.owned(mine.save, 'cart')),
       goblins: Math.min(1, game.owned(mine.save, 'goblin')),
       pick: game.pickTier(mine.save),
@@ -437,6 +443,7 @@ export async function minedTool(io: Io, outcome: game.ToolOutcome): Promise<numb
   const events = game.workEvents(outcome)
   if (squashed.yes) events.push('fix')
   if (events.length > 0) await reward(io, events, now)
+  if (events.includes('merge')) await io.view(view => ({ ...view, confettiAt: now }))
   await findSecrets(io, [
     ...(game.isInitialCommit(outcome) ? (['groundbreaking'] as const) : []),
     ...(events.includes('merge') && game.isFridayAfternoon(now) ? (['friday-deploy'] as const) : []),
@@ -485,10 +492,11 @@ export async function setWaiting(io: Io, id: string, isWaiting: boolean): Promis
   if (view.waiting.includes(id) === isWaiting) await refresh(io)
 }
 
-export async function startTurn(io: Io): Promise<void> {
+export async function startTurn(io: Io, turnId = ''): Promise<void> {
   await ensureLoaded(io)
   const mine = await io.readMine()
-  await io.view(view => ({ ...view, isTurn: true, turnStart: mine.save.lifetime, turnEvents: [], turnTools: 0 }))
+  const word = game.rareWord(turnId)
+  await io.view(view => ({ ...view, isTurn: true, turnStart: mine.save.lifetime, turnEvents: [], turnTools: 0, word }))
   await refresh(io)
 }
 
@@ -541,6 +549,7 @@ export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer'
     lastTurn: earned,
     restSince: endedAt,
     flare: false,
+    word: null,
   }))
   await refresh(io)
   void sync(io).catch(() => undefined)

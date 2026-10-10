@@ -52,6 +52,7 @@ test('every scene fits the size an Svg may have', () => {
           warm: true,
           coffee: true,
           flare: true,
+          confetti: true,
           find: 'rubber-duck',
           season: biome % 2 === 0 ? 'winter' : 'halloween',
           ...(mode === 'pause' ? { pose: 'facing' as const } : {}),
@@ -99,7 +100,7 @@ test('the details add no frame for the terminal to paint', () => {
     for (let ms = 0; ms < LOOP_MS; ms += 10) seen.add(sceneCells(spec, momentAt('work', ms)))
     return seen.size
   }
-  const rich: SceneSpec = { ...WORK, bug: 'crawl', canary: true, gloves: true, warm: true, coffee: true, flare: true, find: 'fossil', season: 'winter' }
+  const rich: SceneSpec = { ...WORK, bug: 'crawl', canary: true, gloves: true, warm: true, coffee: true, flare: true, find: 'fossil', season: 'winter', confetti: true }
   expect(frames(rich)).toBe(frames(WORK))
   expect(frames({ ...rich, season: 'halloween' })).toBe(frames(WORK))
 })

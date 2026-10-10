@@ -372,6 +372,13 @@ export const FINDS: Readonly<Record<FindId, { biome: number; name: string; label
 /** The chance a vein in such a layer is its find, while it is not found. */
 export const FIND_CHANCE = 0.2
 
+/** How long confetti falls for a merged pull request. */
+export const CONFETTI_MS = 4_000
+
+/** Words the spinner says now and then in place of the mine's own, one turn in RARE_WORD_CHANCE. */
+export const RARE_WORDS: readonly string[] = ['Spelunking', 'Panning for gold', 'Dowsing']
+export const RARE_WORD_CHANCE = 1 / 12
+
 /** Spinner words, unlocked by all-time sparks. */
 export const REWARDS: readonly { at: number; word: string }[] = [
   { at: 1_000, word: 'Mining' },

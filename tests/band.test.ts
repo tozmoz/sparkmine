@@ -4,7 +4,7 @@ import type { Engine } from 'claude-code/testing'
 import * as game from '../hooks/game.ts'
 import { sceneSvg } from '../hooks/scene.ts'
 import * as state from '../hooks/state.ts'
-import { TIP_MS } from '../hooks/data.ts'
+import { CONFETTI_MS, TIP_MS } from '../hooks/data.ts'
 import { band, command, committed, endSession, failed, finishTurn, pane, prompt, seeded, start, wait, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
@@ -12,6 +12,9 @@ const POLL = 150
 
 /** Lets the vein poll once: it asks less often than the HUD. */
 const VEIN_POLL = 300
+
+/** The confetti's sky blue: no rock, ore or detail has it. */
+const CONFETTI_BLUE = '#6bcbff'
 
 /** The fossil's bone, on the stone. */
 const FOSSIL_BONE = '#eadfc4'
@@ -296,6 +299,29 @@ test('/mine hide and /mine show', async ($, on) => {
   expect(await ui.find({ in: 'shopbtn', key: 'shop' })).toBeDefined()
 })
 
+test('now and then a turn has a rarer spinner word', async ($, on) => {
+  world(on, { save: seeded({ allTime: 2_000 }) })
+  const seen: string[] = []
+  on('ui.render', { component: 'Spinner' }, ($, e) => {
+    seen.push(e.props.word)
+    const { Text } = $.ui.resolve(e)
+    return Text({ children: [e.props.word] })
+  })
+  let turnId = 'turn-0'
+  for (let i = 0; game.rareWord(turnId) === null; i += 1) turnId = `turn-${i}`
+  const word = game.rareWord(turnId)
+  await start($)
+  const spinner = { plugin: 'sparkmine', component: 'Spinner' as const, surface: 'terminal' as const, props: { word: 'Sauteing', message: null, suffix: '…', mode: 'thinking' as const } }
+  await $.turn.start({ text: 'go', turnId })
+  await $.ui.mount(spinner)
+  expect(seen).toEqual([word])
+  // The turn over, the spinner says the mine's own word again.
+  await finishTurn($, turnId)
+  await $.ui.mount(spinner)
+  expect(seen.at(-1)).toBe('Mining')
+  expect(['Spelunking', 'Panning for gold', 'Dowsing']).toContain(word)
+})
+
 test('the spinner takes the word the mine unlocked', async ($, on) => {
   world(on, { save: seeded({ allTime: 2_000 }) })
   const seen: string[] = []
@@ -493,6 +519,33 @@ test('December puts a Santa hat on the miner, and snow on the topsoil', async ($
   const scene = await sceneOn($, on, new Date(2026, 11, 5, 12))
   expect(scene).toContain('#d03a2f')
   expect(scene).toContain('#f4f8fb')
+})
+
+test('a merged pull request rains confetti a moment', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'ship it', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7 --squash' })
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(CONFETTI_BLUE)
+  await w.clock.advance(CONFETTI_MS)
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).not.toContain(CONFETTI_BLUE)
+})
+
+test('the counter shines a moment as it passes 1K, 1M, 1B', async ($, on) => {
+  world(on, { save: seeded({ sparks: 999, lifetime: 999, allTime: 999 }) })
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  await ui.advance(POLL)
+  expect((await ui.find({ in: 'hud', type: 'Text', text: '✻ 999' }))?.props.color).toBe('claude')
+  await $.tool.call({ tool: 'Bash', command: 'ls' })
+  await ui.advance(POLL)
+  expect(['#ffe08a', '#f2b632']).toContain((await ui.find({ in: 'hud', type: 'Text', text: '✻ 1,001' }))?.props.color)
+  await ui.advance(1_000)
+  expect((await ui.find({ in: 'hud', type: 'Text', text: '✻ 1,001' }))?.props.color).toBe('claude')
 })
 
 test('a build, a clean lint, a pull request opened and one merged each pay once a turn', async ($, on) => {

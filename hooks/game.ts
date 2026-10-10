@@ -9,6 +9,8 @@ import {
   EVENTS,
   FIND_CHANCE,
   FINDS,
+  RARE_WORD_CHANCE,
+  RARE_WORDS,
   GEM_WORTH,
   GROWTH,
   PRODUCERS,
@@ -859,6 +861,12 @@ export function isFridayAfternoon(ms: number): boolean {
 /** A turn that ended on another day than it began, where the person is. */
 export const crossesMidnight = (endMs: number, durationMs: number): boolean =>
   durationMs > 0 && new Date(endMs - durationMs).toDateString() !== new Date(endMs).toDateString()
+
+/** The rarer word a turn's spinner says, if it is one of the few: the turn decides. */
+export function rareWord(turnId: string): string | null {
+  if (roll(turnId, 'spinner') >= RARE_WORD_CHANCE) return null
+  return RARE_WORDS[Math.floor(roll(turnId, 'spinner-word') * RARE_WORDS.length)] ?? null
+}
 
 /** The season on the person's calendar: the last week of October, and December. */
 export function seasonOf(ms: number): Season | null {

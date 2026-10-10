@@ -38,6 +38,8 @@ export type SceneSpec = {
   find?: FindId
   /** A pumpkin on the cart the last week of October; a Santa hat, and snow on the topsoil, in December. */
   season?: Season
+  /** A pull request merged: confetti falls for a moment. */
+  confetti?: boolean
   /**
    * How the miner stands still: facing you while Claude asks, tipping his
    * helmet when thanked, with a coffee a while into Claude's idle, asleep after a long one.
@@ -496,6 +498,19 @@ const PUMPKIN = ['..vv..', '.OOOO.', 'OfOOfO', 'OOOOOO', 'OffffO', '.OOOO.'] as 
 const PUMPKIN_AT = [13, 5] as const
 const SANTA_RED = 0xd03a2f
 const SNOW = 0xf4f8fb
+
+/** Confetti for a merged pull request: where each bit starts, and its color. */
+const CONFETTI_COLORS = [0xff6b6b, 0xffd93d, 0x6bcbff, 0xc77dff, 0x7dff9a] as const
+const CONFETTI: readonly (readonly [number, number])[] = [
+  [3, 3], [9, 6], [15, 2], [21, 8], [27, 4], [12, 11], [24, 13], [6, 15], [18, 16], [30, 10], [36, 2], [42, 7], [45, 13], [39, 15], [33, 5], [48, 3],
+]
+/** How far the confetti falls each step, and in how many steps it loops. */
+const CONFETTI_FALL = 2
+const CONFETTI_STEPS = 4
+
+function confetti(px: Pixels, step: number): void {
+  CONFETTI.forEach(([x, y], i) => px.set(x, y + step * CONFETTI_FALL, CONFETTI_COLORS[i % CONFETTI_COLORS.length] ?? GOLD[0]))
+}
 const ZSMALL = ['LLL', '.L.', 'LLL'] as const
 
 const DETAIL_PALETTE: Readonly<Record<string, number>> = {
@@ -1053,6 +1068,17 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
       body.push(paths(bug))
     }
   }
+  if (spec.confetti === true) {
+    const bits = new Pixels()
+    confetti(bits, 0)
+    if (isDigging) {
+      const steps = Array.from({ length: CONFETTI_STEPS - 1 }, (_, k) => [(k + 1) / CONFETTI_STEPS, `translate(0px,${(k + 1) * CONFETTI_FALL}px)`] as const)
+      css.push(`.cf{animation:cf ${SWING_MS}ms step-end infinite}`, stepKeyframes('cf', 'transform', 'translate(0px,0px)', steps))
+      body.push(`<g class="cf">${paths(bits)}</g>`)
+    } else {
+      body.push(paths(bits))
+    }
+  }
   if (spec.canary === true && isDigging) {
     const note = new Pixels()
     note.sprite(NOTE, DETAIL_PALETTE, 29, 6)
@@ -1123,6 +1149,7 @@ export function compose(spec: SceneSpec, m: Moment): Pixels {
     px.sprite(BUG, DETAIL_PALETTE, bx, by)
   }
   if (spec.canary === true && spec.mode === 'work' && (m.scroll === 6 || m.scroll === 22)) px.sprite(NOTE, DETAIL_PALETTE, 29, 6)
+  if (spec.confetti === true) confetti(px, spec.mode === 'work' ? (m.scroll / CUT) % CONFETTI_STEPS : 0)
   const look = lookOf(spec.pick)
   const { frames } = framesFor(spec.mode)
   const frame = frames[m.frame] ?? frames[0]

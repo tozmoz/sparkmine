@@ -53,7 +53,7 @@ const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 const flag = (on: boolean | undefined) => (on === true ? 1 : 0)
 const specKey = (spec: SceneSpec) =>
   `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}:${spec.bug ?? ''}:` +
-  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}${flag(spec.flare)}:${spec.pose ?? ''}:${spec.find ?? ''}:${spec.season ?? ''}`
+  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}${flag(spec.flare)}${flag(spec.confetti)}:${spec.pose ?? ''}:${spec.find ?? ''}:${spec.season ?? ''}`
 const svgs = new Map<string, string>()
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
@@ -84,6 +84,7 @@ function bandSpec(band: Band, mode: Band['mode'], pose?: SceneSpec['pose']): Sce
     ...(band.flare ? { flare: true } : {}),
     ...(band.find === null ? {} : { find: band.find }),
     ...(band.season === null ? {} : { season: band.season }),
+    ...(band.confetti ? { confetti: true } : {}),
     ...(pose === undefined ? {} : { pose }),
   }
 }
@@ -257,7 +258,7 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {
-    if (io !== null) await state.startTurn(io)
+    if (io !== null) await state.startTurn(io, e.turnId)
     return next(e)
   })
 
@@ -516,8 +517,10 @@ export const register: Register = on => {
   // The spinner says what the mine has unlocked. On the desktop its word names
   // the step Claude is on, so only the plain "Working" changes there.
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
-    const word = await read($, REWARD)
-    if (word === null || state.fillBand(await read($, BAND)).isStopped) return next(e)
+    // Now and then a turn has a rarer word than the mine's own.
+    const band = state.fillBand(await read($, BAND))
+    const word = band.word ?? (await read($, REWARD))
+    if (word === null || band.isStopped) return next(e)
     if (e.surface === 'desktop' && e.props.word !== 'Working') return next(e)
     return next({ ...e, props: { ...e.props, word } })
   })
