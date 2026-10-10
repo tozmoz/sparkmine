@@ -124,11 +124,11 @@ const otherUpgrades: Upgrade[] = [
   { id: 'pick-2', name: 'Steel pick', blurb: 'Clicks mine twice as much again.', cost: 500, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 100 } },
   { id: 'grip-1', name: 'Work gloves', blurb: 'Clicks mine twice as much again.', cost: 3_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 250 } },
   { id: 'pick-3', name: 'Diamond pick', blurb: 'Clicks mine twice as much again.', cost: 10_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 500 } },
-  { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 1% of your rate.', cost: 50_000, effect: { kind: 'clickRate', pct: 1 }, unlock: { kind: 'clicks', n: 1_000 } },
-  { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 2% of your rate.', cost: 5_000_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 3_000 } },
+  { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 2% of your rate.', cost: 50_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 1_000 } },
+  { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 4% of your rate.', cost: 5_000_000, effect: { kind: 'clickRate', pct: 4 }, unlock: { kind: 'clicks', n: 3_000 } },
   { id: 'pick-6', name: 'Obsidian edge', blurb: 'Clicks mine twice as much again.', cost: 500_000_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 10_000 } },
-  { id: 'strike-1', name: 'Seismic tap', blurb: 'Each click mines another 3% of your rate.', cost: 50_000_000, effect: { kind: 'clickRate', pct: 3 }, unlock: { kind: 'clicks', n: 6_000 } },
-  { id: 'strike-2', name: 'Fault line', blurb: 'Each click mines another 5% of your rate.', cost: 10_000_000_000, effect: { kind: 'clickRate', pct: 5 }, unlock: { kind: 'clicks', n: 15_000 } },
+  { id: 'strike-1', name: 'Seismic tap', blurb: 'Each click mines another 6% of your rate.', cost: 50_000_000, effect: { kind: 'clickRate', pct: 6 }, unlock: { kind: 'clicks', n: 6_000 } },
+  { id: 'strike-2', name: 'Fault line', blurb: 'Each click mines another 10% of your rate.', cost: 10_000_000_000, effect: { kind: 'clickRate', pct: 10 }, unlock: { kind: 'clicks', n: 15_000 } },
 
   // The crew cheers you on: clicks grow with every producer owned.
   { id: 'foreman-1', name: "Foreman's whistle", blurb: 'Each click also mines 0.2 for every producer you own.', cost: 10_000, effect: { kind: 'clickCrew', per: 0.2 }, unlock: { kind: 'crew', n: 25 } },
@@ -179,8 +179,13 @@ function inLines(list: Upgrade[]): Upgrade[] {
 
 export const UPGRADES: readonly Upgrade[] = inLines([...otherUpgrades, ...producerUpgrades])
 
-/** Each ancient stone adds this share to everything the mine earns, for good. */
+/**
+ * Ancient stones add to everything the mine earns, for good: the first this
+ * share, and each next one a little less, as their number to STONE_POWER. Ten
+ * add 50% and a hundred 251%, so a late run still pays, but slower.
+ */
 export const STONE_BONUS = 0.1
+export const STONE_POWER = 0.7
 /** A new shaft pays the cube root of the run's sparks over this, in ancient stones. */
 export const STONE_UNIT = 1_000_000
 /** How deep a run must reach before a new shaft can be opened, in metres: the magma. */
@@ -210,7 +215,7 @@ export const LONG_SHIFT_MS = 5 * 60_000
 
 /** Veins: how long one shows, the seconds of work before one shows, and what one pays. */
 export const VEIN = {
-  showMs: 10_000,
+  showMs: 20_000,
   first: { min: 90, spread: 90 },
   next: { min: 300, spread: 300 },
   richSeconds: 120,

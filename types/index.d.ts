@@ -59,6 +59,12 @@ export type Save = {
   veins: number
   events: Counts<EventKind>
   /**
+   * The crew's idle pace is the mine's, not a session's: every open session
+   * mines it, and the save holds it up to this moment. A session adds only
+   * what came after, so it is paid once however many sessions are open.
+   */
+  idleAt: number
+  /**
    * The number of each session's last write this save holds, newest last. A
    * session whose write is missing knows another wrote over it.
    */
@@ -69,6 +75,9 @@ export type Save = {
    */
   chain: string
 }
+
+/** Sparks of the crew's idle pace a session mined, and the moments they span. */
+export type IdleSpan = { amount: number; from: number; to: number }
 
 /** What this session changed since it last synced with the store. */
 export type Delta = {
@@ -87,6 +96,11 @@ export type Delta = {
   gems: number
   veins: number
   events: Counts<EventKind>
+  /**
+   * The idle pace this session mined since it last synced. The save takes
+   * only the part of it that no other session gave it yet: see Save `idleAt`.
+   */
+  idle: IdleSpan | null
 }
 
 export type Mine = {
@@ -280,9 +294,10 @@ export type ShopModel = {
   nextAchievement: { name: string; text: string } | null
   /**
    * The new shaft, once the run is deep enough to think of one: the stones it
-   * pays now, none until SHAFT_DEPTH. Its depth lives in the live counter.
+   * pays now, none until SHAFT_DEPTH, and what all the stones would add to
+   * everything then, in percent. Its depth lives in the live counter.
    */
-  shaft: { gain: number; at: number } | null
+  shaft: { gain: number; at: number; pct: number } | null
 }
 
 declare module 'claude-code' {

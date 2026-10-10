@@ -49,7 +49,7 @@ claude plugin update sparkmine@sparkmine
   (tests that failed, then pass), a build that passes, a clean lint, a commit,
   a pull request opened or merged, and a turn longer than five minutes. Every
   third good turn in a row pays a streak.
-- **Veins:** now and then a gold vein shows beside the Shop sign for ten
+- **Veins:** now and then a gold vein shows beside the Shop sign for twenty
   seconds. Catch it for two minutes of income, or a ×5 frenzy for thirty.
 - **Depth:** the mine goes a hundred metres deeper with every tenfold of
   sparks, through seven layers. Each layer you reach adds its perk for the
@@ -58,13 +58,15 @@ claude plugin update sparkmine@sparkmine
   ![The seven layers, where each starts and what it adds](docs/layers.png)
 
 - **New shaft:** from 500 m down, open a new shaft in the shop to start over
-  for ◈ ancient stones. Each adds 10% to everything for good, and a deeper run
-  pays more of them.
+  for ◈ ancient stones. They add to everything for good, each a little less
+  than the one before: 10 stones add 50%, 100 add 251%. A deeper run pays more
+  of them.
 - **Achievements:** 23 badges for records such as your first vein, 100
   commits, a ten-turn streak or reaching the magma. Each adds 2% to everything, and they stay
   through new shafts.
 
-All your sessions share one save, so they mine into the same mine.
+All your sessions share one save, so they mine into the same mine. The crew's
+idle pace is paid once, however many sessions are open.
 
 | Command | What it does |
 | :- | :- |

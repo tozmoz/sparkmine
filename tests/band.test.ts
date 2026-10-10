@@ -438,7 +438,11 @@ test('a vein not caught in time goes', async ($, on) => {
   await wait(w, game.veinAfter(runId, 0).seconds + 1)
   await ui.advance(VEIN_POLL)
   expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeDefined()
-  await w.clock.advance(11_000)
+  // It shows for twenty seconds.
+  await w.clock.advance(15_000)
+  await ui.advance(VEIN_POLL)
+  expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeDefined()
+  await w.clock.advance(6_000)
   await ui.advance(VEIN_POLL)
   expect(await ui.find({ in: 'vein', type: 'Text', text: /Vein/ })).toBeUndefined()
 })

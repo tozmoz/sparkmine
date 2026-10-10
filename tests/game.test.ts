@@ -25,16 +25,24 @@ describe('income', () => {
   test('producers, upgrades, ancient stones and achievements set the rate', () => {
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 } })))).toBe(0.5)
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, upgrades: ['apprentice-1'] })))).toBe(0.75)
-    expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, stones: 5 })))).toBe(0.75)
+    expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, stones: 1 })))).toBe(0.55)
     // First vein and Big turn: 2% each.
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, veins: 1, bestTurn: 2e6 })))).toBe(0.52)
+  })
+
+  test('each next ancient stone adds a little less: ten add half, a hundred two and a half times', () => {
+    expect(game.stoneBonus(0)).toBe(0)
+    expect(near(game.stoneBonus(1))).toBe(0.1)
+    expect(Math.round(game.stoneBonus(10) * 100)).toBe(50)
+    expect(Math.round(game.stoneBonus(100) * 100)).toBe(251)
   })
 
   test('picks multiply clicks, and muscle memory adds a share of the rate', () => {
     expect(game.clickValue(saveWith({}))).toBe(1)
     expect(game.clickValue(saveWith({ upgrades: ['pick-1', 'pick-2', 'grip-1'] }))).toBe(8)
-    expect(near(game.clickValue(saveWith({ producers: { cart: 100 }, upgrades: ['pick-4'] })))).toBe(1.5)
-    expect(near(game.clickValue(saveWith({ producers: { cart: 100 }, upgrades: ['pick-4', 'pick-5', 'strike-1'] })))).toBe(4)
+    // 100 carts mine 50/s: 2% of it, then 2 + 4 + 6%.
+    expect(near(game.clickValue(saveWith({ producers: { cart: 100 }, upgrades: ['pick-4'] })))).toBe(2)
+    expect(near(game.clickValue(saveWith({ producers: { cart: 100 }, upgrades: ['pick-4', 'pick-5', 'strike-1'] })))).toBe(7)
   })
 
   test("the foreman's upgrades grow each click with the crew, and the picks leave that share alone", () => {
@@ -154,10 +162,10 @@ describe('a new shaft', () => {
 
   test('starts the mine over, and the stones, records and counters stay', () => {
     const after = game.openShaft(
-      saveWith({ sparks: 5e6, lifetime: 125e6, allTime: 2e8, clicks: 40, producers: { cart: 9 }, upgrades: ['pick-1'], stones: 3, deepest: 450 }),
+      saveWith({ sparks: 5e6, lifetime: 125e6, allTime: 2e8, clicks: 40, producers: { cart: 9 }, upgrades: ['pick-1'], stones: 3, deepest: 450, idleAt: 9 }),
       'next',
     )
-    expect(after).toMatchObject({ runId: 'next', sparks: 0, lifetime: 0, allTime: 2e8, stones: 8, deepest: 510, shafts: 1, clicks: 40 })
+    expect(after).toMatchObject({ runId: 'next', sparks: 0, lifetime: 0, allTime: 2e8, stones: 8, deepest: 510, shafts: 1, clicks: 40, idleAt: 9 })
     expect(after?.producers).toEqual({})
     expect(after?.upgrades).toEqual([])
     expect(game.openShaft(saveWith({ lifetime: 50e6, allTime: 50e6 }), 'next')).toBeNull()
@@ -199,6 +207,46 @@ describe('achievements', () => {
     expect(game.achievements(save).map(a => a.name)).toEqual(['First vein', 'Hard rock', 'Crystal caves', 'Into the magma', 'Big turn'])
     expect(game.nextAchievement(save)?.name).toBe('Vein hunter')
     expect(new Set(ACHIEVEMENTS.map(a => a.id)).size).toBe(ACHIEVEMENTS.length)
+  })
+})
+
+describe('the idle pace', () => {
+  // 100 carts mine 50/s, and Night shift keeps a tenth of it, 5/s, while Claude is idle.
+  const stored = saveWith({ producers: { cart: 100 }, upgrades: ['idle-1'], chain: 'c' })
+  const idleFor = (mine: Mine, from: number, to: number) => game.payCrew(mine, 5 * ((to - from) / 1000), 0, from, to)
+
+  test('is paid once, however many sessions mine it', () => {
+    // Two sessions idle through the same ten seconds, and sync one after the other.
+    const a = game.syncMine(stored, idleFor(mineWith(stored), 0, 10_000), 'a')
+    const b = idleFor(mineWith(stored), 0, 10_000)
+    expect(near(b.save.sparks)).toBe(50)
+    const synced = game.syncMine(a.save, b, 'b')
+    expect(near(synced.save.sparks)).toBe(50)
+    expect(near(synced.save.bySource.crew ?? 0)).toBe(50)
+    expect(synced.save.idleAt).toBe(10_000)
+    // Each counter ran on smoothly: the save holds just what each one showed.
+    expect(near(synced.mine.save.sparks)).toBe(50)
+    // Moments no other session reached yet are paid.
+    expect(near(game.syncMine(synced.save, idleFor(a.mine, 10_000, 14_000), 'a').save.sparks)).toBe(70)
+  })
+
+  test('a write another session wrote over does not pay it twice', () => {
+    // Both read the same save, and the other session's write lands last.
+    const first = game.syncMine(stored, idleFor(mineWith(stored), 0, 10_000), 'a')
+    const other = game.syncMine(stored, idleFor(mineWith(stored), 0, 12_000), 'b')
+    expect(near(other.save.sparks)).toBe(60)
+    // The first lays its lost write over again, but the other paid those moments already.
+    const again = game.syncMine(other.save, idleFor(first.mine, 10_000, 15_000), 'x')
+    expect(near(again.save.sparks)).toBe(75)
+    expect(again.save.idleAt).toBe(15_000)
+  })
+
+  test("Claude's work lifts the crew to its full rate on top of it, once", () => {
+    // One session idles while the other works: 50/s in all, as one session working alone.
+    const idle = game.syncMine(stored, idleFor(mineWith(stored), 0, 10_000), 'a')
+    const working = game.syncMine(idle.save, game.payCrew(mineWith(stored), 50, 450, 0, 10_000), 'b')
+    expect(near(working.save.sparks)).toBe(500)
+    expect(near(working.save.bySource.crew ?? 0)).toBe(500)
   })
 })
 
@@ -417,6 +465,9 @@ describe('stats', () => {
     expect(game.normalizeMine(old).save).toMatchObject({ sparks: 5, bySource: {}, events: {} })
     expect(game.normalizeMine(old).pending).toMatchObject({ bySource: {}, gems: 0 })
     expect(game.normalizeMine(old)).toMatchObject({ writer: '', seq: 0, inflight: [] })
+    // Nothing of the idle pace is paid yet, and a delta kept from before an update carries none.
+    expect(game.normalize({ v: 1, runId: 'old' })?.idleAt).toBe(0)
+    expect(game.normalizeMine({ ...old, pending: { ...old.pending, idle: undefined } as never }).pending.idle).toBeNull()
     const many = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`w${i}`, i + 1]))
     expect(Object.keys(game.normalize({ v: 1, runId: 'x', writes: { ...many, bad: -1 } })?.writes ?? {})).toHaveLength(32)
   })

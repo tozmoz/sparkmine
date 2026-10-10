@@ -3,7 +3,7 @@
 // neither is redrawn when nothing it shows has changed.
 
 import type { Band, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
-import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, PRODUCERS, SHAFT_DEPTH, STONE_BONUS, TOOL_NAMES, type Upgrade } from './data.ts'
+import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate } from './format.ts'
 import * as game from './game.ts'
 
@@ -119,6 +119,7 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
   const here = game.biomeAt(metres)
   const won = new Set(game.achievements(save).map(a => a.id))
   const goal = game.nextAchievement(save)
+  const gain = game.stoneGain(save)
   return {
     isLoaded,
     amount,
@@ -134,14 +135,17 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
     },
     bonus: {
       stones: save.stones,
-      stonesPct: Math.round(save.stones * STONE_BONUS * 100),
+      stonesPct: Math.round(game.stoneBonus(save.stones) * 100),
       achievements: won.size,
       achievementsPct: Math.round(won.size * ACHIEVEMENT_BONUS * 100),
     },
     layers: BIOMES.map((b, i) => ({ name: b.name, from: b.from, color: b.color, text: b.text, isReached: i <= here, isHere: i === here })),
     achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: a.name, isEarned: won.has(a.id) })),
     nextAchievement: goal === null ? null : { name: goal.name, text: goal.text },
-    shaft: save.shafts > 0 || metres >= SHAFT_DEPTH - SHAFT_LEAD ? { gain: game.stoneGain(save), at: SHAFT_DEPTH } : null,
+    shaft:
+      save.shafts > 0 || metres >= SHAFT_DEPTH - SHAFT_LEAD
+        ? { gain, at: SHAFT_DEPTH, pct: Math.round(game.stoneBonus(save.stones + gain) * 100) }
+        : null,
   }
 }
 

@@ -122,14 +122,16 @@ test('a new shaft trades the run for ancient stones, from 500 m down', async ($,
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
   expect((await ui.find({ key: 'shaft' }))?.props.label).toBe('Open for 5 ◈')
+  expect(await ui.find({ type: 'Text', text: /^Start over in fresh rock for 5 ◈ ancient stones\. They add 31% to everything, for good/ })).toBeDefined()
   w.answers.push('Keep digging')
   await ui.press({ key: 'shaft' })
+  expect(w.asked[0]).toMatch(/your stones will add 31% to everything\.$/)
   expect(await ui.find({ type: 'Text', text: 'Mine cart ×3' })).toBeDefined()
   w.answers.push('Open it')
   await ui.press({ key: 'shaft' })
   await ui.advance(250)
-  // Stones add 10% each; Hard rock, Crystal caves, Into the magma and Fresh rock 2% each.
-  expect(await ui.find({ type: 'Text', text: '◈ 5 stones +50% · ★ 4 achievements +8%' })).toBeDefined()
+  // Five stones add 31%; Hard rock, Crystal caves, Into the magma and Fresh rock 2% each.
+  expect(await ui.find({ type: 'Text', text: '◈ 5 stones +31% · ★ 4 achievements +8%' })).toBeDefined()
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 0' })).toBeDefined()
   expect(w.store.get('save')).toMatchObject({ stones: 5, shafts: 1, deepest: 510, sparks: 0, allTime: 2e8, producers: {} })
   expect(w.toasts).toContain('A new shaft is open. You hold 5 ◈. Achievement: Fresh rock. Everything mines 2% more.')
@@ -163,6 +165,20 @@ test('what a session mines reaches the store', async ($, on) => {
   await finishTurn($, 't1')
   await endSession($)
   expect(w.store.get('save')).toMatchObject({ sparks: 3, clicks: 1, tools: 1, turns: 1, mined: { bash: 1 }, bySource: { click: 1, tool: 2 }, bestTurn: 3 })
+})
+
+test('the idle pace is paid once: a session adds only what no other session gave the save yet', async ($, on) => {
+  // 100 carts mine 50/s, and a tenth of it while Claude is idle. Another
+  // session already gave the save the next three seconds of it.
+  const w = world(on, {
+    save: seeded({ producers: { cart: 100 }, upgrades: ['idle-1'], sparks: 15, lifetime: 15, allTime: 15, bySource: { crew: 15 }, idleAt: 1_003_000 }),
+  })
+  await start($)
+  await wait(w, 4)
+  await endSession($)
+  const save = w.store.get('save') as { sparks: number; idleAt: number }
+  expect(Math.round(save.sparks * 1_000) / 1_000).toBe(20)
+  expect(save.idleAt).toBe(1_004_000)
 })
 
 test('a purchase stays when another session writes over it', async ($, on) => {
