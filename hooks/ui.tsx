@@ -184,6 +184,11 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
             {layer.isHere ? <Text color={layer.color}>◀ here</Text> : null}
           </Box>
         ))}
+        {model.deeper > 0 ? (
+          <Box paddingX={1}>
+            <Text dimColor>{`${model.deeper} more ${model.deeper === 1 ? 'layer' : 'layers'} below`}</Text>
+          </Box>
+        ) : null}
       </Box>
     )
 

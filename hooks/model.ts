@@ -2,7 +2,7 @@
 // draws its model and the HUD its props, so neither reads the mine itself and
 // neither is redrawn when nothing it shows has changed.
 
-import type { Band, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
+import type { Band, EventKind, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
 import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate } from './format.ts'
 import * as game from './game.ts'
@@ -19,6 +19,19 @@ const TOOL_ICONS: Readonly<Record<ToolKind, IconId>> = {
   mcp: 'plug',
   agent: 'crew',
   other: 'pick',
+}
+
+/** The icon of an upgrade that makes work events pay more, by the first event it names. */
+const EVENT_ICONS: Readonly<Record<EventKind, IconId>> = {
+  tests: 'check',
+  fix: 'check',
+  build: 'terminal',
+  lint: 'terminal',
+  commit: 'clock',
+  pr: 'glasses',
+  merge: 'glasses',
+  longShift: 'clock',
+  streak: 'clock',
 }
 
 export function upgradeIcon(u: Upgrade): IconId {
@@ -47,6 +60,12 @@ export function upgradeIcon(u: Upgrade): IconId {
       return 'clock'
     case 'global':
       return 'lantern'
+    case 'events':
+      return EVENT_ICONS[u.effect.events[0] ?? 'tests']
+    case 'veinSpeed':
+      return 'rod'
+    case 'frenzy':
+      return 'nugget'
   }
 }
 
@@ -69,6 +88,10 @@ export function unlockText(u: Upgrade): string {
       return `with ${n} producers`
     case 'earned':
       return `after ${fmt(u.unlock.n)} sparks in all`
+    case 'veins':
+      return `after ${n} veins caught`
+    case 'events':
+      return `after ${n} ${u.unlock.label}`
   }
 }
 
@@ -83,6 +106,7 @@ export const EMPTY_SHOP: ShopModel = {
   values: { click: 1, read: 1, edit: 4 },
   bonus: { stones: 0, stonesPct: 0, achievements: 0, achievementsPct: 0 },
   layers: [],
+  deeper: 0,
   achievements: [],
   nextAchievement: null,
   shaft: null,
@@ -120,6 +144,8 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
   const won = new Set(game.achievements(save).map(a => a.id))
   const goal = game.nextAchievement(save)
   const gain = game.stoneGain(save)
+  // The layers this run reached and the next one: the rest stay a surprise.
+  const shown = BIOMES.slice(0, here + 2)
   return {
     isLoaded,
     amount,
@@ -139,7 +165,8 @@ export function shopModel(save: Save, amount: number, isLoaded: boolean): ShopMo
       achievements: won.size,
       achievementsPct: Math.round(won.size * ACHIEVEMENT_BONUS * 100),
     },
-    layers: BIOMES.map((b, i) => ({ name: b.name, from: b.from, color: b.color, text: b.text, isReached: i <= here, isHere: i === here })),
+    layers: shown.map((b, i) => ({ name: b.name, from: b.from, color: b.color, text: b.text, isReached: i <= here, isHere: i === here })),
+    deeper: BIOMES.length - shown.length,
     achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: a.name, isEarned: won.has(a.id) })),
     nextAchievement: goal === null ? null : { name: goal.name, text: goal.text },
     shaft:

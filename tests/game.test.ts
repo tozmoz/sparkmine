@@ -137,9 +137,9 @@ describe('buying', () => {
     expect(new Set(effects).size).toBe(effects.length)
   })
 
-  test('there are 63 upgrades, each with its own id', () => {
-    expect(UPGRADES).toHaveLength(63)
-    expect(new Set(UPGRADES.map(u => u.id)).size).toBe(63)
+  test('there are 79 upgrades, each with its own id', () => {
+    expect(UPGRADES).toHaveLength(79)
+    expect(new Set(UPGRADES.map(u => u.id)).size).toBe(79)
   })
 
   test('a mine with a crew of 59 finds the new click upgrades on sale', () => {
@@ -194,9 +194,9 @@ describe('layers', () => {
 
 describe('the shared card', () => {
   test('leaves out what is not done yet, and names the core as a place', () => {
-    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/23', 'github.com/tozmoz/sparkmine'].join('\n'))
+    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/30', 'github.com/tozmoz/sparkmine'].join('\n'))
     const core = model.shareCard(saveWith({ lifetime: 1e13, allTime: 3e13, stones: 1, veins: 1 }))
-    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥', '✻ 30.00T mined · ◈ 1 stone · ★ 9/23', '1 vein'])
+    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥', '✻ 30.00T mined · ◈ 1 stone · ★ 9/30', '1 vein'])
   })
 })
 
@@ -417,6 +417,18 @@ describe('the work behind the mine', () => {
     expect(near(game.eventValue(saveWith({ producers: { cart: 10 } }), 'longShift'))).toBe(450)
     expect(game.veinValue(saveWith({}))).toBe(30)
   })
+
+  test('the work upgrades double their own events once Claude has done enough of them', () => {
+    const ci = UPGRADES.find(u => u.id === 'ci-1')
+    if (ci === undefined) throw new Error('no CI pipeline')
+    expect(game.isUnlocked(saveWith({ events: { build: 20, lint: 4 } }), ci)).toBe(false)
+    expect(game.isUnlocked(saveWith({ events: { build: 20, lint: 5 } }), ci)).toBe(true)
+    expect(model.unlockText(ci)).toBe('after 25 passing builds and lints')
+    const crew = { producers: { cart: 10 }, upgrades: ['ci-1'] }
+    expect(near(game.eventValue(saveWith(crew), 'build'))).toBe(150)
+    expect(near(game.eventValue(saveWith(crew), 'lint'))).toBe(150)
+    expect(near(game.eventValue(saveWith(crew), 'tests'))).toBe(150)
+  })
 })
 
 describe('depth', () => {
@@ -439,6 +451,16 @@ describe('veins', () => {
       else expect(seconds >= 300 && seconds < 600).toBe(true)
     }
     expect([...kinds].sort()).toEqual(['frenzy', 'rich'])
+  })
+
+  test('the divining rod brings them half again as often, and gold fever makes a frenzy last twice as long', () => {
+    const rod = game.multipliers(saveWith({ upgrades: ['vein-1'] }))
+    expect(rod.veinSpeed).toBe(1.5)
+    expect(game.veinAfter('run', 3, rod.veinSpeed).seconds).toBe(Math.round(game.veinAfter('run', 3).seconds / 1.5))
+    expect(game.multipliers(saveWith({ upgrades: ['vein-2'] })).frenzyTime).toBe(2)
+    const fever = UPGRADES.find(u => u.id === 'vein-2')
+    if (fever === undefined) throw new Error('no Gold fever')
+    expect(model.unlockText(fever)).toBe('after 25 veins caught')
   })
 })
 

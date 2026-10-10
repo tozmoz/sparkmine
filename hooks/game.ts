@@ -243,6 +243,9 @@ export type Multipliers = {
   veinSpeed: number
   idleMult: number
   events: number
+  /** From the upgrades: what each work event pays more, and how much longer a frenzy lasts. */
+  event: Record<EventKind, number>
+  frenzyTime: number
 }
 
 /** What ancient stones add to everything, as a share: each next one adds a little less. */
@@ -264,6 +267,8 @@ export function multipliers(save: Save): Multipliers {
     veinSpeed: 1,
     idleMult: 1,
     events: 1,
+    event: Object.fromEntries(EVENT_KINDS.map(k => [k, 1])) as Record<EventKind, number>,
+    frenzyTime: 1,
   }
   // Every layer this run reached adds its perk.
   for (const biome of BIOMES.slice(0, biomeAt(depth(save)) + 1)) {
@@ -328,6 +333,15 @@ export function multipliers(save: Save): Multipliers {
       case 'global':
         m.global *= effect.mult
         break
+      case 'events':
+        for (const kind of effect.events) m.event[kind] *= effect.mult
+        break
+      case 'veinSpeed':
+        m.veinSpeed *= effect.mult
+        break
+      case 'frenzy':
+        m.frenzyTime *= effect.mult
+        break
     }
   }
   return m
@@ -390,7 +404,7 @@ export function biomeAt(metres: number): number {
 /** What a work event pays: seconds of the crew's rate, and never less than its clicks. */
 export function eventValue(save: Save, kind: EventKind, m = multipliers(save)): number {
   const e = EVENTS[kind]
-  return Math.max(rate(save, m) * e.seconds, clickValue(save, m) * e.clicks) * m.events
+  return Math.max(rate(save, m) * e.seconds, clickValue(save, m) * e.clicks) * m.events * m.event[kind]
 }
 
 /** What a rich vein pays. */
@@ -538,6 +552,10 @@ function have(save: Save, unlock: Unlock): number {
       return crewSize(save)
     case 'earned':
       return save.allTime
+    case 'veins':
+      return save.veins
+    case 'events':
+      return unlock.events.reduce((sum, kind) => sum + (save.events[kind] ?? 0), 0)
   }
 }
 

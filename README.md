@@ -43,8 +43,8 @@ claude plugin update sparkmine@sparkmine
   and press `m`: every press counts, while quick clicks on one spot count as
   one.
 - Open the shop with **Shop** or `/mine`. Producers mine every second Claude
-  works; upgrades make clicks, tool calls and the crew stronger. The shop's
-  stats show where your sparks came from.
+  works; upgrades make clicks, tool calls, Claude's work and the crew
+  stronger. The shop's stats show where your sparks came from.
 - **Claude's work pays**, once a turn each: tests that pass, a bug squashed
   (tests that failed, then pass), a build that passes, a clean lint, a commit,
   a pull request opened or merged, and a turn longer than five minutes. Every
@@ -61,7 +61,7 @@ claude plugin update sparkmine@sparkmine
   for ◈ ancient stones. They add to everything for good, each a little less
   than the one before: 10 stones add 50%, 100 add 251%. A deeper run pays more
   of them.
-- **Achievements:** 23 badges for records such as your first vein, 100
+- **Achievements:** 30 badges for records such as your first vein, 100
   commits, a ten-turn streak or reaching the magma. Each adds 2% to everything, and they stay
   through new shafts.
 

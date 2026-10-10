@@ -12,6 +12,8 @@ export type ProducerId =
   | 'cache'
   | 'refinery'
   | 'core'
+  | 'furnace'
+  | 'datacenter'
 
 export type Counts<K extends string> = { [P in K]?: number }
 
@@ -239,6 +241,8 @@ export type IconId =
   | 'whistle'
   | 'bolt'
   | 'gem'
+  | 'check'
+  | 'rod'
 
 /** What the vein Client draws: a vein to catch, or the frenzy one started. */
 export type VeinProps = {
@@ -287,8 +291,9 @@ export type ShopModel = {
   values: { click: number; read: number; edit: number }
   /** Ancient stones held, achievements earned, and what each adds to everything, in percent. */
   bonus: { stones: number; stonesPct: number; achievements: number; achievementsPct: number }
-  /** The layers, deepest last: the ones this run reached, and the one it is in. */
+  /** The layers this run reached and the next one, deepest last, and how many lie beyond that. */
   layers: { name: string; from: number; color: string; text: string; isReached: boolean; isHere: boolean }[]
+  deeper: number
   /** Every achievement in order, earned or not, and the closest unearned one. */
   achievements: { id: string; name: string; isEarned: boolean }[]
   nextAchievement: { name: string; text: string } | null

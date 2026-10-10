@@ -276,12 +276,13 @@ async function growVeins(io: Io, mode: Mode, seconds: number, now: number, save:
 export async function catchVein(io: Io, id: number): Promise<VeinKind | null> {
   const now = await io.now()
   if ((await io.readBand()).isStopped) return null
+  const frenzyMs = VEIN.frenzyMs * game.multipliers((await io.readMine()).save).frenzyTime
   const hit: { kind: VeinKind | null } = { kind: null }
   await patchView(io, view => {
     hit.kind = null
     if (view.vein === null || view.vein.id !== id || now > view.vein.until) return view
     hit.kind = view.vein.kind
-    const frenzy = view.vein.kind === 'frenzy' ? { mult: VEIN.frenzyMult, until: now + VEIN.frenzyMs } : view.frenzy
+    const frenzy = view.vein.kind === 'frenzy' ? { mult: VEIN.frenzyMult, until: now + frenzyMs } : view.frenzy
     return { ...view, vein: null, frenzy }
   })
   const kind = hit.kind
