@@ -511,13 +511,21 @@ const runs = (command: string, heads: readonly RegExp[]): boolean => steps(comma
 /** Whether a shell command runs a test suite, in any step of it. */
 export const isTestCommand = (command: string): boolean => runs(command, TEST_RUNNERS)
 
-/** What a finished tool call tells about Claude's work, as plain data the hooks read off it. */
-export type ToolOutcome = { tool: string; command?: string; isError: boolean; interrupted: boolean; background: boolean; committed: boolean }
+/**
+ * What a finished tool call tells about Claude's work, as plain data the hooks
+ * read off it. `output` is the end of what a shell command printed.
+ */
+export type ToolOutcome = { tool: string; command?: string; isError: boolean; interrupted: boolean; background: boolean; committed: boolean; output?: string }
+
+/** How much of a command's output is read: a test run's summary comes last. */
+const OUTPUT_TAIL = 8_000
 
 /** Reads a finished call's input and result as a ToolOutcome: nothing in either is changed. */
 export function outcomeOf(tool: string, input: unknown, answer: { isError?: unknown; result?: unknown }): ToolOutcome {
   const args = (input ?? {}) as { command?: unknown; run_in_background?: unknown }
-  const record = (answer.result ?? {}) as { interrupted?: unknown; backgroundTaskId?: unknown; gitOperation?: { commit?: { kind?: unknown } } }
+  const record = (answer.result ?? {}) as { interrupted?: unknown; backgroundTaskId?: unknown; stdout?: unknown; stderr?: unknown; gitOperation?: { commit?: { kind?: unknown } } }
+  const tail = (text: unknown) => (typeof text === 'string' ? text.slice(-OUTPUT_TAIL) : '')
+  const output = `${tail(record.stdout)}\n${tail(record.stderr)}`.trim()
   return {
     tool,
     ...(typeof args.command === 'string' ? { command: args.command } : {}),
@@ -525,8 +533,26 @@ export function outcomeOf(tool: string, input: unknown, answer: { isError?: unkn
     interrupted: record.interrupted === true,
     background: args.run_in_background === true || typeof record.backgroundTaskId === 'string',
     committed: record.gitOperation?.commit?.kind === 'committed',
+    ...(output === '' ? {} : { output }),
   }
 }
+
+/**
+ * What test runners print when tests fail. A command whose last step is not
+ * the runner (`npm test 2>&1 | tail`, `npm test; echo done`) succeeds even when
+ * they did, so the output says it: mocha's "2 failing", jest's and pytest's
+ * "1 failed", rspec's "3 failures", jest's and go's FAIL lines, cargo's
+ * "test result: FAILED", unittest's "FAILED (failures=1)", TAP's "not ok".
+ */
+const FAILED: readonly RegExp[] = [
+  /\b[1-9]\d* (failed|failing|failures?)\b/i,
+  /^\s*(FAIL|FAILED)\b/m,
+  /^--- FAIL\b/m,
+  /\btest result: FAILED\b/,
+  /\bFAILED \((failures|errors)=/,
+  /^not ok \d+/m,
+  /^# fail [1-9]/m,
+]
 
 /**
  * The work events a finished Bash call is, when it succeeded: tests, a build
@@ -537,7 +563,7 @@ export function workEvents(o: ToolOutcome): EventKind[] {
   if (o.tool !== 'Bash' || o.isError || o.interrupted || o.background) return []
   const command = o.command ?? ''
   const events: EventKind[] = []
-  if (runs(command, TEST_RUNNERS)) events.push('tests')
+  if (testRun(o) === 'passed') events.push('tests')
   if (runs(command, BUILDERS)) events.push('build')
   if (runs(command, LINTERS)) events.push('lint')
   if (o.committed) events.push('commit')
@@ -546,10 +572,14 @@ export function workEvents(o: ToolOutcome): EventKind[] {
   return events
 }
 
-/** How a finished Bash call ran the tests, if it did; a run cut short or sent to the background tells nothing. */
+/**
+ * How a finished Bash call ran the tests, if it did: failed when the call
+ * failed or its output says tests failed. A run cut short or sent to the
+ * background tells nothing.
+ */
 export function testRun(o: ToolOutcome): 'passed' | 'failed' | null {
   if (o.tool !== 'Bash' || o.interrupted || o.background || o.command === undefined || !isTestCommand(o.command)) return null
-  return o.isError ? 'failed' : 'passed'
+  return o.isError || FAILED.some(re => re.test(o.output ?? '')) ? 'failed' : 'passed'
 }
 
 /** What the next click mines, and whether it strikes a gem. */

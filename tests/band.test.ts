@@ -374,6 +374,19 @@ test('a failing test run puts a bug on the rock, and squashing it leaves a splat
   expect(await scene()).not.toContain(SPLAT_GREEN)
 })
 
+test('tests that fail behind a pipe still put the bug on the rock, and pay no "Tests pass"', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'fix it', turnId: 't1' })
+  const ui = await $.ui.mount(band('desktop'))
+  // The pipe's last step succeeds: only the output says the tests failed.
+  w.bash = () => ({ result: { stdout: '  3 passing\n  1 failing\n', stderr: '', interrupted: false } })
+  await $.tool.call({ tool: 'Bash', command: 'npm test 2>&1 | tail -20' })
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(BUG_PINK)
+  expect(await ui.find({ in: 'hud', type: 'Text', text: /★ Tests pass/ })).toBeUndefined()
+})
+
 test('upgrades bought show in the mine: the canary, the gloves, warmer lanterns, a coffee', async ($, on) => {
   world(on, { save: seeded({ upgrades: ['lamp-1', 'lamp-2', 'grip-1', 'apprentice-2'] }) })
   await start($)
