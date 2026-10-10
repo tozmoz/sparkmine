@@ -14,7 +14,7 @@ tool call Claude makes mines sparks ✻, and each press of **Mine** mines more.
 Claude's own work pays too: a test run that passes, a commit, a long turn.
 Spend it all in the shop on a crew that keeps digging, and on upgrades.
 
-<img src="docs/shop.png" alt="The shop in the Claude Desktop app: upgrades, a new shaft, the layers, achievements and stats" width="420">
+<img src="docs/shop.png" alt="The shop in the Claude Desktop app: upgrades and a new shaft" width="420">
 
 ## Install
 
@@ -52,10 +52,10 @@ claude plugin update sparkmine@sparkmine
 - **Veins:** now and then a gold vein shows beside the Shop sign for twenty
   seconds. Catch it for two minutes of income, or a ×5 frenzy for thirty.
 - **Depth:** the mine goes a hundred metres deeper with every tenfold of
-  sparks, through ten layers. Each layer you reach adds its perk for the
-  rest of the run.
+  sparks, through layer after layer. Each layer you reach adds its perk for
+  the rest of the run.
 
-  ![The ten layers, where each starts and what it adds](docs/layers.png)
+  ![The layers down to the core, where each starts and what it adds](docs/layers.png)
 
 - **New shaft:** from 500 m down, open a new shaft in the shop to start over
   for ◈ ancient stones. They add to everything for good, each a little less
