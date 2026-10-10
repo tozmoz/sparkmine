@@ -53,7 +53,7 @@ const ASKS_PERSON = new Set(['AskUserQuestion', 'ExitPlanMode'])
 const flag = (on: boolean | undefined) => (on === true ? 1 : 0)
 const specKey = (spec: SceneSpec) =>
   `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}:${spec.bug ?? ''}:` +
-  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}:${spec.pose ?? ''}`
+  `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}${flag(spec.flare)}:${spec.pose ?? ''}`
 const svgs = new Map<string, string>()
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
@@ -81,6 +81,7 @@ function bandSpec(band: Band, mode: Band['mode'], pose?: SceneSpec['pose']): Sce
     biome: band.biome,
     ...(band.bug === null ? {} : { bug: band.bug }),
     ...band.extras,
+    ...(band.flare ? { flare: true } : {}),
     ...(pose === undefined ? {} : { pose }),
   }
 }
@@ -247,6 +248,12 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Read only: a few words in the person's own prompt find a secret, and the prompt goes on as it was.
+  on('prompt.submit', async ($, e, next) => {
+    if (io !== null && (e.origin.kind === 'composer' || e.origin.kind === 'bridge')) await state.promptSeen(io, e.text)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('turn.start', async ($, e, next) => {
     if (io !== null) await state.startTurn(io)
     return next(e)
@@ -254,7 +261,7 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (io !== null && e.agentId === undefined) await state.endTurn(io, e.durationMs, e.reason)
+    if (io !== null && e.agentId === undefined) await state.endTurn(io, e.durationMs, e.reason, e.answer)
     return result
   })
 
@@ -334,7 +341,8 @@ export const register: Register = on => {
     const surface = surfaceOf(e.surface)
     // The Mine button is the HUD's own, so a press answers without a round trip.
     const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, taps, isCompact: band.isCompact, ...hudSize }
-    const spec = bandSpec(band, band.mode, band.mode === 'pause' ? 'facing' : undefined)
+    // Thanked, the miner stops a moment to tip his hat; while Claude asks, he faces you.
+    const spec = band.tip ? bandSpec(band, 'pause', 'tip') : bandSpec(band, band.mode, band.mode === 'pause' ? 'facing' : undefined)
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
     let ours: RenderElement
 

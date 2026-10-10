@@ -32,8 +32,13 @@ export type SceneSpec = {
   gloves?: boolean
   warm?: boolean
   coffee?: boolean
-  /** How the miner waits: facing you while Claude asks, with a coffee after a while idle, asleep after a long one. */
-  pose?: 'facing' | 'coffee' | 'sleep'
+  /** Claude asked to ultrathink: the lanterns flare. */
+  flare?: boolean
+  /**
+   * How the miner stands still: facing you while Claude asks, tipping his
+   * helmet when thanked, with a coffee a while into Claude's idle, asleep after a long one.
+   */
+  pose?: 'facing' | 'tip' | 'coffee' | 'sleep'
 }
 
 /** One pose of the miner: `t` runs from the strike (0) to the raised pick (1); null rests. */
@@ -394,6 +399,30 @@ const MINER_FRONT = [
   '.KKKKK.KKKKK..',
 ] as const
 
+// Thanked: facing you, bald as an egg, his helmet raised in his right hand.
+const MINER_TIP = [
+  '.........KKKK.',
+  '........KYYYYK',
+  '........KyLyyK',
+  '....KKKKK.KHK.',
+  '...KSSSSSK.HK.',
+  '..KSSSSSSSKHK.',
+  '..KSESSSESKRK.',
+  '..KSSSSSSSKRK.',
+  '..KBSSSSSBRRK.',
+  '..KBBBBBBBRK..',
+  '..KRBBBBBRK...',
+  '.KRRRBBBRRK...',
+  '.KRROOOOORK...',
+  '.KHrOOOOOrK...',
+  '.KKKGGGGGKK...',
+  '..KOOOOOOOK...',
+  '..KOOoKoOOK...',
+  '..KOOK.KOOK...',
+  '.KGGGK.KGGGK..',
+  '.KKKKK.KKKKK..',
+] as const
+
 // Sitting with a mug, legs out toward the wall.
 const MINER_SIT = [
   '..............',
@@ -695,29 +724,41 @@ const STRIP = W + PERIOD
 const lanterns = Array.from({ length: Math.ceil(STRIP / PERIOD) }, (_, k) => LANTERN_X + k * PERIOD)
 
 const worlds = new Map<string, { tunnel: Pixels; rock: Pixels }>()
-/** Brighter lanterns burn warmer and wider. */
-const WARM_GLOW = 0xffa63d
 
-/** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once a layer. */
-function world(withGlow: boolean, biome: number, warm = false): { tunnel: Pixels; rock: Pixels } {
-  const key = `${biome}:${withGlow}:${warm}`
+/** How the lanterns burn: as dug, warmer once Brighter lanterns are bought, flaring while Claude ultrathinks. */
+type Glow = 'plain' | 'warm' | 'flare'
+
+/**
+ * Each glow's color; how much of it the terminal's tunnel takes near the
+ * lantern and further out, and how far; the SVG's two rings and their opacity.
+ */
+const GLOWS: Readonly<Record<Glow, { color: number; near: number; far: number; inner: number; reach: number; rings: readonly [number, number]; opacity: string }>> = {
+  plain: { color: GLOW, near: 0.12, far: 0.06, inner: 6, reach: 10, rings: [10, 6], opacity: '.07' },
+  warm: { color: 0xffa63d, near: 0.22, far: 0.11, inner: 6, reach: 10, rings: [12, 7], opacity: '.13' },
+  flare: { color: 0xfff2c4, near: 0.3, far: 0.15, inner: 8, reach: 13, rings: [14, 8], opacity: '.15' },
+}
+
+const glowOf = (spec: SceneSpec): Glow => (spec.flare === true ? 'flare' : spec.warm === true ? 'warm' : 'plain')
+
+/** The strips the window slides over, with the lanterns' glow mixed in when asked. Built once a layer and glow. */
+function world(withGlow: boolean, biome: number, glow: Glow = 'plain'): { tunnel: Pixels; rock: Pixels } {
+  const key = `${biome}:${withGlow}:${glow}`
   const hit = worlds.get(key)
   if (hit !== undefined) return hit
-  const built = buildWorld(withGlow, strataOf(biome), warm)
+  const built = buildWorld(withGlow, strataOf(biome), GLOWS[glow])
   worlds.set(key, built)
   return built
 }
 
-function buildWorld(withGlow: boolean, st: Strata, warm = false): { tunnel: Pixels; rock: Pixels } {
+function buildWorld(withGlow: boolean, st: Strata, glow: (typeof GLOWS)[Glow]): { tunnel: Pixels; rock: Pixels } {
   const tunnel = strip(tunnelTile(st), STRIP)
   if (withGlow && st.sky === undefined) {
-    const [near, far, glow] = warm ? [0.22, 0.11, WARM_GLOW] : [0.12, 0.06, GLOW]
     for (const lx of lanterns) {
       for (let y = 0; y < H; y += 1) {
-        for (let x = lx - 10; x <= lx + 10; x += 1) {
+        for (let x = lx - glow.reach; x <= lx + glow.reach; x += 1) {
           const d = Math.hypot(x - lx, y - LANTERN_Y)
           const color = tunnel.get(x, y)
-          if (d <= 10 && color !== CLEAR && color !== LAMP) tunnel.set(x, y, mix(color, glow, d <= 6 ? near : far))
+          if (d <= glow.reach && color !== CLEAR && color !== LAMP) tunnel.set(x, y, mix(color, glow.color, d <= glow.inner ? glow.near : glow.far))
         }
       }
     }
@@ -802,10 +843,10 @@ function miner(px: Pixels, frame: Frame, look: PickLook, spec?: SceneSpec): void
   const hand = spec?.gloves === true ? GLOVE : SKIN
   // His hands, a shut eye, an unlit lamp, and the mug he holds: the one by the cart.
   const palette = { ...MINER_PALETTE, H: hand, e: 0xc89a6a, l: 0x8a8460, W: MUG_RED }
-  if (spec?.pose === 'facing') {
+  if (spec?.pose === 'facing' || spec?.pose === 'tip') {
     // The pick stands head down beside him while he looks out at you.
     pickaxe(px, SX + 13, SY + 10, 90, look)
-    px.sprite(MINER_FRONT, palette, SX, SY)
+    px.sprite(spec.pose === 'tip' ? MINER_TIP : MINER_FRONT, palette, SX, SY)
     return
   }
   if (spec?.pose === 'coffee' || spec?.pose === 'sleep') {
@@ -871,7 +912,7 @@ function paths(px: Pixels): string {
   return [...runs].map(([color, d]) => `<path fill="${hex(color)}" d="${d.join('')}"/>`).join('')
 }
 
-function glowPath(cx: number, radius: number, warm = false): string {
+function glowPath(cx: number, radius: number, glow: (typeof GLOWS)[Glow]): string {
   const d: string[] = []
   for (let dy = -radius; dy <= radius; dy += 1) {
     const w = Math.floor(Math.sqrt(radius * radius - dy * dy))
@@ -879,7 +920,7 @@ function glowPath(cx: number, radius: number, warm = false): string {
     if (y < 0 || y >= H) continue
     d.push(`M${cx - w} ${y}h${2 * w + 1}v1h-${2 * w + 1}z`)
   }
-  return `<path fill="${hex(warm ? WARM_GLOW : GLOW)}" fill-opacity="${warm ? '.13' : '.07'}" d="${d.join('')}"/>`
+  return `<path fill="${hex(glow.color)}" fill-opacity="${glow.opacity}" d="${d.join('')}"/>`
 }
 
 /** Keyframes that switch a property at the given shares of the loop and hold it between. */
@@ -901,7 +942,7 @@ function windowKeyframes(name: string, from: number, to: number): string {
  */
 export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string {
   const st = strataOf(spec.biome)
-  const { tunnel, rock } = world(false, spec.biome, spec.warm === true)
+  const { tunnel, rock } = world(false, spec.biome, glowOf(spec))
   const look = lookOf(spec.pick)
   const { frames, ms } = framesFor(spec.mode)
   const isDigging = spec.mode === 'work'
@@ -927,8 +968,8 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
   }
   const slide = isDigging ? ' class="slide"' : ''
   // Under the sky no lantern burns, so nothing flickers.
-  const warm = spec.warm === true
-  const glows = st.sky === undefined ? `<g class="glow">${lanterns.map(lx => `${glowPath(lx, warm ? 12 : 10, warm)}${glowPath(lx, warm ? 7 : 6, warm)}`).join('')}</g>` : ''
+  const glow = GLOWS[glowOf(spec)]
+  const glows = st.sky === undefined ? `<g class="glow">${lanterns.map(lx => `${glowPath(lx, glow.rings[0], glow)}${glowPath(lx, glow.rings[1], glow)}`).join('')}</g>` : ''
   body.push(`<g${slide}>${paths(tunnel)}${glows}</g>`)
   body.push(`<g clip-path="url(#rock)"><g${slide}>${paths(rock)}</g></g>`)
   body.push(paths(faceEdge(st)))
@@ -1030,7 +1071,7 @@ export function sceneSvg(spec: SceneSpec, scale: number, fluid = false): string 
 /** The scene at one moment, as pixels: what the terminal paints and the tests read. */
 export function compose(spec: SceneSpec, m: Moment): Pixels {
   const st = strataOf(spec.biome)
-  const { tunnel, rock } = world(true, spec.biome, spec.warm === true)
+  const { tunnel, rock } = world(true, spec.biome, glowOf(spec))
   const px = new Pixels()
   for (let y = 0; y < H; y += 1) {
     for (let x = 0; x < W; x += 1) px.set(x, y, (x >= faceAt(y) ? rock : tunnel).get(x + m.scroll, y))

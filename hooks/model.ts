@@ -171,7 +171,8 @@ export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopMo
     },
     layers: shown.map((b, i) => ({ name: b.name, from: b.from, color: b.color, text: b.text, isReached: i <= here, isHere: i === here })),
     deeper: BIOMES.length - shown.length,
-    achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: a.name, isEarned: won.has(a.id) })),
+    // A secret keeps its name to itself until found.
+    achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: won.has(a.id) || a.goal.kind !== 'secret' ? a.name : '???', isEarned: won.has(a.id) })),
     nextAchievement: goal === null ? null : { name: goal.name, text: goal.text },
     shaft:
       save.shafts > 0 || metres >= SHAFT_DEPTH - SHAFT_LEAD

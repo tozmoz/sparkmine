@@ -216,11 +216,60 @@ describe('layers', () => {
 
 describe('the shared card', () => {
   test('leaves out what is not done yet, and names the core as a place', () => {
-    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/33', 'github.com/tozmoz/sparkmine'].join('\n'))
+    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/42', 'github.com/tozmoz/sparkmine'].join('\n'))
     const core = model.shareCard(saveWith({ lifetime: 1e13, allTime: 3e13, stones: 1, veins: 1 }))
-    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥⬛⬛⬛', '✻ 30.00T mined · ◈ 1 stone · ★ 9/33', '1 vein'])
+    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥⬛⬛⬛', '✻ 30.00T mined · ◈ 1 stone · ★ 9/42', '1 vein'])
     const far = model.shareCard(saveWith({ lifetime: 2e16, allTime: 2e16 }))
     expect(far.split('\n').slice(0, 2)).toEqual(['⛏️ Sparkmine · 1,330 m on the far side', '🟫⬜🟪🟧🟦🟨🟥💎🟩🌏'])
+  })
+})
+
+describe('secrets', () => {
+  test('a prompt finds thanks in a few languages, and ultrathink', () => {
+    expect(game.promptSecrets('thanks, that works')).toEqual(['good-manners'])
+    expect(game.promptSecrets('Teşekkürler!')).toEqual(['good-manners'])
+    expect(game.promptSecrets('merci beaucoup')).toEqual(['good-manners'])
+    expect(game.promptSecrets('ultrathink about the cache')).toEqual(['deep-thinker'])
+    expect(game.promptSecrets('thank you, now ultrathink')).toEqual(['good-manners', 'deep-thinker'])
+    expect(game.promptSecrets('fix the type error in the parser')).toEqual([])
+  })
+
+  test("Claude's catchphrase, a Friday after four, a turn through midnight, an initial commit", () => {
+    expect(game.isAbsolutelyRight("You're absolutely right! The loop never ends.")).toBe(true)
+    expect(game.isAbsolutelyRight('You are absolutely right.')).toBe(true)
+    expect(game.isAbsolutelyRight('That is right.')).toBe(false)
+    const friday = new Date(2026, 9, 16, 16, 30).getTime()
+    expect(new Date(friday).getDay()).toBe(5)
+    expect(game.isFridayAfternoon(friday)).toBe(true)
+    expect(game.isFridayAfternoon(new Date(2026, 9, 16, 15, 59).getTime())).toBe(false)
+    expect(game.isFridayAfternoon(new Date(2026, 9, 17, 17, 0).getTime())).toBe(false)
+    const justAfter = new Date(2026, 9, 17, 0, 2).getTime()
+    expect(game.crossesMidnight(justAfter, 5 * 60_000)).toBe(true)
+    expect(game.crossesMidnight(justAfter, 60_000)).toBe(false)
+    const commit = { tool: 'Bash', isError: false, interrupted: false, background: false, committed: true }
+    expect(game.isInitialCommit({ ...commit, command: 'git add -A && git commit -m "Initial commit"' })).toBe(true)
+    expect(game.isInitialCommit({ ...commit, command: 'git commit -m "Fix the parser"' })).toBe(false)
+    expect(game.isInitialCommit({ ...commit, committed: false, command: 'git commit -m "Initial commit"' })).toBe(false)
+  })
+
+  test('a secret is kept for good: through a sync, a new shaft and a save read back', () => {
+    const found = game.findSecret(mineWith({ lifetime: 125e6 }), 'good-manners')
+    expect(game.findSecret(found, 'good-manners')).toBe(found)
+    const merged = game.applyDelta(saveWith({ secrets: ['groundbreaking'] }), found.pending)
+    expect(merged.secrets).toEqual(['groundbreaking', 'good-manners'])
+    expect(game.openShaft(found.save, 'next')?.secrets).toEqual(['good-manners'])
+    expect(game.normalize({ v: 1, runId: 'x', secrets: ['good-manners', 'nonsense', 'good-manners'] })?.secrets).toEqual(['good-manners'])
+  })
+
+  test('a secret shows as ??? until found, and is never the next goal', () => {
+    const names = (save: Save) => model.shopModel(save, 1, true).achievements.filter(a => a.id === 'good-manners').map(a => a.name)
+    expect(names(saveWith({}))).toEqual(['???'])
+    expect(names(saveWith({ secrets: ['good-manners'] }))).toEqual(['Good manners'])
+    expect(ACHIEVEMENTS.filter(a => a.goal.kind === 'secret')).toHaveLength(9)
+    // Everything but the secrets earned: no goal is left to show.
+    const almost = saveWith({ allTime: 1e13, deepest: 1_300, veins: 100, gems: 1_000, clicks: 10_000, tools: 1_000, shafts: 10, stones: 500, bestTurn: 1e9, bestStreak: 25,
+      events: { tests: 100, commit: 100, longShift: 10, fix: 25, merge: 10 } })
+    expect(game.nextAchievement(almost)).toBeNull()
   })
 })
 

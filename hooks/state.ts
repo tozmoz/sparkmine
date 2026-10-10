@@ -2,8 +2,8 @@
 // live in game.ts and what the drawings show in model.ts; this file holds the
 // store sync and the actions the hooks and buttons call.
 
-import type { Amount, Band, EventKind, Extras, Mine, Mode, Nap, ProducerId, Save, ShopModel, VeinKind, View } from '../types'
-import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, VEIN, type Achievement } from './data.ts'
+import type { Amount, Band, EventKind, Extras, Mine, Mode, Nap, ProducerId, Save, SecretId, ShopModel, VeinKind, View } from '../types'
+import { ACHIEVEMENT_BONUS, EVENTS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, TIP_MS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
 import * as model from './model.ts'
@@ -80,6 +80,8 @@ export const INITIAL_VIEW: View = {
   testsFailing: false,
   squashedAt: 0,
   restSince: 0,
+  tipUntil: 0,
+  flare: false,
 }
 
 export const INITIAL_BAND: Band = {
@@ -96,6 +98,8 @@ export const INITIAL_BAND: Band = {
   bug: null,
   extras: { canary: false, gloves: false, warm: false, coffee: false },
   nap: null,
+  tip: false,
+  flare: false,
 }
 
 /** A shop amount as this version reads it: ×100 is gone, and Max buys a lot in its place. */
@@ -156,6 +160,8 @@ export async function refresh(io: Io, now?: number, force = false): Promise<Band
       bug,
       extras: extrasOf(mine.save),
       nap: mode.mode === 'idle' && view.restSince > 0 ? napOf(at - view.restSince) : null,
+      tip: at < view.tipUntil,
+      flare: view.flare && view.isTurn,
       carts: Math.min(6, game.owned(mine.save, 'cart')),
       goblins: Math.min(1, game.owned(mine.save, 'goblin')),
       pick: game.pickTier(mine.save),
@@ -421,8 +427,42 @@ export async function minedTool(io: Io, outcome: game.ToolOutcome): Promise<numb
   const events = game.workEvents(outcome)
   if (squashed.yes) events.push('fix')
   if (events.length > 0) await reward(io, events, now)
+  await findSecrets(io, [
+    ...(game.isInitialCommit(outcome) ? (['groundbreaking'] as const) : []),
+    ...(events.includes('merge') && game.isFridayAfternoon(now) ? (['friday-deploy'] as const) : []),
+  ])
   await refresh(io, now)
   return value
+}
+
+/** Records the secrets found that were not yet: each is an achievement, which the tick toasts. */
+async function findSecrets(io: Io, ids: readonly SecretId[]): Promise<SecretId[]> {
+  const found: { ids: SecretId[] } = { ids: [] }
+  if (ids.length === 0) return found.ids
+  await io.mine(mine => {
+    found.ids = ids.filter(id => !mine.save.secrets.includes(id))
+    return found.ids.reduce((next, id) => game.findSecret(next, id), mine)
+  })
+  return found.ids
+}
+
+/**
+ * The person's prompt, read for a few words and left as it is: thanks make
+ * the miner tip his hat, and ultrathink flares his lantern for the turn.
+ * Both are secrets the first time.
+ */
+export async function promptSeen(io: Io, text: string): Promise<void> {
+  const secrets = game.promptSecrets(text)
+  if (secrets.length === 0) return
+  await ensureLoaded(io)
+  const now = await io.now()
+  await patchView(io, view => ({
+    ...view,
+    tipUntil: secrets.includes('good-manners') ? now + TIP_MS : view.tipUntil,
+    flare: view.flare || secrets.includes('deep-thinker'),
+  }))
+  await findSecrets(io, secrets)
+  await refresh(io, now)
 }
 
 /** Marks a tool call that waits on the person (a permission prompt, a question), or clears it. */
@@ -451,8 +491,13 @@ export type TurnEnd = 'answer' | 'aborted' | 'refusal' | 'error'
  * work; every STREAK_TURNS of them in a row pay. One without work leaves the
  * streak as it was, and one cut short or failed ends it.
  */
-export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer'): Promise<number> {
+export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer', answer = ''): Promise<number> {
   await ensureLoaded(io)
+  const at = await io.now()
+  await findSecrets(io, [
+    ...(game.isAbsolutelyRight(answer) ? (['absolutely-right'] as const) : []),
+    ...(game.crossesMidnight(at, durationMs) ? (['midnight-oil'] as const) : []),
+  ])
   const isStopped = (await io.readBand()).isStopped
   let bonus = 0
   if (!isStopped) {
@@ -485,6 +530,7 @@ export async function endTurn(io: Io, durationMs = 0, reason: TurnEnd = 'answer'
     lastToolAt: 0,
     lastTurn: earned,
     restSince: endedAt,
+    flare: false,
   }))
   await refresh(io)
   void sync(io).catch(() => undefined)

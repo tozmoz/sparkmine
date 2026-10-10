@@ -29,6 +29,18 @@ export type EventKind = 'tests' | 'fix' | 'build' | 'lint' | 'commit' | 'pr' | '
 
 export type VeinKind = 'rich' | 'frenzy'
 
+/** A secret found: an achievement that shows as ??? until then. */
+export type SecretId =
+  | 'absolutely-right'
+  | 'good-manners'
+  | 'deep-thinker'
+  | 'groundbreaking'
+  | 'friday-deploy'
+  | 'midnight-oil'
+  | 'fossil'
+  | 'rubber-duck'
+  | 'pharaoh'
+
 /** The mine as $.store keeps it, shared by every session on the machine. */
 export type Save = {
   v: 1
@@ -60,6 +72,8 @@ export type Save = {
   gems: number
   veins: number
   events: Counts<EventKind>
+  /** Secrets found, for good. */
+  secrets: SecretId[]
   /**
    * The crew's idle pace is the mine's, not a session's: every open session
    * mines it, and the save holds it up to this moment. A session adds only
@@ -98,6 +112,7 @@ export type Delta = {
   gems: number
   veins: number
   events: Counts<EventKind>
+  secrets: SecretId[]
   /**
    * The idle pace this session mined since it last synced. The save takes
    * only the part of it that no other session gave it yet: see Save `idleAt`.
@@ -158,6 +173,10 @@ export type View = {
   squashedAt: number
   /** Since when Claude has done nothing here: a turn's end, a tool call, or the session's start. */
   restSince: number
+  /** Thanked: the miner tips his hat until then. */
+  tipUntil: number
+  /** Asked to ultrathink: the lantern flares until the turn ends. */
+  flare: boolean
 }
 
 /** How long Claude has been idle shows on the miner: a coffee after a while, asleep after a long while. */
@@ -188,6 +207,8 @@ export type Band = {
   extras: Extras
   /** Only while Claude is idle. */
   nap: Nap | null
+  tip: boolean
+  flare: boolean
 }
 
 /** The live numbers the band's and the shop's Client draw, answered to their polls. */

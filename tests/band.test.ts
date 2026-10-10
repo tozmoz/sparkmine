@@ -1,9 +1,11 @@
 import { expect, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 import * as game from '../hooks/game.ts'
 import { sceneSvg } from '../hooks/scene.ts'
 import * as state from '../hooks/state.ts'
-import { band, command, committed, endSession, failed, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
+import { TIP_MS } from '../hooks/data.ts'
+import { band, command, committed, endSession, failed, finishTurn, pane, prompt, seeded, start, wait, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
 const POLL = 150
@@ -409,6 +411,64 @@ test("a while into Claude's idle the miner has a coffee, then a nap: the line sh
   expect(await ui.find({ in: 'hud', type: 'Text', text: /· ☕$/ })).toBeDefined()
   const shop = await $.ui.mount(pane('desktop'))
   expect((await shop.find({ type: 'Svg' }))?.props.source).toBe(sceneSvg({ mode: 'pause', carts: 0, goblins: 0, pick: 0, biome: 0, pose: 'coffee' }, 2))
+})
+
+/** The band's scene as a still mine of no crew would draw it, the details given. */
+const still = (patch: object) => sceneSvg({ mode: 'pause', carts: 0, goblins: 0, pick: 0, biome: 0, ...patch }, 3, true)
+
+/** The secrets the store holds once the session syncs. */
+async function secretsStored($: Engine, w: ReturnType<typeof world>): Promise<unknown> {
+  await endSession($)
+  return (w.store.get('save') as { secrets?: unknown }).secrets
+}
+
+test('thanks make the miner tip his helmet a moment, and the first time is a secret', async ($, on) => {
+  const w = world(on)
+  await start($)
+  const ui = await $.ui.mount(band('desktop'))
+  await prompt($, 'thanks, that fixed it')
+  await $.turn.start({ text: 'thanks, that fixed it', turnId: 't1' })
+  await ui.advance(POLL)
+  expect((await ui.find({ type: 'Svg' }))?.props.source).toBe(still({ pose: 'tip' }))
+  await w.clock.advance(TIP_MS)
+  await ui.advance(POLL)
+  expect((await ui.find({ type: 'Svg' }))?.props.source).toBe(sceneSvg({ mode: 'work', carts: 0, goblins: 0, pick: 0, biome: 0 }, 3, true))
+  expect(w.toasts).toContain('Achievement: Good manners. Everything mines 2% more.')
+  expect(await secretsStored($, w)).toEqual(['good-manners'])
+})
+
+test('ultrathink flares the lanterns for the turn', async ($, on) => {
+  const w = world(on)
+  await start($)
+  const ui = await $.ui.mount(band('desktop'))
+  await prompt($, 'ultrathink: why does the sync lose writes?')
+  await $.turn.start({ text: 'ultrathink', turnId: 't1' })
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain('#fff2c4')
+  await finishTurn($, 't1')
+  await $.turn.start({ text: 'go on', turnId: 't2' })
+  await ui.advance(POLL)
+  expect(String((await ui.find({ type: 'Svg' }))?.props.source)).not.toContain('#fff2c4')
+  expect(await secretsStored($, w)).toEqual(['deep-thinker'])
+})
+
+test("Claude's catchphrase and a turn worked through midnight are secrets", async ($, on) => {
+  // The session starts half a minute after midnight, where the person is.
+  const w = world(on, {}, new Date(2026, 9, 17, 0, 0, 30).getTime())
+  await start($)
+  await $.turn.start({ text: 'is this right?', turnId: 't1' })
+  await finishTurn($, 't1', 60_000, 'answer', "You're absolutely right! The cache was stale.")
+  expect(await secretsStored($, w)).toEqual(['absolutely-right', 'midnight-oil'])
+})
+
+test('a pull request merged on a Friday after four, and an initial commit, are secrets', async ($, on) => {
+  const w = world(on, {}, new Date(2026, 9, 16, 17, 0).getTime())
+  await start($)
+  await $.turn.start({ text: 'ship it', turnId: 't1' })
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7 --squash' })
+  w.bash = () => committed
+  await $.tool.call({ tool: 'Bash', command: 'git init && git add -A && git commit -m "Initial commit"' })
+  expect(await secretsStored($, w)).toEqual(['friday-deploy', 'groundbreaking'])
 })
 
 test('a build, a clean lint, a pull request opened and one merged each pay once a turn', async ($, on) => {
