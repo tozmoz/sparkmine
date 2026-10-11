@@ -36,6 +36,10 @@ claude plugin marketplace update sparkmine
 claude plugin update sparkmine@sparkmine
 ```
 
+Or let updates arrive on their own: in Claude Code in a terminal, run
+`/plugin`, open the Marketplaces tab, select sparkmine and choose **Enable
+auto-update**.
+
 ## Play
 
 - Press **Mine** while Claude works. Clicks count only then. In the
