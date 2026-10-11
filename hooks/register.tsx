@@ -7,6 +7,7 @@ import type { Band, HudProps, StatsProps } from '../types'
 import { newMine, normalizeMine, outcomeOf, producer } from './game.ts'
 import { iconSvg } from './icons.ts'
 import { EMPTY_HUD, EMPTY_SHOP, EMPTY_STATS, hudProps, shareCard, statsProps, veinProps } from './model.ts'
+import { badgeWallSvg, barSvg, strataSvg } from './pictures.ts'
 import { H, ROWS, W, momentAt, momentKey, sceneCells, sceneSvg, type SceneSpec } from './scene.ts'
 import * as state from './state.ts'
 import { INITIAL_BAND, INITIAL_VIEW, type Io } from './state.ts'
@@ -55,6 +56,16 @@ const specKey = (spec: SceneSpec) =>
   `${spec.mode}:${spec.carts}:${spec.goblins}:${spec.pick}:${spec.biome}:${spec.bug ?? ''}:` +
   `${flag(spec.canary)}${flag(spec.gloves)}${flag(spec.warm)}${flag(spec.coffee)}${flag(spec.flare)}${flag(spec.confetti)}:${spec.pose ?? ''}:${spec.find ?? ''}:${spec.season ?? ''}`
 const svgs = new Map<string, string>()
+
+/** The last of each of the shop's pictures, by what it showed: the shop redraws often, its pictures rarely change. */
+const pictures = new Map<string, { key: string; svg: string }>()
+function picture(kind: string, key: string, build: () => string): string {
+  const hit = pictures.get(kind)
+  if (hit !== undefined && hit.key === key) return hit.svg
+  const svg = build()
+  pictures.set(kind, { key, svg })
+  return svg
+}
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
   const key = `${specKey(spec)}@${scale}${fluid ? ':fluid' : ''}`
@@ -317,9 +328,9 @@ export const register: Register = on => {
   })
 
   // The shop's stats ask for fresh numbers once a second.
-  on('ui.message', { element: 'stats' }, async () => {
+  on('ui.message', { element: 'stats' }, async ($, e) => {
     if (io === null) return {}
-    lastStats = statsProps((await io.readMine()).save)
+    lastStats = statsProps((await io.readMine()).save, surfaceOf(e.surface))
     return { props: lastStats }
   })
 
@@ -482,7 +493,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: 'sparkmine' }, async ($, e) => {
-    const shop = await read($, SHOP)
+    const shop = state.fillShop(await read($, SHOP))
     const band = state.fillBand(await read($, BAND))
     const act: ui.ShopActions = {
       buy: id => (io === null ? 0 : state.buyProducer(io, id)),
@@ -492,22 +503,44 @@ export const register: Register = on => {
       shaft: () => {
         if (io !== null) void state.newShaft(io).catch(() => undefined)
       },
+      tab: tab => (io === null ? undefined : state.setTab(io, tab)),
+      relic: id => (io === null ? false : state.buyRelic(io, id)),
     }
     const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, acked: 0, ...HUD_SHOP }
     const held = handlesOn(e.surface)
     const { Text } = $.ui.resolve(e)
     const notice = band.isStopped ? <Text color="warning">Sparkmine is stopped. /mine start sets it going again.</Text> : null
+    const stats = { ...lastStats, surface: surfaceOf(e.surface) }
     if (e.surface === 'desktop') {
       const { Client, Svg } = $.ui.resolve(e)
       // A still picture of the mine; a while into Claude's idle, the miner has a coffee, then a nap.
       const header = bandSpec(band, 'pause', band.nap ?? undefined)
+      const { strata } = shop.depth
+      const { groups } = shop.badges
       return ui.keepHandles(
         ui.shopTree($.ui.resolve(e), shop, {
-          icon: (id, isDim) => <Svg source={iconSvg(id, 24, isDim)} alt={id} width={24} height={24} />,
+          icon: (id, isDim, size = 24) => <Svg source={iconSvg(id, size, isDim)} alt={id} width={size} height={size} />,
           header: <Svg source={svgFor(header, HEADER_SCALE)} alt="The mine" width={W * HEADER_SCALE} height={H * HEADER_SCALE} />,
           live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
-          stats: <Client key="stats" module="./stats.ts" props={lastStats} />,
+          stats: <Client key="stats" module="./stats.ts" props={stats} />,
           notice,
+          pictures: {
+            strata: (
+              <Svg
+                source={picture('strata', JSON.stringify(strata), () => strataSvg(strata))}
+                alt={`The layers in sight: ${strata.map(s => s.name).join(', ')}`}
+              />
+            ),
+            // Drawn interactive, so a pointer over a badge rings it and its title names it.
+            badgeWall: (
+              <Svg
+                source={picture('badges', JSON.stringify(groups), () => badgeWallSvg(groups))}
+                alt={`${shop.badges.earned} of ${shop.badges.total} badges`}
+                isInteractive
+              />
+            ),
+            bar: (share, color) => <Svg source={barSvg(share, color)} alt={`${Math.round(share * 100)}%`} />,
+          },
           isRoomy: true,
         }, act),
         held,
@@ -520,15 +553,21 @@ export const register: Register = on => {
           icon: () => null,
           header: null,
           live: <Client key="shophud" module="./hud.ts" props={props} height={HUD_SHOP.height} />,
-          stats: <Client key="stats" module="./stats.ts" props={lastStats} />,
+          stats: <Client key="stats" module="./stats.ts" props={stats} />,
           notice,
+          pictures: null,
           isRoomy: false,
         }, act),
         held,
       )
     }
     return ui.keepHandles(
-      ui.shopTree($.ui.resolve(e), shop, { icon: () => null, header: null, live: <Text bold>{`✻ ${Math.floor(lastHud.sparks)}`}</Text>, stats: null, notice, isRoomy: false }, act),
+      ui.shopTree(
+        $.ui.resolve(e),
+        shop,
+        { icon: () => null, header: null, live: <Text bold>{`✻ ${Math.floor(lastHud.sparks)}`}</Text>, stats: null, notice, pictures: null, isRoomy: false },
+        act,
+      ),
       held,
     )
   })

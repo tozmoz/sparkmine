@@ -48,6 +48,9 @@ export type SecretId =
   | 'rubber-duck'
   | 'pharaoh'
 
+/** What ancient stones buy, once each and for good: see data.ts RELICS. */
+export type RelicId = 'ledger' | 'starter' | 'lamp' | 'map' | 'cutter' | 'night' | 'lode' | 'sense'
+
 /** The mine as $.store keeps it, shared by every session on the machine. */
 export type Save = {
   v: 1
@@ -58,8 +61,10 @@ export type Save = {
   lifetime: number
   /** Sparks earned in every run. */
   allTime: number
-  /** Ancient stones, from new shafts: each adds to everything for good. */
+  /** Ancient stones found in new shafts: each adds to everything for good, spent on relics or not. */
   stones: number
+  /** Relics bought with stones, for good: they cost the stones' price, never what the stones add. */
+  relics: RelicId[]
   /** The deepest a finished run reached, in metres; this run's depth comes from `lifetime`. */
   deepest: number
   /** New shafts opened. */
@@ -120,6 +125,7 @@ export type Delta = {
   veins: number
   events: Counts<EventKind>
   secrets: SecretId[]
+  relics: RelicId[]
   /**
    * The idle pace this session mined since it last synced. The save takes
    * only the part of it that no other session gave it yet: see Save `idleAt`.
@@ -145,6 +151,9 @@ export type Mode = 'idle' | 'work' | 'pause'
 /** How many producers one press of a buy button buys: one, ten, or as many as the purse allows. */
 export type Amount = 1 | 10 | 'max'
 
+/** The shop's tabs: what it sells, the shaft and its relics, the badges, the stats. */
+export type ShopTab = 'shop' | 'shaft' | 'badges' | 'stats'
+
 /** What changes while Claude works. Nothing draws from it directly, so it can change often. */
 export type View = {
   isTurn: boolean
@@ -157,6 +166,8 @@ export type View = {
   lastTurn: number
   /** How many producers one press of a buy button buys. */
   amount: Amount
+  /** The shop's tab this session shows. */
+  tab: ShopTab
   /** Gems struck so far this session, and what the latest ones added beyond their clicks. */
   gem: { seq: number; bonus: number } | null
   /** The vein showing now, until when it can be caught. */
@@ -303,6 +314,10 @@ export type IconId =
   | 'gem'
   | 'check'
   | 'rod'
+  | 'ledger'
+  | 'map'
+  | 'bug'
+  | 'duck'
 
 /** What the vein Client draws: a vein to catch, or the frenzy one started. */
 export type VeinProps = {
@@ -312,8 +327,9 @@ export type VeinProps = {
   surface: 'terminal' | 'desktop' | 'other'
 }
 
-/** What the shop's stats Client draws. */
+/** What the shop's stats Client draws: tiles on the desktop, lines of text on the terminal. */
 export type StatsProps = {
+  surface: 'terminal' | 'desktop' | 'other'
   bySource: Counts<SourceKind>
   bestTurn: number
   /** The deepest any run reached, this one included, in metres. */
@@ -343,6 +359,8 @@ export type ShopItem = {
 /** What the shop pane draws. Rebuilt on every change, written only when it differs. */
 export type ShopModel = {
   isLoaded: boolean
+  /** The tab this session shows. */
+  tab: ShopTab
   amount: Amount
   producers: ShopItem[]
   /** The price of the next producer, still hidden. */
@@ -352,21 +370,45 @@ export type ShopModel = {
   /** The next unlock; how close it is lives in the live counter, so clicks do not redraw the pane. */
   next: { name: string; icon: IconId; text: string } | null
   values: { click: number; read: number; edit: number }
-  /** Ancient stones held, achievements earned, and what each adds to everything, in percent. */
+  /** Ancient stones found, achievements earned, and what each adds to everything, in percent. */
   bonus: { stones: number; stonesPct: number; achievements: number; achievementsPct: number }
-  /** The layers this run reached and the next one, deepest last, and whether more lie beyond that, hidden ones aside. */
-  layers: { name: string; from: number; color: string; text: string; isReached: boolean; isHere: boolean }[]
-  hasDeeper: boolean
-  /** Every achievement in order, earned or not, and the closest unearned one. */
-  achievements: { id: string; name: string; isEarned: boolean }[]
-  nextAchievement: { name: string; text: string } | null
+  /** The shaft tab's top: how deep this run is, the layers in sight, and what the reached ones add. */
+  depth: {
+    metres: number
+    deepest: number
+    /**
+     * The layers in sight, top first: the reached ones, the one the mine is
+     * in, the next and the ones below it. A hidden layer is in sight only once
+     * the mine reaches the layer above it.
+     */
+    strata: { name: string; color: string; state: 'reached' | 'here' | 'next' | 'ahead' }[]
+    here: { name: string; color: string }
+    next: { name: string; color: string; from: number; text: string } | null
+    /** What the layers reached add, a few words each. */
+    perks: string[]
+  }
   /**
-   * The new shaft, once the run is deep enough to think of one: the stones it
-   * pays now, none until SHAFT_DEPTH, and what all the stones would add to
-   * everything then, in percent. Its depth lives in the live counter.
+   * The new shaft: the stones it pays now, none until SHAFT_DEPTH, and what
+   * all the stones would add to everything then, in percent.
    */
-  shaft: { gain: number; at: number; pct: number } | null
+  shaft: { gain: number; at: number; pct: number }
+  /** Stones found and still to spend, the relics owned, and the ones for sale, priced in stones. */
+  relics: { found: number; toSpend: number; owned: { id: RelicId; name: string; icon: IconId }[]; forSale: ShopItem[] }
+  /** Every badge by group, earned or not, how many are earned, and the closest unearned one and how close. */
+  badges: {
+    earned: number
+    total: number
+    pct: number
+    next: { name: string; text: string; icon: IconId; have: number; need: number } | null
+    groups: { title: string; items: Badge[] }[]
+  }
 }
+
+/** A badge's picture on the wall: one of the shop's icons, or a lump of a layer's rock. */
+export type BadgeArt = { kind: 'icon'; id: IconId } | { kind: 'rock'; color: string }
+
+/** One badge on the wall: a secret or a hidden layer's keeps its name and goal to itself until earned. */
+export type Badge = { id: string; name: string; text: string; art: BadgeArt; isEarned: boolean; isSurprise: boolean }
 
 declare module 'claude-code' {
   interface PluginState {

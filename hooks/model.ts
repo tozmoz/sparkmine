@@ -2,14 +2,14 @@
 // draws its model and the HUD its props, so neither reads the mine itself and
 // neither is redrawn when nothing it shows has changed.
 
-import type { Amount, Band, EventKind, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
-import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, FINDS, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
+import type { Amount, Badge, BadgeArt, Band, EventKind, HudProps, IconId, Save, SecretId, ShopModel, ShopTab, StatsProps, ToolKind, VeinProps, View } from '../types'
+import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, FINDS, PRODUCERS, RELICS, SHAFT_DEPTH, TOOL_NAMES, type Achievement, type Goal, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate, plural } from './format.ts'
 import * as game from './game.ts'
 
 export const SHOP_LIMIT = 8
-/** The shop starts to show the new shaft this far above the depth where it opens. */
-const SHAFT_LEAD = 200
+/** The topsoil's color, where a layer is missing. */
+const TOPSOIL = '#b8804f'
 
 const TOOL_ICONS: Readonly<Record<ToolKind, IconId>> = {
   read: 'glasses',
@@ -97,6 +97,7 @@ export function unlockText(u: Upgrade): string {
 
 export const EMPTY_SHOP: ShopModel = {
   isLoaded: false,
+  tab: 'shop',
   amount: 1,
   producers: [],
   teaser: null,
@@ -105,14 +106,147 @@ export const EMPTY_SHOP: ShopModel = {
   next: null,
   values: { click: 1, read: 1, edit: 4 },
   bonus: { stones: 0, stonesPct: 0, achievements: 0, achievementsPct: 0 },
-  layers: [],
-  hasDeeper: false,
-  achievements: [],
-  nextAchievement: null,
-  shaft: null,
+  depth: { metres: 0, deepest: 0, strata: [], here: { name: 'Topsoil', color: TOPSOIL }, next: null, perks: [] },
+  shaft: { gain: 0, at: SHAFT_DEPTH, pct: 0 },
+  relics: { found: 0, toSpend: 0, owned: [], forSale: [] },
+  badges: { earned: 0, total: ACHIEVEMENTS.length, pct: 0, next: null, groups: [] },
 }
 
-export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopModel {
+/** The shaft tab's top: the layers in sight, the one the mine is in, the next, and what the reached ones add. */
+function depthOf(save: Save): ShopModel['depth'] {
+  const metres = game.depth(save)
+  const here = game.biomeAt(metres)
+  const stateOf = (i: number): ShopModel['depth']['strata'][number]['state'] =>
+    i < here ? 'reached' : i === here ? 'here' : i === here + 1 ? 'next' : 'ahead'
+  // A hidden layer comes in sight once the mine is a layer above it.
+  const strata = BIOMES.flatMap((b, i) => (b.isHidden === true && i > here + 1 ? [] : [{ name: b.name, color: b.color, state: stateOf(i) }]))
+  const at = BIOMES[here] ?? BIOMES[0]
+  const below = BIOMES[here + 1]
+  return {
+    metres,
+    deepest: game.deepestOf(save),
+    strata,
+    here: { name: at?.name ?? 'Topsoil', color: at?.color ?? TOPSOIL },
+    next: below === undefined ? null : { name: below.name, color: below.color, from: below.from, text: below.text },
+    perks: BIOMES.slice(0, here + 1).flatMap(b => (b.short === '' ? [] : [b.short])),
+  }
+}
+
+/** Stones found and still to spend, and the relics: owned, and for sale at their price in stones. */
+function relicsOf(save: Save): ShopModel['relics'] {
+  const toSpend = game.stonesToSpend(save)
+  return {
+    found: save.stones,
+    toSpend,
+    owned: game.ownedRelics(save).map(r => ({ id: r.id, name: r.name, icon: r.icon })),
+    forSale: RELICS.filter(r => !game.hasRelic(save, r.id)).map(r => ({
+      id: r.id,
+      icon: r.icon,
+      name: r.name,
+      detail: r.blurb,
+      owned: 0,
+      count: 1,
+      price: r.cost,
+      canBuy: toSpend >= r.cost,
+    })),
+  }
+}
+
+/** The badge wall's groups, by what each badge counts, in the order they show. */
+const BADGE_GROUPS: readonly { title: string; kinds: readonly Goal['kind'][] }[] = [
+  { title: 'Depth', kinds: ['deepest'] },
+  { title: 'Veins and gems', kinds: ['veins', 'gems'] },
+  { title: 'Records', kinds: ['clicks', 'tools', 'allTime'] },
+  { title: "Claude's work", kinds: ['event', 'bestStreak', 'bestTurn'] },
+  { title: 'Shafts and stones', kinds: ['shafts', 'stones'] },
+  { title: 'Secrets', kinds: ['secret'] },
+]
+
+const EVENT_BADGES: Readonly<Record<EventKind, IconId>> = {
+  tests: 'check',
+  fix: 'bug',
+  build: 'terminal',
+  lint: 'check',
+  commit: 'terminal',
+  pr: 'glasses',
+  merge: 'glasses',
+  longShift: 'moon',
+  streak: 'bolt',
+}
+
+const SECRET_BADGES: Readonly<Record<SecretId, IconId>> = {
+  'absolutely-right': 'check',
+  'good-manners': 'apprentice',
+  'deep-thinker': 'lantern',
+  groundbreaking: 'pick',
+  'friday-deploy': 'glasses',
+  'midnight-oil': 'moon',
+  fossil: 'stone',
+  'rubber-duck': 'duck',
+  pharaoh: 'badge',
+}
+
+/** A badge's picture: a lump of its layer's rock for a depth, else an icon of what it counts. */
+function badgeArt(a: Achievement): BadgeArt {
+  const icon = (id: IconId): BadgeArt => ({ kind: 'icon', id })
+  const g = a.goal
+  switch (g.kind) {
+    case 'deepest':
+      return { kind: 'rock', color: BIOMES[game.biomeAt(g.n)]?.color ?? TOPSOIL }
+    case 'veins':
+      return icon('nugget')
+    case 'gems':
+      return icon('gem')
+    case 'clicks':
+      return icon('glove')
+    case 'tools':
+      return icon('terminal')
+    case 'allTime':
+      return icon('badge')
+    case 'bestStreak':
+      return icon('bolt')
+    case 'bestTurn':
+      return icon('clock')
+    case 'shafts':
+      return icon(g.n >= 10 ? 'pickObsidian' : g.n >= 5 ? 'pickDiamond' : 'pick')
+    case 'stones':
+      return icon('stone')
+    case 'event':
+      return icon(EVENT_BADGES[g.event])
+    case 'secret':
+      return icon(SECRET_BADGES[g.secret])
+  }
+}
+
+/** Every badge by group, how many are earned, and the closest unearned one. A surprise shows nothing of itself until earned. */
+function badgesOf(save: Save, won: ReadonlySet<string>): ShopModel['badges'] {
+  const badge = (a: Achievement): Badge => {
+    const isEarned = won.has(a.id)
+    const isSurprise = !isEarned && game.isSurprise(a)
+    return {
+      id: a.id,
+      name: isSurprise ? '???' : a.name,
+      text: isSurprise ? '???' : a.text,
+      art: isSurprise ? { kind: 'icon', id: 'locked' } : badgeArt(a),
+      isEarned,
+      isSurprise,
+    }
+  }
+  const goal = game.nextAchievement(save)
+  const art = goal === null ? null : badgeArt(goal)
+  return {
+    earned: won.size,
+    total: ACHIEVEMENTS.length,
+    pct: Math.round(won.size * ACHIEVEMENT_BONUS * 100),
+    next:
+      goal === null || art === null
+        ? null
+        : { name: goal.name, text: goal.text, icon: art.kind === 'icon' ? art.id : 'stone', ...game.achievementProgress(save, goal) },
+    groups: BADGE_GROUPS.map(g => ({ title: g.title, items: ACHIEVEMENTS.filter(a => g.kinds.includes(a.goal.kind)).map(badge) })),
+  }
+}
+
+export function shopModel(save: Save, amount: Amount, tab: ShopTab, isLoaded: boolean): ShopModel {
   const m = game.multipliers(save)
   const top = PRODUCERS.reduce((high, p, i) => (game.owned(save, p.id) > 0 ? i : high), -1)
   const producers = PRODUCERS.slice(0, top + 2).map(p => {
@@ -143,16 +277,11 @@ export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopMo
     canBuy: save.sparks >= u.cost,
   }))
   const nextUp: ShopModel['next'] = next === null ? null : { name: next.name, icon: upgradeIcon(next), text: unlockText(next) }
-  const metres = game.depth(save)
-  const here = game.biomeAt(metres)
   const won = new Set(game.achievements(save).map(a => a.id))
-  const goal = game.nextAchievement(save)
   const gain = game.stoneGain(save)
-  // The layers this run reached and the next one: the rest stay a surprise,
-  // and whether more lie below leaves the hidden ones out.
-  const shown = BIOMES.slice(0, here + 2)
   return {
     isLoaded,
+    tab,
     amount,
     producers,
     teaser: PRODUCERS[top + 2]?.cost ?? null,
@@ -170,15 +299,10 @@ export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopMo
       achievements: won.size,
       achievementsPct: Math.round(won.size * ACHIEVEMENT_BONUS * 100),
     },
-    layers: shown.map((b, i) => ({ name: b.name, from: b.from, color: b.color, text: b.text, isReached: i <= here, isHere: i === here })),
-    hasDeeper: BIOMES.slice(shown.length).some(b => b.isHidden !== true),
-    // A secret or a hidden layer's badge keeps its name to itself until earned.
-    achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: won.has(a.id) || !game.isSurprise(a) ? a.name : '???', isEarned: won.has(a.id) })),
-    nextAchievement: goal === null ? null : { name: goal.name, text: goal.text },
-    shaft:
-      save.shafts > 0 || metres >= SHAFT_DEPTH - SHAFT_LEAD
-        ? { gain, at: SHAFT_DEPTH, pct: Math.round(game.stoneBonus(save.stones + gain) * 100) }
-        : null,
+    depth: depthOf(save),
+    shaft: { gain, at: SHAFT_DEPTH, pct: Math.round(game.stoneBonus(save.stones + gain) * 100) },
+    relics: relicsOf(save),
+    badges: badgesOf(save, won),
   }
 }
 
@@ -217,7 +341,7 @@ export function shareCard(save: Save): string {
 /** The layer a depth is in, by name and color, for the drawings. */
 export function layerAt(metres: number): { name: string; color: string } {
   const b = BIOMES[game.biomeAt(metres)] ?? BIOMES[0]
-  return { name: b?.name ?? 'Topsoil', color: b?.color ?? '#b8804f' }
+  return { name: b?.name ?? 'Topsoil', color: b?.color ?? TOPSOIL }
 }
 
 /** How long the HUD shows a reward in place of the last tool call. */
@@ -235,7 +359,7 @@ export const EMPTY_HUD: HudProps = {
   taps: 0,
   gem: null,
   depth: 0,
-  layer: { name: 'Topsoil', color: '#b8804f' },
+  layer: { name: 'Topsoil', color: TOPSOIL },
   event: null,
   frenzy: null,
   isCompact: false,
@@ -302,8 +426,9 @@ export function veinProps(view: View, now: number, surface: VeinProps['surface']
 }
 
 /** What the shop's stats Client draws, all time. */
-export function statsProps(save: Save): StatsProps {
+export function statsProps(save: Save, surface: StatsProps['surface']): StatsProps {
   return {
+    surface,
     bySource: save.bySource,
     bestTurn: save.bestTurn,
     deepest: game.deepestOf(save),
@@ -318,4 +443,4 @@ export function statsProps(save: Save): StatsProps {
   }
 }
 
-export const EMPTY_STATS: StatsProps = { bySource: {}, bestTurn: 0, deepest: 0, shafts: 0, bestStreak: 0, gems: 0, veins: 0, events: {}, clicks: 0, tools: 0, turns: 0 }
+export const EMPTY_STATS: StatsProps = { surface: 'other', bySource: {}, bestTurn: 0, deepest: 0, shafts: 0, bestStreak: 0, gems: 0, veins: 0, events: {}, clicks: 0, tools: 0, turns: 0 }

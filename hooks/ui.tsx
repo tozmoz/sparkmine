@@ -1,11 +1,13 @@
 // The shop pane, as a plain tree built from its model. The render hook reads
 // the model, picks the surface's elements and hands in what only it can make:
-// the pictures (desktop only) and the live counter.
+// the pictures (desktop only) and the live Clients. The pane shows one tab at
+// a time, so however much the shop holds, it stays short.
 
 import type { ElementTable, RenderElement, RenderSurface } from 'claude-code'
 
-import type { Amount, IconId, ProducerId, ShopItem, ShopModel } from '../types'
-import { fmt, plural } from './format.ts'
+import type { Amount, IconId, ProducerId, RelicId, ShopItem, ShopModel, ShopTab } from '../types'
+import { ACHIEVEMENT_BONUS } from './data.ts'
+import { commas, fmt, plural } from './format.ts'
 
 type Elements = ElementTable<RenderSurface>
 
@@ -14,11 +16,13 @@ export type ShopActions = {
   upgrade: (id: string) => unknown
   amount: (amount: Amount) => unknown
   shaft: () => unknown
+  tab: (tab: ShopTab) => unknown
+  relic: (id: RelicId) => unknown
 }
 
 export type ShopParts = {
-  /** A picture of the icon, or null where the surface draws none. */
-  icon: (id: IconId, isDim: boolean) => RenderElement | null
+  /** A picture of the icon, `size` CSS pixels square, or null where the surface draws none. */
+  icon: (id: IconId, isDim: boolean, size?: number) => RenderElement | null
   /** The mine itself, at the top of the pane. */
   header: RenderElement | null
   /** The Client that keeps the sparks counter live. */
@@ -27,6 +31,12 @@ export type ShopParts = {
   stats: RenderElement | null
   /** A line above everything, such as that the game is stopped. */
   notice: RenderElement | null
+  /** The desktop's pictures: the layers in sight, the badge wall, a bar. Null where the surface draws them in text. */
+  pictures: {
+    strata: RenderElement
+    badgeWall: RenderElement
+    bar: (share: number, color: string) => RenderElement
+  } | null
   /** Cards get a border where there is room for one. */
   isRoomy: boolean
 }
@@ -62,8 +72,27 @@ export function keepHandles(tree: RenderElement, held: Map<string, Press>): Rend
 /** What a press of a producer's button can buy: one, ten, or as many as the purse allows. */
 const AMOUNTS: readonly Amount[] = [1, 10, 'max']
 
-/** The gold of an earned achievement: the theme's, so a light theme darkens it. */
+/** The tabs, in order, and the glyph the desktop shows before each name. */
+const TABS: readonly { tab: ShopTab; glyph: string; name: string }[] = [
+  { tab: 'shop', glyph: '⛏', name: 'Shop' },
+  { tab: 'shaft', glyph: '◈', name: 'Shaft' },
+  { tab: 'badges', glyph: '★', name: 'Badges' },
+  { tab: 'stats', glyph: '▤', name: 'Stats' },
+]
+
+/** The gold of an earned badge and a bar of them: the theme's, so a light theme darkens it. */
 const GOLD = 'warning'
+/** The same gold for the desktop's pictures, which draw no theme colors. */
+const PICTURE_GOLD = '#f2b632'
+
+/** A bar in text: `have` of `need` filled. */
+function textBar(have: number, need: number, width: number): string {
+  const filled = need <= 0 ? width : Math.max(0, Math.min(width, Math.floor((have / need) * width)))
+  return '▰'.repeat(filled) + '▱'.repeat(width - filled)
+}
+
+/** A sentence that goes on after another: its first letter small, unless it names Claude. */
+const lower = (text: string): string => (text.startsWith('Claude') ? text : `${text.charAt(0).toLowerCase()}${text.slice(1)}`)
 
 /** What the stones and achievements add to everything, once there are any. */
 function bonusLine(el: Elements, model: ShopModel): RenderElement | null {
@@ -75,6 +104,17 @@ function bonusLine(el: Elements, model: ShopModel): RenderElement | null {
     ...(b.achievements > 0 ? [`★ ${plural(b.achievements, 'achievement', 'achievements')} +${b.achievementsPct}%`] : []),
   ]
   return <Text color="permission">{parts.join(' · ')}</Text>
+}
+
+/** A section's name in bold, and a note on it. */
+function heading(el: Elements, name: string, note?: string): RenderElement {
+  const { Box, Text } = el
+  return (
+    <Box flexDirection="row" columnGap={1}>
+      <Text bold>{name}</Text>
+      {note === undefined ? null : <Text dimColor>{note}</Text>}
+    </Box>
+  )
 }
 
 function card(el: Elements, parts: ShopParts, item: ShopItem, button: RenderElement): RenderElement {
@@ -107,13 +147,17 @@ function priceButton(el: Elements, key: string, label: string, canBuy: boolean, 
   )
 }
 
-export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: ShopActions): RenderElement {
-  const { Box, Text, Button } = el
-  if (!model.isLoaded) return <Text dimColor>Opening the mine…</Text>
-  const amount = model.amount
-  const v = model.values
+/** Bordered cards stand apart by a row, so their edges never touch. */
+function cards(el: Elements, parts: ShopParts, list: RenderElement[]): RenderElement | RenderElement[] {
+  const { Box } = el
+  return parts.isRoomy ? <Box flexDirection="column" rowGap={1}>{list}</Box> : list
+}
 
-  const header = (
+/** The mine's picture, the live counter, what a click and a tool call mine, and the bonuses. */
+function header(el: Elements, model: ShopModel, parts: ShopParts): RenderElement {
+  const { Box, Text } = el
+  const v = model.values
+  return (
     <Box flexDirection="row" columnGap={2} alignItems="center">
       {parts.header}
       <Box flexDirection="column">
@@ -123,7 +167,30 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
       </Box>
     </Box>
   )
+}
 
+/** The tabs: the one showing lit, the rest dim. The terminal draws no glyph, which an emoji font could widen. */
+function tabRow(el: Elements, model: ShopModel, parts: ShopParts, act: ShopActions): RenderElement {
+  const { Box, Button } = el
+  return (
+    <Box flexDirection="row" columnGap={1} flexWrap="wrap">
+      {TABS.map(t => {
+        const count = t.tab === 'badges' ? ` ${model.badges.earned}/${model.badges.total}` : ''
+        const label = `${parts.isRoomy ? `${t.glyph} ` : ''}${t.name}${count}`
+        return t.tab === model.tab ? (
+          <Button key={`tab-${t.tab}`} label={label} variant="primary" onPress={() => act.tab(t.tab)} />
+        ) : (
+          <Button key={`tab-${t.tab}`} label={label} dimColor onPress={() => act.tab(t.tab)} />
+        )
+      })}
+    </Box>
+  )
+}
+
+/** Producers and upgrades. */
+function shopTab(el: Elements, model: ShopModel, parts: ShopParts, act: ShopActions): RenderElement[] {
+  const { Box, Text, Button } = el
+  const amount = model.amount
   const producers = model.producers.map(item =>
     card(
       el,
@@ -141,112 +208,189 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
         <Text dimColor>{`??? · ${fmt(model.teaser)} ✻`}</Text>
       </Box>
     )
-
-  // Bordered cards stand apart by a row, so their edges never touch.
-  const cards = (list: RenderElement[]) => (parts.isRoomy ? <Box flexDirection="column" rowGap={1}>{list}</Box> : list)
-
   const upgrades = model.upgrades.map(item =>
     card(el, parts, item, priceButton(el, `up-${item.id}`, `${fmt(item.price)} ✻`, item.canBuy, () => act.upgrade(item.id))),
   )
-  const next =
-    model.next === null ? null : (
-      <Box flexDirection="row" columnGap={1} alignItems="center" paddingX={1}>
-        {parts.icon(model.next.icon, true)}
-        <Text dimColor>{`Next: ${model.next.name}, ${model.next.text}`}</Text>
-      </Box>
-    )
-
-  const shaft =
-    model.shaft === null ? null : (
-      <Box flexDirection="column">
-        <Text bold>New shaft</Text>
-        <Box flexDirection="row" columnGap={1} alignItems="center" paddingX={1}>
-          {parts.icon('stone', model.shaft.gain < 1)}
-          <Text dimColor>
-            {model.shaft.gain === 0
-              ? `A new shaft opens once this one reaches ${model.shaft.at} m, and pays more ◈ the deeper it gets.`
-              : model.bonus.stones === 0
-                ? `Start over in fresh rock for ${plural(model.shaft.gain, '◈ ancient stone', '◈ ancient stones')}. They add ${model.shaft.pct}% to everything, for good; achievements and stats stay.`
-                : `Start over in fresh rock for ${plural(model.shaft.gain, '◈ ancient stone', '◈ ancient stones')}. Your stones then add ${model.shaft.pct}% to everything, up from ${model.bonus.stonesPct}%; achievements and stats stay.`}
-          </Text>
-          {priceButton(el, 'shaft', model.shaft.gain > 0 ? `Open for ${model.shaft.gain} ◈` : 'Open a new shaft', model.shaft.gain > 0, () => act.shaft())}
-        </Box>
-      </Box>
-    )
-
-  // The layers ahead: each one reached adds its perk for the rest of the run.
-  const layers =
-    model.layers.length === 0 ? null : (
-      <Box flexDirection="column">
-        <Text bold>Layers</Text>
-        {model.layers.map(layer => (
-          <Box flexDirection="row" columnGap={1} paddingX={1}>
-            {layer.isReached ? <Text color={layer.color}>■</Text> : <Text dimColor>□</Text>}
-            <Text bold={layer.isHere} dimColor={!layer.isReached}>{layer.name}</Text>
-            <Text dimColor>{`${layer.from} m · ${layer.text}`}</Text>
-            {layer.isHere ? <Text color={layer.color}>◀ here</Text> : null}
-          </Box>
+  const notes = [...(model.more > 0 ? [`+${model.more} more on sale`] : []), ...(model.next === null ? [] : [`Next: ${model.next.name}, ${model.next.text}`])]
+  return [
+    <Box flexDirection="column">
+      <Box flexDirection="row" columnGap={2}>
+        <Text bold>Producers</Text>
+        {AMOUNTS.map(n => (
+          <Button key={`amount-${n}`} label={n === 'max' ? 'Max' : `×${n}`} plain dimColor={amount !== n} onPress={() => act.amount(n)} />
         ))}
-        {model.hasDeeper ? (
-          <Box paddingX={1}>
-            <Text dimColor>More layers below</Text>
-          </Box>
-        ) : null}
       </Box>
-    )
+      {cards(el, parts, producers)}
+      {teaser}
+    </Box>,
+    <Box flexDirection="column">
+      <Text bold>Upgrades</Text>
+      {upgrades.length > 0 ? cards(el, parts, upgrades) : <Text dimColor>Nothing on sale yet.</Text>}
+      {notes.length > 0 ? <Text dimColor>{notes.join(' · ')}</Text> : null}
+    </Box>,
+  ]
+}
 
-  const earned = model.achievements.filter(a => a.isEarned).length
-  const achievements =
-    model.achievements.length === 0 ? null : (
-      <Box flexDirection="column">
-        <Box flexDirection="row" columnGap={1} alignItems="center">
-          {parts.icon('badge', earned === 0)}
-          <Text bold>Achievements</Text>
-          <Text dimColor>{`${earned}/${model.achievements.length} · +${model.bonus.achievementsPct}% to everything`}</Text>
-        </Box>
-        <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
-          {model.achievements.map(a => (a.isEarned ? <Text color={GOLD}>{`★ ${a.name}`}</Text> : <Text dimColor>{`☆ ${a.name}`}</Text>))}
-        </Box>
-        {model.nextAchievement === null ? null : (
-          <Box paddingX={1}>
-            <Text dimColor>{`Next: ${model.nextAchievement.name}. ${model.nextAchievement.text}`}</Text>
-          </Box>
+/** The layers in sight in text: reached ones solid in their colors, the next shaded, the ones below dotted. */
+function textStrata(el: Elements, model: ShopModel): RenderElement {
+  const { Text } = el
+  return (
+    <Text>
+      {model.depth.strata.map(s =>
+        s.state === 'ahead' ? <Text dimColor>{'····· '}</Text> : <Text color={s.color}>{s.state === 'next' ? '░░░░░ ' : '█████ '}</Text>,
+      )}
+    </Text>
+  )
+}
+
+/** How deep this run is and what its layers add, the new shaft, and the relics stones buy. */
+function shaftTab(el: Elements, model: ShopModel, parts: ShopParts, act: ShopActions): RenderElement[] {
+  const { Box, Text } = el
+  const d = model.depth
+  const s = model.shaft
+  const r = model.relics
+  const depth = (
+    <Box flexDirection="column">
+      {heading(el, 'Depth', d.deepest > d.metres ? `${commas(d.metres)} m · deepest ${commas(d.deepest)} m` : `${commas(d.metres)} m`)}
+      {parts.pictures?.strata ?? textStrata(el, model)}
+      <Text dimColor>
+        <Text color={d.here.color} bold>
+          {d.here.name}
+        </Text>
+        {d.next === null ? ' now: the deepest layer there is.' : ' now · '}
+        {d.next === null ? null : (
+          <Text color={d.next.color} bold>
+            {d.next.name}
+          </Text>
+        )}
+        {d.next === null ? null : ` at ${commas(d.next.from)} m: ${lower(d.next.text)}`}
+      </Text>
+      <Text dimColor>{d.perks.length > 0 ? `Your layers add: ${d.perks.join(' · ')}.` : 'Each layer you reach adds its perk for the rest of the run.'}</Text>
+    </Box>
+  )
+  const canOpen = s.gain > 0
+  const shaft = card(
+    el,
+    parts,
+    {
+      id: 'shaft',
+      icon: 'stone',
+      name: canOpen ? `Open for ◈ ${commas(s.gain)}` : `Opens at ${s.at} m`,
+      detail: canOpen
+        ? `Start over in fresh rock. Your stones then add ${s.pct}% to everything${model.bonus.stones > 0 ? `, up from ${model.bonus.stonesPct}%` : ', for good'}. Badges, stats and relics stay.`
+        : `A new shaft opens once this one reaches ${s.at} m, and pays more ◈ the deeper it gets.`,
+      owned: 0,
+      count: 1,
+      price: 0,
+      canBuy: canOpen,
+    },
+    priceButton(el, 'shaft', 'Open', canOpen, () => act.shaft()),
+  )
+  const owned =
+    r.owned.length === 0 ? null : (
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={parts.isRoomy ? 1 : 0}>
+        {r.owned.map(o =>
+          parts.isRoomy ? (
+            <Box flexDirection="row" columnGap={1} alignItems="center" borderStyle="round" borderColor="inactive" paddingX={1}>
+              {parts.icon(o.icon, false, 18)}
+              <Text>{`${o.name} ✓`}</Text>
+            </Box>
+          ) : (
+            <Text color="success">{`✓ ${o.name}`}</Text>
+          ),
         )}
       </Box>
     )
-
-  const stats =
-    parts.stats === null ? null : (
+  const forSale = r.forSale.map(item => card(el, parts, item, priceButton(el, `relic-${item.id}`, `◈ ${commas(item.price)}`, item.canBuy, () => act.relic(item.id as RelicId))))
+  return [
+    depth,
+    <Box flexDirection="column">
+      <Text bold>New shaft</Text>
+      {shaft}
+    </Box>,
+    <Box flexDirection="column" rowGap={parts.isRoomy ? 1 : 0}>
       <Box flexDirection="column">
-        <Text bold>Stats</Text>
-        {parts.stats}
+        {heading(el, 'Relics', `◈ ${commas(r.found)} found · ${commas(r.toSpend)} to spend`)}
+        <Text dimColor>
+          {r.found > 0
+            ? 'Found stones keep adding to everything; spending them never lowers it.'
+            : 'New shafts pay ancient stones, and stones buy relics. Found stones keep adding to everything; spending them never lowers it.'}
+        </Text>
       </Box>
-    )
+      {owned}
+      {forSale.length > 0 ? cards(el, parts, forSale) : <Text dimColor>Every relic is yours.</Text>}
+    </Box>,
+  ]
+}
 
+/** The badges in text: a line of each group, earned ones in gold. */
+function textWall(el: Elements, model: ShopModel): RenderElement {
+  const { Box, Text } = el
+  return (
+    <Box flexDirection="column">
+      {model.badges.groups.map(g => (
+        <Box flexDirection="row" columnGap={1}>
+          <Box width={22} flexShrink={0}>
+            <Text dimColor>{`${g.title} ${g.items.filter(b => b.isEarned).length}/${g.items.length}`}</Text>
+          </Box>
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2} flexShrink={1}>
+            {g.items.map(b => (b.isEarned ? <Text color={GOLD}>{`★ ${b.name}`}</Text> : <Text dimColor>{`☆ ${b.name}`}</Text>))}
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+/** How many badges are earned, the closest one to go, and every badge. */
+function badgesTab(el: Elements, model: ShopModel, parts: ShopParts): (RenderElement | null)[] {
+  const { Box, Text } = el
+  const b = model.badges
+  const next = b.next
+  return [
+    <Box flexDirection="column">
+      {heading(el, `${b.earned} of ${b.total}`, `· each adds ${Math.round(ACHIEVEMENT_BONUS * 100)}% to everything, for good`)}
+      {parts.pictures?.bar(b.earned / Math.max(1, b.total), PICTURE_GOLD) ?? <Text color={GOLD}>{textBar(b.earned, b.total, 21)}</Text>}
+    </Box>,
+    next === null ? null : (
+      <Box
+        flexDirection="row"
+        columnGap={1}
+        alignItems="center"
+        paddingX={1}
+        {...(parts.isRoomy ? { borderStyle: 'round', borderColor: 'claude' } : {})}
+      >
+        {parts.icon(next.icon, false)}
+        <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+          <Text bold>{`Next: ${next.name}`}</Text>
+          <Text dimColor>
+            {`${next.text} · `}
+            <Text color="claude">{`${textBar(next.have, next.need, 10)} ${fmt(next.have)}/${fmt(next.need)}`}</Text>
+          </Text>
+        </Box>
+      </Box>
+    ),
+    parts.pictures?.badgeWall ?? textWall(el, model),
+  ]
+}
+
+export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: ShopActions): RenderElement {
+  const { Box, Text } = el
+  if (!model.isLoaded) return <Text dimColor>Opening the mine…</Text>
+  const content =
+    model.tab === 'shaft'
+      ? shaftTab(el, model, parts, act)
+      : model.tab === 'badges'
+        ? badgesTab(el, model, parts)
+        : model.tab === 'stats'
+          ? [parts.stats ?? <Text dimColor>The stats show in the desktop app and the terminal.</Text>]
+          : shopTab(el, model, parts, act)
   return (
     <Box flexDirection="column" rowGap={1}>
       {parts.notice}
-      {header}
-      <Box flexDirection="column">
-        <Box flexDirection="row" columnGap={2}>
-          <Text bold>Producers</Text>
-          {AMOUNTS.map(n => (
-            <Button key={`amount-${n}`} label={n === 'max' ? 'Max' : `×${n}`} plain dimColor={amount !== n} onPress={() => act.amount(n)} />
-          ))}
-        </Box>
-        {cards(producers)}
-        {teaser}
-      </Box>
-      <Box flexDirection="column">
-        <Text bold>Upgrades</Text>
-        {upgrades.length > 0 ? cards(upgrades) : <Text dimColor>Nothing on sale yet.</Text>}
-        {model.more > 0 ? <Text dimColor>{`+${model.more} more on sale`}</Text> : null}
-        {next}
-      </Box>
-      {shaft}
-      {layers}
-      {achievements}
-      {stats}
+      {header(el, model, parts)}
+      {tabRow(el, model, parts, act)}
+      {content}
     </Box>
   )
 }

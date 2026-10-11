@@ -34,6 +34,8 @@ const PALETTE: Readonly<Record<string, number>> = {
   d: 0xd8fbff,
   X: 0x3a2f5a,
   x: 0xb6a6ff,
+  Q: 0xff4fa3,
+  q: 0xffb3d6,
 }
 
 const ICONS: Readonly<Record<IconId, readonly string[]>> = {
@@ -473,6 +475,66 @@ const ICONS: Readonly<Record<IconId, readonly string[]>> = {
     '.....KK.....',
     '............',
   ],
+  // The foreman's ledger: a brown book with a gold mark and a red ribbon.
+  ledger: [
+    '............',
+    '..KKKKKKKK..',
+    '..KGBBBBBK..',
+    '..KGBYYBBK..',
+    '..KGBBYBBK..',
+    '..KGBYYBBK..',
+    '..KGBBBBBK..',
+    '..KGBBBBBK..',
+    '..KGWWWWWK..',
+    '..KKKKKKKK..',
+    '.......R....',
+    '.......R....',
+  ],
+  // A survey map: a red cross and a dotted trail.
+  map: [
+    '............',
+    '.KKKKKKKKKK.',
+    '.KLLLLLLLLK.',
+    '.KLRLLLLBLK.',
+    '.KLLRLLBLLK.',
+    '.KLRLRLLLLK.',
+    '.KLLLLLBLLK.',
+    '.KLBLLLLLLK.',
+    '.KLLBBLBLLK.',
+    '.KLLLLLLLLK.',
+    '.KKKKKKKKKK.',
+    '............',
+  ],
+  // The bug the tests left on the rock, as the scene draws it.
+  bug: [
+    '............',
+    '....K..K....',
+    '.....KK.....',
+    '...KQQQQK...',
+    '..KQqQQqQK..',
+    '.KKQQQQQQKK.',
+    '...KQQQQK...',
+    '..KKQQQQKK..',
+    '...KQQQQK...',
+    '..K.KKKK.K..',
+    '............',
+    '............',
+  ],
+  // A rubber duck.
+  duck: [
+    '............',
+    '....KKK.....',
+    '...KYYYK....',
+    '..KYKYYYK...',
+    '.KFFYYYYK...',
+    '..KKYYYYKKK.',
+    '...KYYYYYYYK',
+    '..KYYaaaaYYK',
+    '..KYYYaaYYK.',
+    '...KYYYYYK..',
+    '....KKKKK...',
+    '............',
+  ],
 }
 
 export const ICON_IDS = Object.keys(ICONS) as IconId[]
@@ -488,9 +550,9 @@ export const PALETTE_KEYS = new Set(Object.keys(PALETTE))
 
 const cache = new Map<string, string>()
 
-/** An icon as an SVG document `size` CSS pixels square; `dim` greys it out. */
-export function iconSvg(id: IconId, size = 24, dim = false): string {
-  const key = `${id}:${size}:${dim ? 1 : 0}`
+/** An icon's pixels as SVG paths in a 12 x 12 box: a picture that draws many keeps each once. */
+export function iconBody(id: IconId): string {
+  const key = `body:${id}`
   const hit = cache.get(key)
   if (hit !== undefined) return hit
   const runs = new Map<number, string[]>()
@@ -511,6 +573,16 @@ export function iconSvg(id: IconId, size = 24, dim = false): string {
     }
   })
   const body = [...runs].map(([color, d]) => `<path fill="${hex(color)}" d="${d.join('')}"/>`).join('')
+  cache.set(key, body)
+  return body
+}
+
+/** An icon as an SVG document `size` CSS pixels square; `dim` greys it out. */
+export function iconSvg(id: IconId, size = 24, dim = false): string {
+  const key = `${id}:${size}:${dim ? 1 : 0}`
+  const hit = cache.get(key)
+  if (hit !== undefined) return hit
+  const body = iconBody(id)
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" width="${size}" height="${size}" shape-rendering="crispEdges">` +
     (dim ? `<g opacity=".3">${body}</g>` : body) +

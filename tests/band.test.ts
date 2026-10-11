@@ -26,6 +26,12 @@ const SPLAT_GREEN = '#b5e08a'
 /** A press of the desktop's gold Mine sign: the pointer going down on the HUD. */
 const DOWN = { type: 'down', x: 1, y: 0, button: 'left', in: 'hud' } as const
 
+test('a shop model kept from before an update draws, with the newer sections empty', () => {
+  const old = { isLoaded: true, amount: 1, producers: [], teaser: null, upgrades: [], more: 0, next: null, values: { click: 1, read: 1, edit: 4 } }
+  const shop = state.fillShop(old as never)
+  expect(shop).toMatchObject({ tab: 'shop', relics: { found: 0, forSale: [] }, badges: { groups: [] }, depth: { strata: [] } })
+})
+
 test('a session kept from before an update reads its ×100 as Max', () => {
   expect(state.fillView({ ...state.INITIAL_VIEW, amount: 100 as never }).amount).toBe('max')
   expect(state.fillView({ ...state.INITIAL_VIEW, amount: 10 }).amount).toBe(10)
@@ -276,6 +282,8 @@ test("the mod's own question, a new shaft's, is not Claude waiting: the miner wo
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
   const shop = await $.ui.mount(pane('desktop'))
+  await shop.press({ key: 'tab-shaft' })
+  await shop.advance(50)
   const pressed = shop.press({ key: 'shaft' })
   await ui.advance(POLL)
   expect(w.asked).toHaveLength(1)
