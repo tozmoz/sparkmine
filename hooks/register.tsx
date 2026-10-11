@@ -7,7 +7,7 @@ import type { Band, HudProps, StatsProps } from '../types'
 import { newMine, normalizeMine, outcomeOf, producer } from './game.ts'
 import { iconSvg } from './icons.ts'
 import { EMPTY_HUD, EMPTY_SHOP, EMPTY_STATS, hudProps, shareCard, statsProps, veinProps } from './model.ts'
-import { badgeWallSvg, barSvg, strataSvg } from './pictures.ts'
+import { badgeWall, barSvg, strataSvg } from './pictures.ts'
 import { H, ROWS, W, momentAt, momentKey, sceneCells, sceneSvg, type SceneSpec } from './scene.ts'
 import * as state from './state.ts'
 import { INITIAL_BAND, INITIAL_VIEW, type Io } from './state.ts'
@@ -58,13 +58,13 @@ const specKey = (spec: SceneSpec) =>
 const svgs = new Map<string, string>()
 
 /** The last of each of the shop's pictures, by what it showed: the shop redraws often, its pictures rarely change. */
-const pictures = new Map<string, { key: string; svg: string }>()
-function picture(kind: string, key: string, build: () => string): string {
+const pictures = new Map<string, { key: string; value: unknown }>()
+function picture<T>(kind: string, key: string, build: () => T): T {
   const hit = pictures.get(kind)
-  if (hit !== undefined && hit.key === key) return hit.svg
-  const svg = build()
-  pictures.set(kind, { key, svg })
-  return svg
+  if (hit !== undefined && hit.key === key) return hit.value as T
+  const value = build()
+  pictures.set(kind, { key, value })
+  return value
 }
 
 function svgFor(spec: SceneSpec, scale: number, fluid = false): string {
@@ -516,7 +516,7 @@ export const register: Register = on => {
       // A still picture of the mine; a while into Claude's idle, the miner has a coffee, then a nap.
       const header = bandSpec(band, 'pause', band.nap ?? undefined)
       const { strata } = shop.depth
-      const { groups } = shop.badges
+      const wall = picture('badges', JSON.stringify(shop.badges.groups), () => badgeWall(shop.badges.groups))
       return ui.keepHandles(
         ui.shopTree($.ui.resolve(e), shop, {
           icon: (id, isDim, size = 24) => <Svg source={iconSvg(id, size, isDim)} alt={id} width={size} height={size} />,
@@ -531,11 +531,14 @@ export const register: Register = on => {
                 alt={`The layers in sight: ${strata.map(s => s.name).join(', ')}`}
               />
             ),
-            // Drawn interactive, so a pointer over a badge rings it and its title names it.
+            // Drawn interactive, so a pointer over a badge rings it and its title names
+            // it. Its frame takes the size given it, else a browser's small default.
             badgeWall: (
               <Svg
-                source={picture('badges', JSON.stringify(groups), () => badgeWallSvg(groups))}
+                source={wall.source}
                 alt={`${shop.badges.earned} of ${shop.badges.total} badges`}
+                width={wall.width}
+                height={wall.height}
                 isInteractive
               />
             ),

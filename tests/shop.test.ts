@@ -198,7 +198,8 @@ test('the badges tab draws every badge, and a pointer over one names it', async 
   expect(await ui.find({ type: 'Text', text: 'Next: Into the magma' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^▰▰▰▰▰▰▱▱▱▱ 330\/500$/ })).toBeDefined()
   const wall = (await ui.findAll({ type: 'Svg' })).find(svg => svg.props.alt === '3 of 42 badges')
-  expect(wall?.props.isInteractive).toBe(true)
+  // Its frame is given the wall's own size: nine badges to a row, a row for each group of up to nine.
+  expect(wall?.props).toMatchObject({ isInteractive: true, width: 416, height: 442 })
   const source = String(wall?.props.source)
   expect(source).toContain('<title>First vein · Catch a vein. Earned.</title>')
   expect(source).toContain('<title>Vein hunter · Catch 25 veins.</title>')

@@ -67,6 +67,10 @@ export function strataSvg(strata: ShopModel['depth']['strata'], width = PICTURE_
 
 const TILE = 40
 const GAP = 7
+/** Badges to a row: nine, as many as the depth, Claude's work and the secrets each have. */
+const PER_ROW = 9
+/** The wall's width: nine badges to a row, narrower than the pane so it never overflows it. */
+export const WALL_WIDTH = PER_ROW * (TILE + GAP) - GAP
 
 /** A lump of a layer's rock, 12 x 12: the layer's color with darker flecks. */
 const ROCK = [
@@ -123,10 +127,13 @@ function tile(b: Badge, x: number, y: number, used: Map<string, string>): string
 /**
  * Every badge, by group, in one picture: earned ones framed in gold, the rest
  * greyed, a surprise a dashed "?". Drawn interactive, so a pointer over a
- * badge rings it and its title names it and what it asks.
+ * badge rings it and its title names it and what it asks. An interactive
+ * picture is drawn in a frame, which takes the size it is given and no other:
+ * so the wall says its own.
  */
-export function badgeWallSvg(groups: ShopModel['badges']['groups'], width = PICTURE_WIDTH): string {
-  const cols = Math.max(1, Math.floor((width + GAP) / (TILE + GAP)))
+export function badgeWall(groups: ShopModel['badges']['groups']): { source: string; width: number; height: number } {
+  const width = WALL_WIDTH
+  const cols = PER_ROW
   const used = new Map<string, string>()
   const parts: string[] = []
   let y = 0
@@ -138,8 +145,10 @@ export function badgeWallSvg(groups: ShopModel['badges']['groups'], width = PICT
     y += Math.ceil(g.items.length / cols) * (TILE + GAP) + 8
   }
   const height = Math.max(1, y - 8)
+  // A frame that sets the picture in a page of its own gives that page a margin: none here.
   const style =
     '<style>' +
+    'html,body{margin:0;padding:0;overflow:hidden}svg{display:block}' +
     `.t{font:12.5px system-ui,-apple-system,sans-serif;fill:#8a8880}.n{opacity:.75}` +
     `.f{fill:${GREY_FILL};stroke:${GREY_LINE};stroke-width:1}` +
     `.won .f{fill:rgba(242,182,50,.16);stroke:${GOLD};stroke-width:1.5}` +
@@ -148,5 +157,5 @@ export function badgeWallSvg(groups: ShopModel['badges']['groups'], width = PICT
     `.b:hover .f{stroke:${HOVER};stroke-width:1.5}` +
     '</style>'
   const defs = [...used].map(([id, body]) => `<symbol id="${id}" viewBox="0 0 12 12">${body}</symbol>`).join('')
-  return svg(width, height, `${style}<defs>${defs}</defs>${parts.join('')}`)
+  return { source: svg(width, height, `${style}<defs>${defs}</defs>${parts.join('')}`), width, height }
 }
