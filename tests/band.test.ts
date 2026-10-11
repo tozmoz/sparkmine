@@ -123,7 +123,7 @@ test('a click that strikes a gem pops it in green', async ($, on) => {
   await ui.pointer(DOWN)
   await ui.advance(POLL)
   const pop = await ui.find({ in: 'hud', type: 'Text', text: '◆ +40' })
-  expect(pop?.props).toMatchObject({ color: '#5dcaa5' })
+  expect(pop?.props).toMatchObject({ color: 'success' })
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 40' })).toBeDefined()
 })
 
@@ -206,6 +206,10 @@ test('the terminal draws the scene when it has room, and the HUD alone when not'
   await $.turn.start({ text: 'hi', turnId: 't1' })
   const wide = await $.ui.mount(band('terminal', { bodyColumns: 140 }))
   expect(await wide.find({ type: 'Raster' })).toBeDefined()
+  // A Button keeps to the top of its row there, so each sits in a slot the counter's height.
+  expect(await wide.find({ key: 'mine-slot' })).toMatchObject({ props: { height: 2 }, children: [{ type: 'Button', props: { key: 'mine' } }] })
+  expect(await wide.find({ key: 'shop-slot' })).toMatchObject({ props: { height: 2 }, children: [{ type: 'Button', props: { key: 'shop' } }] })
+  expect(await wide.find({ key: 'vein-slot' })).toMatchObject({ props: { height: 2 }, children: [{ type: 'Client', props: { key: 'vein' } }] })
   await wide.press({ key: 'mine' })
   await wide.advance(POLL)
   expect(await wide.find({ in: 'hud', type: 'Text', text: '✻ 1' })).toBeDefined()
@@ -346,7 +350,7 @@ test('green tests and a commit pay once a turn, and the HUD says what paid', asy
   await $.tool.call({ tool: 'Bash', command: 'cd app && npm test' })
   await ui.advance(POLL)
   // Tests pay 30 seconds of the rate, and never less than 10 clicks: here, 10.
-  expect(await ui.find({ in: 'hud', type: 'Text', text: '★ Tests pass +10 ✻' })).toBeDefined()
+  expect((await ui.find({ in: 'hud', type: 'Text', text: '★ Tests pass +10 ✻' }))?.props).toMatchObject({ color: 'warning' })
   expect(await ui.find({ in: 'hud', type: 'Text', text: '✻ 12' })).toBeDefined()
   // A second green run in the same turn pays the tool call alone.
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
@@ -456,7 +460,8 @@ test('thanks make the miner tip his helmet a moment, and the first time is a sec
   const w = world(on)
   await start($)
   const ui = await $.ui.mount(band('desktop'))
-  await prompt($, 'thanks, that fixed it')
+  // The desktop app hosts its sessions as an SDK does: what the person types there comes as one.
+  await prompt($, 'thanks, that fixed it', { kind: 'sdk' })
   await $.turn.start({ text: 'thanks, that fixed it', turnId: 't1' })
   await ui.advance(POLL)
   expect((await ui.find({ type: 'Svg' }))?.props.source).toBe(still({ pose: 'tip' }))
@@ -465,6 +470,15 @@ test('thanks make the miner tip his helmet a moment, and the first time is a sec
   expect((await ui.find({ type: 'Svg' }))?.props.source).toBe(sceneSvg({ mode: 'work', carts: 0, goblins: 0, pick: 0, biome: 0 }, 3, true))
   expect(w.toasts).toContain('Achievement: Good manners. Everything mines 2% more.')
   expect(await secretsStored($, w)).toEqual(['good-manners'])
+})
+
+test("a task's notification is not the person: its words find no secret", async ($, on) => {
+  const w = world(on)
+  await start($)
+  await prompt($, 'The build finished. Thanks for waiting! ultrathink', { kind: 'task-notification' })
+  await w.clock.advance(100)
+  expect(w.sounds).toEqual([])
+  expect(await secretsStored($, w)).toEqual([])
 })
 
 test('a secret chimes, and /mine sound turns the sounds off in every session, and on', async ($, on) => {
@@ -560,7 +574,7 @@ test('the counter shines a moment as it passes 1K, 1M, 1B', async ($, on) => {
   expect((await ui.find({ in: 'hud', type: 'Text', text: '✻ 999' }))?.props.color).toBe('claude')
   await $.tool.call({ tool: 'Bash', command: 'ls' })
   await ui.advance(POLL)
-  expect(['#ffe08a', '#f2b632']).toContain((await ui.find({ in: 'hud', type: 'Text', text: '✻ 1,001' }))?.props.color)
+  expect(['warning', 'text']).toContain((await ui.find({ in: 'hud', type: 'Text', text: '✻ 1,001' }))?.props.color)
   await ui.advance(1_000)
   expect((await ui.find({ in: 'hud', type: 'Text', text: '✻ 1,001' }))?.props.color).toBe('claude')
 })
@@ -730,7 +744,7 @@ test('with gold fever a frenzy lasts a minute', async ($, on) => {
   await ui.advance(VEIN_POLL)
   await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'vein' })
   await ui.advance(VEIN_POLL)
-  expect(await ui.find({ in: 'vein', type: 'Text', text: 'Frenzy ×5 · 60s' })).toBeDefined()
+  expect((await ui.find({ in: 'vein', type: 'Text', text: 'Frenzy ×5 · 60s' }))?.props).toMatchObject({ color: 'warning' })
   await w.clock.advance(31_000)
   await ui.advance(VEIN_POLL)
   expect(await ui.find({ in: 'vein', type: 'Text', text: /^Frenzy ×5 · \d+s$/ })).toBeDefined()
@@ -746,7 +760,7 @@ test('the mine gets deeper, and its rock turns with the layer', async ($, on) =>
   const ui = await $.ui.mount(band('desktop'))
   await ui.advance(POLL)
   // Ten times the sparks is a hundred metres more: 2M is 330 m, in the crystal caves.
-  expect((await ui.find({ in: 'hud', type: 'Text', text: '330 m' }))?.props).toMatchObject({ color: '#b6a6ff' })
+  expect((await ui.find({ in: 'hud', type: 'Text', text: '330 m' }))?.props).toMatchObject({ color: '#9179ff' })
   const scene = String((await ui.find({ type: 'Svg' }))?.props.source)
   expect(scene).toContain('#4b4280')
   expect(scene).not.toContain('#57473d')

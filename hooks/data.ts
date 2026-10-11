@@ -271,10 +271,15 @@ export type Perk =
 
 /**
  * A layer: where it starts, its color, its perk, and the emoji square a shared
- * card draws it with. `place` is how the card says where the mine is, when
- * "in the" and the name would read badly.
+ * card draws it with. Its color is for text, so it reads on a light theme and
+ * a dark one alike. `place` is how the card says where the mine is, when "in
+ * the" and the name would read badly.
+ *
+ * A hidden layer is a surprise: the shop shows it once the mine reaches the
+ * layer above it, never counts it among the layers below, and a shared card
+ * draws its square only once the mine has reached it.
  */
-export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string; place?: string }
+export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string; place?: string; isHidden?: true }
 
 /**
  * The layers the mine digs through, from the depth where each starts, in
@@ -282,16 +287,16 @@ export type Biome = { name: string; from: number; color: string; square: string;
  * run ends, so the deeper a run gets, the more of them it has.
  */
 export const BIOMES: readonly Biome[] = [
-  { name: 'Topsoil', from: 0, color: '#c8a27a', square: '🟫', perk: { kind: 'none' }, text: 'Where every mine begins.' },
-  { name: 'Stone', from: 100, color: '#9aa3ad', square: '⬜', perk: { kind: 'click', mult: 1.5 }, text: 'Clicks mine 50% more.' },
-  { name: 'Crystal caves', from: 300, color: '#b6a6ff', square: '🟪', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.' },
-  { name: 'Magma', from: 500, color: '#ff7a2f', square: '🟧', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.' },
-  { name: 'Groundwater', from: 700, color: '#4fb3d9', square: '🟦', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
-  { name: 'Ancient ruins', from: 850, color: '#d9b45f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double." },
-  { name: 'The core', from: 1_000, color: '#ffe9a8', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
-  { name: 'Inner core', from: 1_100, color: '#d7f4ff', square: '💎', perk: { kind: 'gemWorth', mult: 2 }, text: 'Gems are worth twice as much.' },
-  { name: 'Hollow earth', from: 1_200, color: '#5fd47a', square: '🟩', perk: { kind: 'tools', mult: 2 }, text: 'Tool calls mine twice as much.' },
-  { name: 'The far side', from: 1_300, color: '#9cc9ff', square: '🌏', perk: { kind: 'stones', mult: 1.5 }, text: 'A new shaft from here pays 50% more ◈.', place: 'on the far side' },
+  { name: 'Topsoil', from: 0, color: '#b8804f', square: '🟫', perk: { kind: 'none' }, text: 'Where every mine begins.' },
+  { name: 'Stone', from: 100, color: '#848f9c', square: '⬜', perk: { kind: 'click', mult: 1.5 }, text: 'Clicks mine 50% more.' },
+  { name: 'Crystal caves', from: 300, color: '#9179ff', square: '🟪', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.' },
+  { name: 'Magma', from: 500, color: '#e8641f', square: '🟧', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.' },
+  { name: 'Groundwater', from: 700, color: '#2a98c2', square: '🟦', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
+  { name: 'Ancient ruins', from: 850, color: '#a8894f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double." },
+  { name: 'The core', from: 1_000, color: '#c27f00', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
+  { name: 'Inner core', from: 1_100, color: '#5397b1', square: '💎', perk: { kind: 'gemWorth', mult: 2 }, text: 'Gems are worth twice as much.', isHidden: true },
+  { name: 'Hollow earth', from: 1_200, color: '#3ba057', square: '🟩', perk: { kind: 'tools', mult: 2 }, text: 'Tool calls mine twice as much.', isHidden: true },
+  { name: 'The far side', from: 1_300, color: '#4a8fe0', square: '🌏', perk: { kind: 'stones', mult: 1.5 }, text: 'A new shaft from here pays 50% more ◈.', place: 'on the far side', isHidden: true },
 ]
 
 /** What an achievement counts: a record of the save, or how often a work event paid. */
@@ -301,7 +306,8 @@ export type Goal =
   /** A secret found: the shop shows it as ??? until then. */
   | { kind: 'secret'; secret: SecretId; n: 1 }
 
-export type Achievement = { id: string; name: string; text: string; goal: Goal }
+/** A hidden badge keeps its name to itself until earned, as a secret does: the layers past the core are a surprise. */
+export type Achievement = { id: string; name: string; text: string; goal: Goal; isHidden?: true }
 
 /** Each achievement adds this share to everything the mine earns, for good. */
 export const ACHIEVEMENT_BONUS = 0.02
@@ -317,9 +323,9 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'groundwater', name: 'Underground river', text: 'Reach the groundwater, 700 m.', goal: { kind: 'deepest', n: 700 } },
   { id: 'ruins', name: 'Lost ruins', text: 'Reach the ancient ruins, 850 m.', goal: { kind: 'deepest', n: 850 } },
   { id: 'core', name: 'The core', text: 'Reach the core, 1,000 m.', goal: { kind: 'deepest', n: 1_000 } },
-  { id: 'inner-core', name: 'Under pressure', text: 'Reach the inner core, 1,100 m.', goal: { kind: 'deepest', n: 1_100 } },
-  { id: 'hollow-earth', name: 'Lost world', text: 'Reach the hollow earth, 1,200 m.', goal: { kind: 'deepest', n: 1_200 } },
-  { id: 'far-side', name: 'Out the other side', text: 'Dig through to the far side, 1,300 m.', goal: { kind: 'deepest', n: 1_300 } },
+  { id: 'inner-core', name: 'Under pressure', text: 'Reach the inner core, 1,100 m.', goal: { kind: 'deepest', n: 1_100 }, isHidden: true },
+  { id: 'hollow-earth', name: 'Lost world', text: 'Reach the hollow earth, 1,200 m.', goal: { kind: 'deepest', n: 1_200 }, isHidden: true },
+  { id: 'far-side', name: 'Out the other side', text: 'Dig through to the far side, 1,300 m.', goal: { kind: 'deepest', n: 1_300 }, isHidden: true },
   { id: 'tests-100', name: 'Green streak', text: 'Pass the tests 100 times.', goal: { kind: 'event', event: 'tests', n: 100 } },
   { id: 'commits-100', name: 'Ship it', text: 'Commit 100 times.', goal: { kind: 'event', event: 'commit', n: 100 } },
   { id: 'long-shifts-10', name: 'Night owl', text: 'Work 10 long shifts.', goal: { kind: 'event', event: 'longShift', n: 10 } },

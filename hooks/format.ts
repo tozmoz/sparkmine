@@ -7,6 +7,11 @@ export function commas(n: number): string {
   return n < 0 ? `-${grouped}` : grouped
 }
 
+/** A count and its noun: "1 stone", "1,200 stones". */
+export function plural(n: number, one: string, many: string): string {
+  return `${commas(n)} ${n === 1 ? one : many}`
+}
+
 /** Whole sparks: commas up to 99,999, then 123.4K, 1.23M and so on. */
 export function fmt(n: number): string {
   if (!Number.isFinite(n)) return '∞'

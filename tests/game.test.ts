@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Mine, Save } from '../types'
-import { ACHIEVEMENTS, PRODUCERS, UPGRADES } from '../hooks/data.ts'
+import { ACHIEVEMENTS, BIOMES, PRODUCERS, UPGRADES } from '../hooks/data.ts'
 import { fmt, fmtRate } from '../hooks/format.ts'
 import * as game from '../hooks/game.ts'
 import * as model from '../hooks/model.ts'
@@ -214,13 +214,53 @@ describe('layers', () => {
   })
 })
 
+/** How far apart two colors' lightness is, as WCAG measures text against its background. */
+function contrast(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r = 0, g = 0, bl = 0] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+  }
+  const [hi = 0, lo = 0] = [lum(a), lum(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+describe('the layers in the shop', () => {
+  test("each layer's color reads on a light theme and on a dark one", () => {
+    for (const b of BIOMES) {
+      // The desktop app's light and dark, and a terminal's white and black.
+      for (const light of ['#faf9f5', '#ffffff']) expect(contrast(b.color, light)).toBeGreaterThanOrEqual(3)
+      for (const dark of ['#262624', '#000000']) expect(contrast(b.color, dark)).toBeGreaterThanOrEqual(4.4)
+    }
+  })
+
+  test('the layers past the core stay hidden: not counted below, shown once the mine is a layer above', () => {
+    const shop = (lifetime: number) => model.shopModel(saveWith({ lifetime }), 1, true)
+    // At the topsoil more lies below; how much, the shop does not say.
+    expect(shop(0).hasDeeper).toBe(true)
+    // At the ruins the core is next, and nothing seems to lie past it.
+    const ruins = shop(3.2e11)
+    expect(ruins.layers.map(l => l.name).slice(-2)).toEqual(['Ancient ruins', 'The core'])
+    expect(ruins.hasDeeper).toBe(false)
+    // At the core the inner core shows as the next layer, and still nothing past it.
+    const core = shop(1e13)
+    expect(core.layers.map(l => l.name).slice(-2)).toEqual(['The core', 'Inner core'])
+    expect(core.hasDeeper).toBe(false)
+  })
+})
+
 describe('the shared card', () => {
   test('leaves out what is not done yet, and names the core as a place', () => {
-    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/42', 'github.com/tozmoz/sparkmine'].join('\n'))
+    expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/42', 'github.com/tozmoz/sparkmine'].join('\n'))
     const core = model.shareCard(saveWith({ lifetime: 1e13, allTime: 3e13, stones: 1, veins: 1 }))
-    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥⬛⬛⬛', '✻ 30.00T mined · ◈ 1 stone · ★ 9/42', '1 vein'])
+    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥', '✻ 30.00T mined · ◈ 1 stone · ★ 9/42', '1 vein'])
     const far = model.shareCard(saveWith({ lifetime: 2e16, allTime: 2e16 }))
     expect(far.split('\n').slice(0, 2)).toEqual(['⛏️ Sparkmine · 1,330 m on the far side', '🟫⬜🟪🟧🟦🟨🟥💎🟩🌏'])
+  })
+
+  test('spoils no surprise: a hidden layer gets its square once reached', () => {
+    // The inner core reached in an earlier shaft, the new one back in the stone.
+    const card = model.shareCard(saveWith({ lifetime: 9_000, deepest: 1_120 }))
+    expect(card.split('\n')[1]).toBe('🟫⬜🟪🟧🟦🟨🟥💎 deepest 1,120 m')
   })
 })
 
@@ -283,6 +323,11 @@ describe('secrets', () => {
     const names = (save: Save) => model.shopModel(save, 1, true).achievements.filter(a => a.id === 'good-manners').map(a => a.name)
     expect(names(saveWith({}))).toEqual(['???'])
     expect(names(saveWith({ secrets: ['good-manners'] }))).toEqual(['Good manners'])
+    // The layers past the core keep their badges' names to themselves too, until reached.
+    const deep = (save: Save) => model.shopModel(save, 1, true).achievements.filter(a => ['inner-core', 'hollow-earth', 'far-side'].includes(a.id)).map(a => a.name)
+    expect(deep(saveWith({ deepest: 1_000 }))).toEqual(['???', '???', '???'])
+    expect(deep(saveWith({ deepest: 1_150 }))).toEqual(['Under pressure', '???', '???'])
+    expect(game.nextAchievement(saveWith({ deepest: 1_050 }))?.name).not.toBe('Under pressure')
     expect(ACHIEVEMENTS.filter(a => a.goal.kind === 'secret')).toHaveLength(9)
     // Everything but the secrets earned: no goal is left to show.
     const almost = saveWith({ allTime: 1e13, deepest: 1_300, veins: 100, gems: 1_000, clicks: 10_000, tools: 1_000, shafts: 10, stones: 500, bestTurn: 1e9, bestStreak: 25,

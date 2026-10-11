@@ -259,8 +259,12 @@ export const register: Register = on => {
   })
 
   // Read only: a few words in the person's own prompt find a secret, and the prompt goes on as it was.
+  // The person types at the terminal, on a phone over Remote Control, or in the
+  // desktop app, which hosts its sessions as an SDK does; a task's notification,
+  // a schedule or another session is not them.
   on('prompt.submit', async ($, e, next) => {
-    if (io !== null && (e.origin.kind === 'composer' || e.origin.kind === 'bridge')) await state.promptSeen(io, e.text)
+    const kind = e.origin.kind
+    if (io !== null && (kind === 'composer' || kind === 'bridge' || kind === 'sdk')) await state.promptSeen(io, e.text)
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -442,13 +446,21 @@ export const register: Register = on => {
       } else {
         const frame = cellsFor(spec, await $.clock.now())
         live = { requestId: e.requestId, spec, shown: frame.key }
+        // The terminal draws a Button at the top of its row, whatever the row
+        // aligns: each sits in a slot the counter's height, centered as the
+        // counter is, so Mine, Shop and a vein line up with its first line.
+        const slot = (key: string, child: RenderElement | null) => (
+          <Box key={key} height={hudSize.height}>
+            {child}
+          </Box>
+        )
         ours = (
           <Box flexDirection="row" columnGap={2} alignItems="center" borderStyle="round" borderColor="#5e3b1d">
             <Raster key="scene" columns={W} rows={ROWS} cells={frame.cells} />
-            {mine}
+            {slot('mine-slot', mine)}
             {hud}
-            {shop}
-            {vein}
+            {slot('shop-slot', shop)}
+            {slot('vein-slot', vein)}
           </Box>
         )
       }

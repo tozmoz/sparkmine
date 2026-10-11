@@ -151,9 +151,9 @@ test('a shaft above 500 m says how deep it must go, and the layers say what each
   expect((await ui.find({ type: 'Text', text: 'Crystal caves' }))?.props).toMatchObject({ bold: true })
   expect(await ui.find({ type: 'Text', text: '500 m · Veins show twice as often.' })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: 'Magma' }))?.props).toMatchObject({ dimColor: true })
-  // The layers past the next one stay a surprise.
+  // The layers past the next one stay a surprise, and how many there are too.
   expect(await ui.find({ type: 'Text', text: 'Groundwater' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: '6 more layers below' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'More layers below' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '3/42 · +6% to everything' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '★ First vein' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '☆ Vein hunter' })).toBeDefined()
@@ -206,6 +206,15 @@ test('a purchase stays when another session writes over it', async ($, on) => {
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 95' })).toBeDefined()
 })
 
+test('one stone and one achievement read as one', async ($, on) => {
+  world(on, { save: seeded({ stones: 1, veins: 1 }) })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Text', text: '◈ 1 stone +10% · ★ 1 achievement +2%' })).toBeDefined()
+  // An earned badge reads in the theme's gold, so a light theme darkens it.
+  expect((await ui.find({ type: 'Text', text: '★ First vein' }))?.props).toMatchObject({ color: 'warning' })
+})
+
 test('/mine share puts a card of the mine in the conversation, and on the clipboard', async ($, on) => {
   const w = world(on, {
     save: seeded({ lifetime: 34_132_372, allTime: 224_510_497, deepest: 528, stones: 5, shafts: 1, bestTurn: 75_467_611, gems: 543, veins: 8, clicks: 17_739, events: { longShift: 10 } }),
@@ -213,7 +222,7 @@ test('/mine share puts a card of the mine in the conversation, and on the clipbo
   await start($)
   const card = [
     '⛏️ Sparkmine · 453 m in the Crystal caves',
-    '🟫⬜🟪🟧⬛⬛⬛⬛⬛⬛ deepest 528 m',
+    '🟫⬜🟪🟧⬛⬛⬛ deepest 528 m',
     '✻ 224.5M mined · ◈ 5 stones · ★ 9/42',
     'Best turn +75.47M · 543 gems · 8 veins',
     'github.com/tozmoz/sparkmine',

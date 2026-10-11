@@ -4,7 +4,7 @@
 
 import type { Amount, Band, EventKind, HudProps, IconId, Save, ShopModel, StatsProps, ToolKind, VeinProps, View } from '../types'
 import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, FINDS, PRODUCERS, SHAFT_DEPTH, TOOL_NAMES, type Upgrade } from './data.ts'
-import { commas, fmt, fmtRate } from './format.ts'
+import { commas, fmt, fmtRate, plural } from './format.ts'
 import * as game from './game.ts'
 
 export const SHOP_LIMIT = 8
@@ -106,7 +106,7 @@ export const EMPTY_SHOP: ShopModel = {
   values: { click: 1, read: 1, edit: 4 },
   bonus: { stones: 0, stonesPct: 0, achievements: 0, achievementsPct: 0 },
   layers: [],
-  deeper: 0,
+  hasDeeper: false,
   achievements: [],
   nextAchievement: null,
   shaft: null,
@@ -148,7 +148,8 @@ export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopMo
   const won = new Set(game.achievements(save).map(a => a.id))
   const goal = game.nextAchievement(save)
   const gain = game.stoneGain(save)
-  // The layers this run reached and the next one: the rest stay a surprise.
+  // The layers this run reached and the next one: the rest stay a surprise,
+  // and whether more lie below leaves the hidden ones out.
   const shown = BIOMES.slice(0, here + 2)
   return {
     isLoaded,
@@ -170,9 +171,9 @@ export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopMo
       achievementsPct: Math.round(won.size * ACHIEVEMENT_BONUS * 100),
     },
     layers: shown.map((b, i) => ({ name: b.name, from: b.from, color: b.color, text: b.text, isReached: i <= here, isHere: i === here })),
-    deeper: BIOMES.length - shown.length,
-    // A secret keeps its name to itself until found.
-    achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: won.has(a.id) || a.goal.kind !== 'secret' ? a.name : '???', isEarned: won.has(a.id) })),
+    hasDeeper: BIOMES.slice(shown.length).some(b => b.isHidden !== true),
+    // A secret or a hidden layer's badge keeps its name to itself until earned.
+    achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: won.has(a.id) || !game.isSurprise(a) ? a.name : '???', isEarned: won.has(a.id) })),
     nextAchievement: goal === null ? null : { name: goal.name, text: goal.text },
     shaft:
       save.shafts > 0 || metres >= SHAFT_DEPTH - SHAFT_LEAD
@@ -184,12 +185,11 @@ export function shopModel(save: Save, amount: Amount, isLoaded: boolean): ShopMo
 /** Where a shared card sends people. */
 const HOME = 'github.com/tozmoz/sparkmine'
 
-const plural = (n: number, one: string, many: string) => `${commas(n)} ${n === 1 ? one : many}`
-
 /**
  * A card of the mine to paste anywhere, Wordle-style: how deep this shaft is
  * and where, the layers reached in squares of their colors, what was mined
- * and earned, and where the game is. A record not made yet is left out.
+ * and earned, and where the game is. A record not made yet is left out, and a
+ * hidden layer not reached yet has no square, so a card spoils no one's surprise.
  */
 export function shareCard(save: Save): string {
   const metres = game.depth(save)
@@ -198,7 +198,7 @@ export function shareCard(save: Save): string {
   const name = here?.name ?? 'Topsoil'
   const place = here?.place ?? (name.startsWith('The ') ? `at ${name.toLowerCase()}` : `in the ${name}`)
   const reached = game.biomeAt(deepest)
-  const squares = BIOMES.map((b, i) => (i <= reached ? b.square : '⬛')).join('')
+  const squares = BIOMES.flatMap((b, i) => (i <= reached ? [b.square] : b.isHidden === true ? [] : ['⬛'])).join('')
   const stones = save.stones > 0 ? [`◈ ${plural(save.stones, 'stone', 'stones')}`] : []
   const records = [
     ...(save.bestTurn > 0 ? [`Best turn +${fmt(save.bestTurn)}`] : []),
@@ -217,7 +217,7 @@ export function shareCard(save: Save): string {
 /** The layer a depth is in, by name and color, for the drawings. */
 export function layerAt(metres: number): { name: string; color: string } {
   const b = BIOMES[game.biomeAt(metres)] ?? BIOMES[0]
-  return { name: b?.name ?? 'Topsoil', color: b?.color ?? '#c8a27a' }
+  return { name: b?.name ?? 'Topsoil', color: b?.color ?? '#b8804f' }
 }
 
 /** How long the HUD shows a reward in place of the last tool call. */
@@ -235,7 +235,7 @@ export const EMPTY_HUD: HudProps = {
   taps: 0,
   gem: null,
   depth: 0,
-  layer: { name: 'Topsoil', color: '#c8a27a' },
+  layer: { name: 'Topsoil', color: '#b8804f' },
   event: null,
   frenzy: null,
   isCompact: false,
