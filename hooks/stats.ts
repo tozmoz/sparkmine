@@ -109,7 +109,8 @@ const Stats: ClientModule<StatsProps, { isPolling: true }> = (props, surface) =>
         borderStyle: 'round',
         borderColor: TILE_LINE,
         backgroundColor: TILE_FILL,
-        children: [Text({ bold: true, children: [value] }), dim(name)] as never[],
+        // A long name wraps rather than losing its end: the row's tiles grow alike.
+        children: [Text({ bold: true, children: [value] }), Text({ dimColor: true, wrap: 'wrap', children: [name] })] as never[],
       })
     const grid = (list: readonly (readonly [string, string])[], perRow: number) =>
       column(
