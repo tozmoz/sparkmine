@@ -5,7 +5,7 @@
 import type { ElementTable, RenderElement, RenderSurface } from 'claude-code'
 
 import type { Amount, IconId, ProducerId, ShopItem, ShopModel } from '../types'
-import { fmt } from './format.ts'
+import { fmt, plural } from './format.ts'
 
 type Elements = ElementTable<RenderSurface>
 
@@ -62,8 +62,8 @@ export function keepHandles(tree: RenderElement, held: Map<string, Press>): Rend
 /** What a press of a producer's button can buy: one, ten, or as many as the purse allows. */
 const AMOUNTS: readonly Amount[] = [1, 10, 'max']
 
-/** The gold of an earned achievement, the Mine sign's own. */
-const GOLD = '#f2b632'
+/** The gold of an earned achievement: the theme's, so a light theme darkens it. */
+const GOLD = 'warning'
 
 /** What the stones and achievements add to everything, once there are any. */
 function bonusLine(el: Elements, model: ShopModel): RenderElement | null {
@@ -71,8 +71,8 @@ function bonusLine(el: Elements, model: ShopModel): RenderElement | null {
   const b = model.bonus
   if (b.stones === 0 && b.achievements === 0) return null
   const parts = [
-    ...(b.stones > 0 ? [`◈ ${b.stones} stones +${b.stonesPct}%`] : []),
-    ...(b.achievements > 0 ? [`★ ${b.achievements} achievements +${b.achievementsPct}%`] : []),
+    ...(b.stones > 0 ? [`◈ ${plural(b.stones, 'stone', 'stones')} +${b.stonesPct}%`] : []),
+    ...(b.achievements > 0 ? [`★ ${plural(b.achievements, 'achievement', 'achievements')} +${b.achievementsPct}%`] : []),
   ]
   return <Text color="permission">{parts.join(' · ')}</Text>
 }
@@ -166,8 +166,8 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
             {model.shaft.gain === 0
               ? `A new shaft opens once this one reaches ${model.shaft.at} m, and pays more ◈ the deeper it gets.`
               : model.bonus.stones === 0
-                ? `Start over in fresh rock for ${model.shaft.gain} ◈ ancient stones. They add ${model.shaft.pct}% to everything, for good; achievements and stats stay.`
-                : `Start over in fresh rock for ${model.shaft.gain} ◈ ancient stones. Your stones then add ${model.shaft.pct}% to everything, up from ${model.bonus.stonesPct}%; achievements and stats stay.`}
+                ? `Start over in fresh rock for ${plural(model.shaft.gain, '◈ ancient stone', '◈ ancient stones')}. They add ${model.shaft.pct}% to everything, for good; achievements and stats stay.`
+                : `Start over in fresh rock for ${plural(model.shaft.gain, '◈ ancient stone', '◈ ancient stones')}. Your stones then add ${model.shaft.pct}% to everything, up from ${model.bonus.stonesPct}%; achievements and stats stay.`}
           </Text>
           {priceButton(el, 'shaft', model.shaft.gain > 0 ? `Open for ${model.shaft.gain} ◈` : 'Open a new shaft', model.shaft.gain > 0, () => act.shaft())}
         </Box>
@@ -187,9 +187,9 @@ export function shopTree(el: Elements, model: ShopModel, parts: ShopParts, act: 
             {layer.isHere ? <Text color={layer.color}>◀ here</Text> : null}
           </Box>
         ))}
-        {model.deeper > 0 ? (
+        {model.hasDeeper ? (
           <Box paddingX={1}>
-            <Text dimColor>{`${model.deeper} more ${model.deeper === 1 ? 'layer' : 'layers'} below`}</Text>
+            <Text dimColor>More layers below</Text>
           </Box>
         ) : null}
       </Box>

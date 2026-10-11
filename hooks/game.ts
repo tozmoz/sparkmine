@@ -739,11 +739,14 @@ export const isEarned = (save: Save, a: Achievement): boolean => reached(save, a
  */
 export const achievements = (save: Save): Achievement[] => ACHIEVEMENTS.filter(a => isEarned(save, a))
 
-/** The unearned achievement closest to done, by share of its goal; never a secret. */
+/** A badge that keeps its name to itself until earned: a secret, or a hidden layer's. */
+export const isSurprise = (a: Achievement): boolean => a.goal.kind === 'secret' || a.isHidden === true
+
+/** The unearned achievement closest to done, by share of its goal; never a surprise. */
 export function nextAchievement(save: Save): Achievement | null {
   let best: { a: Achievement; share: number } | null = null
   for (const a of ACHIEVEMENTS) {
-    if (a.goal.kind === 'secret' || isEarned(save, a)) continue
+    if (isSurprise(a) || isEarned(save, a)) continue
     const share = reached(save, a.goal) / a.goal.n
     if (best === null || share > best.share) best = { a, share }
   }

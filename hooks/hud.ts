@@ -56,14 +56,16 @@ const GEM_BRIGHT = 12
 const POP_WIDTH = 10
 /** The hooks count no more presses than this a second, so the HUD shows no more. */
 const MAX_PER_SECOND = 20
-const GEM_COLOR = '#5dcaa5'
-/** A reward or a frenzy reads in warm gold. */
-const REWARD_COLOR = '#ffd36e'
+// The text's colors are the theme's own, so they read on a light theme as on a dark one.
+/** A gem pops in green. */
+const GEM_COLOR = 'success'
+/** A reward or a frenzy reads in gold. */
+const REWARD_COLOR = 'warning'
 const BAR = 10
 const PRESS_FRAMES = 2
-/** Frames the counter shines when it passes 1K, 1M, 1B and on. */
+/** Frames the counter shines when it passes 1K, 1M, 1B and on, between gold and the text's own color. */
 const SHIMMER_FRAMES = 10
-const SHIMMER = ['#ffe08a', '#f2b632'] as const
+const SHIMMER = ['warning', 'text'] as const
 
 /** Which thousands a count is in: 0 under a thousand, 1 for K, 2 for M, 3 for B. */
 const tierOf = (n: number): number => (n >= 1000 ? Math.floor(Math.log10(n) / 3) : 0)
@@ -71,6 +73,8 @@ const tierOf = (n: number): number => (n >= 1000 ? Math.floor(Math.log10(n) / 3)
 /** The desktop's Mine sign: gold ore while Claude works, dull while it waits. */
 const GOLD = { face: '#f2b632', lit: '#ffcd52', pressed: '#d9951f', edge: '#a8691a', ink: '#3a2410' }
 const DULL = { face: '#5c4d2e', edge: '#463a22', ink: '#a8987a' }
+/** The topsoil's color, for props from before the HUD knew the layer. */
+const TOPSOIL = '#b8804f'
 
 function commas(n: number): string {
   const whole = Math.floor(Math.abs(n)).toString()
@@ -185,7 +189,7 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
   const goal = props.goal === null ? null : `Next: ${props.goal.name}`
 
   // How deep the mine is, in the color of its layer; a reward for a moment; a frenzy on the rate.
-  const deep = Text({ color: props.layer?.color ?? '#c8a27a', children: [`${commas(props.depth ?? 0)} m`] })
+  const deep = Text({ color: props.layer?.color ?? TOPSOIL, children: [`${commas(props.depth ?? 0)} m`] })
   const event = props.event ?? null
   const reward = event === null ? null : Text({ color: REWARD_COLOR, bold: true, wrap: 'truncate-end', children: [`★ ${event.label} +${short(event.value)} ✻`] })
   const frenzy = props.frenzy ?? null
@@ -199,7 +203,7 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
     const rows: unknown[] = [
       line([count]),
       dim(`${perSecond(props.rate)}/s while Claude works${idle}`),
-      line([Text({ color: props.layer?.color ?? '#c8a27a', children: [props.layer?.name ?? 'Topsoil'] }), dim(`· ${commas(props.depth ?? 0)} m deep`)]),
+      line([Text({ color: props.layer?.color ?? TOPSOIL, children: [props.layer?.name ?? 'Topsoil'] }), dim(`· ${commas(props.depth ?? 0)} m deep`)]),
     ]
     if (props.goal !== null) {
       rows.push(line([dim(goal ?? ''), Text({ color: 'claude', children: [`${bar(props.goal.have, props.goal.need)} ${commas(props.goal.have)}/${commas(props.goal.need)}`] })]))

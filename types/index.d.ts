@@ -354,9 +354,9 @@ export type ShopModel = {
   values: { click: number; read: number; edit: number }
   /** Ancient stones held, achievements earned, and what each adds to everything, in percent. */
   bonus: { stones: number; stonesPct: number; achievements: number; achievementsPct: number }
-  /** The layers this run reached and the next one, deepest last, and how many lie beyond that. */
+  /** The layers this run reached and the next one, deepest last, and whether more lie beyond that, hidden ones aside. */
   layers: { name: string; from: number; color: string; text: string; isReached: boolean; isHere: boolean }[]
-  deeper: number
+  hasDeeper: boolean
   /** Every achievement in order, earned or not, and the closest unearned one. */
   achievements: { id: string; name: string; isEarned: boolean }[]
   nextAchievement: { name: string; text: string } | null

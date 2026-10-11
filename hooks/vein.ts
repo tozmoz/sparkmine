@@ -14,7 +14,8 @@ const POLL_MS = 250
 const PULSE_MS = 300
 
 const ORE = { face: '#3a2410', lit: '#5e3b1d', edge: '#f2b632', ink: '#ffe08a' }
-const FRENZY = '#ffd36e'
+/** The theme's gold, so a light theme darkens it. */
+const FRENZY = 'warning'
 
 const Vein: ClientModule<VeinProps, State> = (props, surface) => {
   const { Box, Text } = surface.elements

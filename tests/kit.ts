@@ -2,7 +2,7 @@
 
 import { mock } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { On, PromptOrigin } from 'claude-code'
 
 import type { Save } from '../types'
 
@@ -112,8 +112,8 @@ export const endSession = ($: Engine) =>
 export const finishTurn = ($: Engine, turnId: string, durationMs = 1_000, reason: 'answer' | 'aborted' | 'error' = 'answer', answer = 'Done.') =>
   $.turn.complete({ answer, durationMs, isAborted: reason === 'aborted', turnId, reason })
 
-/** A prompt the person typed. */
-export const prompt = ($: Engine, text: string) => $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+/** A prompt: the person's, typed at the terminal, unless `origin` says it came another way. */
+export const prompt = ($: Engine, text: string, origin: PromptOrigin = { kind: 'composer' }) => $.prompt.submit({ text, wait: false, origin })
 
 /**
  * Lets time pass a second at a time, as it does for a running session: one
