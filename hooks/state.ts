@@ -2,7 +2,7 @@
 // live in game.ts and what the drawings show in model.ts; this file holds the
 // store sync and the actions the hooks and buttons call.
 
-import type { Amount, Band, EventKind, Extras, FindId, Mine, Mode, Nap, ProducerId, Save, SecretId, ShopModel, VeinKind, View } from '../types'
+import type { Amount, Band, EventKind, Extras, FindId, Mine, Mode, Nap, ProducerId, RelicId, Save, SecretId, ShopModel, ShopTab, VeinKind, View } from '../types'
 import { ACHIEVEMENT_BONUS, CONFETTI_MS, EVENTS, FINDS, LONG_SHIFT_MS, PRODUCERS, SHAFT_DEPTH, STREAK_TURNS, TIP_MS, VEIN, type Achievement } from './data.ts'
 import { fmt } from './format.ts'
 import * as game from './game.ts'
@@ -74,6 +74,7 @@ export const INITIAL_VIEW: View = {
   turnStart: 0,
   lastTurn: 0,
   amount: 1,
+  tab: 'shop',
   gem: null,
   vein: null,
   veinWork: 0,
@@ -118,9 +119,14 @@ export const INITIAL_BAND: Band = {
 /** A shop amount as this version reads it: ×100 is gone, and Max buys a lot in its place. */
 const amountOf = (value: unknown): Amount => (value === 10 ? 10 : value === 'max' || value === 100 ? 'max' : 1)
 
+const TABS: readonly ShopTab[] = ['shop', 'shaft', 'badges', 'stats']
+const tabOf = (value: unknown): ShopTab => (TABS as readonly unknown[]).includes(value) ? (value as ShopTab) : 'shop'
+
 /** A view or a band as this version reads it: one kept from before an update lacks the newer fields. */
-export const fillView = (view: View): View => ({ ...INITIAL_VIEW, ...view, amount: amountOf(view.amount) })
+export const fillView = (view: View): View => ({ ...INITIAL_VIEW, ...view, amount: amountOf(view.amount), tab: tabOf(view.tab) })
 export const fillBand = (band: Band): Band => ({ ...INITIAL_BAND, ...band })
+/** A shop model drawn before this version's first refresh lacks the newer sections. */
+export const fillShop = (shop: ShopModel): ShopModel => ({ ...model.EMPTY_SHOP, ...shop, tab: tabOf(shop.tab) })
 
 /** The multiplier a caught frenzy puts on everything until it runs out. */
 export const boostAt = (view: View, now: number): number => (view.frenzy !== null && now < view.frenzy.until ? view.frenzy.mult : 1)
@@ -186,7 +192,7 @@ export async function refresh(io: Io, now?: number, force = false): Promise<Band
       biome: game.biomeAt(game.depth(mine.save)),
     }
   })
-  if (!isHeld) await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, mine.isLoaded))
+  if (!isHeld) await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, view.tab, mine.isLoaded))
   return band
 }
 
@@ -195,7 +201,7 @@ async function showPurchase(io: Io): Promise<void> {
   heldUntil = (await io.now()) + HOLD_MS
   const mine = await io.readMine()
   const view = await io.readView()
-  await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, mine.isLoaded))
+  await patch(io.readShop, io.shop, () => model.shopModel(mine.save, view.amount, view.tab, mine.isLoaded))
 }
 
 let loading: Promise<void> | null = null
@@ -332,14 +338,15 @@ async function growVeins(io: Io, mode: Mode, seconds: number, now: number, save:
 export async function catchVein(io: Io, id: number): Promise<VeinKind | null> {
   const now = await io.now()
   if ((await io.readBand()).isStopped) return null
-  const frenzyMs = VEIN.frenzyMs * game.multipliers((await io.readMine()).save).frenzyTime
+  const m = game.multipliers((await io.readMine()).save)
+  const frenzyMs = VEIN.frenzyMs * m.frenzyTime
   const hit: { kind: VeinKind | null; find?: FindId } = { kind: null }
   await patchView(io, view => {
     hit.kind = null
     if (view.vein === null || view.vein.id !== id || now > view.vein.until) return view
     hit.kind = view.vein.kind
     if (view.vein.find !== undefined) hit.find = view.vein.find
-    const frenzy = view.vein.kind === 'frenzy' ? { mult: VEIN.frenzyMult, until: now + frenzyMs } : view.frenzy
+    const frenzy = view.vein.kind === 'frenzy' ? { mult: m.frenzyMult, until: now + frenzyMs } : view.frenzy
     return { ...view, vein: null, frenzy }
   })
   const kind = hit.kind
@@ -352,7 +359,7 @@ export async function catchVein(io: Io, id: number): Promise<VeinKind | null> {
   })
   if (hit.find !== undefined) await findSecrets(io, [hit.find])
   io.sound(hit.find !== undefined ? 'find' : 'vein')
-  const label = hit.find !== undefined ? FINDS[hit.find].name : kind === 'rich' ? 'Rich vein' : `Frenzy ×${VEIN.frenzyMult}`
+  const label = hit.find !== undefined ? FINDS[hit.find].name : kind === 'rich' ? 'Rich vein' : `Frenzy ×${m.frenzyMult}`
   await io.view(view => ({ ...view, event: { label, value, at: now } }))
   await refresh(io, now)
   return kind
@@ -620,6 +627,37 @@ export async function setAmount(io: Io, amount: Amount): Promise<void> {
   await refresh(io, undefined, true)
 }
 
+/** Shows one of the shop's tabs, in this session. */
+export async function setTab(io: Io, tab: ShopTab): Promise<void> {
+  await patchView(io, view => (view.tab === tab ? view : { ...view, tab }))
+  await refresh(io, undefined, true)
+}
+
+/**
+ * Buys a relic with stones not spent yet. It syncs first, so a relic another
+ * session just bought is counted, and after, so the next session to sync sees it.
+ */
+export async function buyRelic(io: Io, id: RelicId): Promise<boolean> {
+  await sync(io)
+  let isBought = false
+  await io.mine(mine => {
+    const next = game.buyRelic(mine, id)
+    isBought = next !== null
+    return next ?? mine
+  })
+  const { save } = await io.readMine()
+  const r = game.relic(id)
+  if (!isBought) {
+    if (r !== undefined && !game.hasRelic(save, id)) io.toast(`Need ${Math.max(1, r.cost - game.stonesToSpend(save))} more ◈`)
+  } else {
+    await showPurchase(io)
+    if (r !== undefined) io.toast(`${r.name}: ${r.blurb}`)
+  }
+  await refresh(io)
+  if (isBought) void sync(io).catch(() => undefined)
+  return isBought
+}
+
 export async function setHidden(io: Io, isHidden: boolean): Promise<void> {
   await patch(io.readBand, io.band, band => (band.isHidden === isHidden ? band : { ...band, isHidden }))
 }
@@ -671,23 +709,26 @@ export async function newShaft(io: Io): Promise<boolean> {
     return false
   }
   const pct = Math.round(game.stoneBonus(save.stones + gain) * 100)
+  const headStart = game.ownedRelics(save).some(r => r.effect.kind === 'ledger' || r.effect.kind === 'crew' || r.effect.kind === 'survey')
   const isSure = await confirm(
     io,
-    `Open a new shaft for ${gain} ◈? Sparks, producers, upgrades and depth start over. Ancient stones, achievements and stats stay, and your stones will add ${pct}% to everything.`,
+    `Open a new shaft for ${gain} ◈? Sparks, producers, upgrades and depth start over${headStart ? ', with the head start your relics give' : ''}. Ancient stones, relics, achievements and stats stay, and your stones will add ${pct}% to everything.`,
     'Open it',
     'Keep digging',
   )
   if (!isSure) return false
   await sync(io)
-  const next = game.openShaft((await io.readMine()).save, newRunId())
+  const current = (await io.readMine()).save
+  const next = game.openShaft(current, newRunId())
   if (next === null) return false
   await io.put(SAVE_KEY, next)
   await io.mine(mine => ({ ...mine, save: next, pending: game.emptyDelta(next.runId), inflight: [], isLoaded: true }))
-  await io.view(view => ({ ...view, turnStart: 0 }))
+  // A turn running now counts from the new shaft's start, which a survey map puts a hundred metres down.
+  await io.view(view => ({ ...view, turnStart: next.lifetime }))
   await refresh(io, undefined, true)
   // Fresh rock is earned now too: one toast says both, so neither hides the other.
   const won = newlyEarned(next)
-  io.toast([`A new shaft is open. You hold ${next.stones} ◈.`, ...(won.length > 0 ? [achievementText(won)] : [])].join(' '))
+  io.toast([`A new shaft is open: ${next.stones - current.stones} ◈ found, ${game.stonesToSpend(next)} to spend on relics.`, ...(won.length > 0 ? [achievementText(won)] : [])].join(' '))
   return true
 }
 

@@ -14,7 +14,7 @@ tool call Claude makes mines sparks ✻, and each press of **Mine** mines more.
 Claude's own work pays too: a test run that passes, a commit, a long turn.
 Spend it all in the shop on a crew that keeps digging, and on upgrades.
 
-<img src="docs/shop.png" alt="The shop in the Claude Desktop app: upgrades and a new shaft" width="420">
+<img src="docs/shop.png" alt="The shop in the Claude Desktop app: upgrades on sale" width="420">
 
 ## Install
 
@@ -46,9 +46,10 @@ auto-update**.
   terminal, give the band the keyboard (click it, or press ctrl+x then Tab)
   and press `m`: every press counts, while quick clicks on one spot count as
   one.
-- Open the shop with **Shop** or `/mine`. Producers mine every second Claude
-  works; upgrades make clicks, tool calls, Claude's work and the crew
-  stronger. The shop's stats show where your sparks came from.
+- Open the shop with **Shop** or `/mine`. Its tabs hold the producers and
+  upgrades, the shaft and its relics, your badges and your stats. Producers
+  mine every second Claude works; upgrades make clicks, tool calls, Claude's
+  work and the crew stronger.
 - **Claude's work pays**, once a turn each: tests that pass, a bug squashed
   (tests that failed, then pass), a build that passes, a clean lint, a commit,
   a pull request opened or merged, and a turn longer than five minutes. Every
@@ -65,9 +66,12 @@ auto-update**.
   for ◈ ancient stones. They add to everything for good, each a little less
   than the one before: 10 stones add 50%, 100 add 251%. A deeper run pays more
   of them.
+- **Relics:** spend stones on relics that last, such as a starter crew for
+  every new shaft or luckier veins. Spending them never lowers what they add.
 - **Achievements:** 33 badges for records such as your first vein, 100
   commits, a ten-turn streak or reaching the magma, and nine secrets. Each
-  adds 2% to everything, and they stay through new shafts.
+  adds 2% to everything, and they stay through new shafts. In the desktop app,
+  point at a badge to see what it asks.
 - **Sounds:** a few rare moments chime softly, such as a vein caught.
   `/mine sound` turns them off.
 

@@ -1,7 +1,7 @@
 // The economy, as pure functions over plain data. No `$` in here, so the
 // rules can be tested on their own and shared by every drawing.
 
-import type { Counts, Delta, EventKind, FindId, IdleSpan, Mine, ProducerId, Save, SecretId, Season, SourceKind, ToolKind, VeinKind } from '../types'
+import type { Counts, Delta, EventKind, FindId, IdleSpan, Mine, ProducerId, RelicId, Save, SecretId, Season, SourceKind, ToolKind, VeinKind } from '../types'
 import {
   ACHIEVEMENT_BONUS,
   ACHIEVEMENTS,
@@ -14,6 +14,8 @@ import {
   GEM_WORTH,
   GROWTH,
   PRODUCERS,
+  RELIC_IDS,
+  RELICS,
   REWARDS,
   SECRET_IDS,
   SHAFT_DEPTH,
@@ -26,6 +28,7 @@ import {
   type Achievement,
   type Goal,
   type Producer,
+  type Relic,
   type Unlock,
   type Upgrade,
 } from './data.ts'
@@ -57,6 +60,7 @@ export function fresh(runId: string): Save {
     veins: 0,
     events: {},
     secrets: [],
+    relics: [],
     idleAt: 0,
     writes: {},
     chain: '',
@@ -81,6 +85,7 @@ export function emptyDelta(runId: string): Delta {
     veins: 0,
     events: {},
     secrets: [],
+    relics: [],
     idle: null,
   }
 }
@@ -152,6 +157,7 @@ export function normalize(raw: unknown): Save | null {
       : [],
     ...stats(r),
     secrets: secretsOf(r.secrets),
+    relics: relicsOf(r.relics),
     idleAt: num(r.idleAt),
     writes: writes(r.writes),
     chain: typeof r.chain === 'string' ? r.chain : '',
@@ -162,6 +168,11 @@ const isSecret = (id: unknown): id is SecretId => typeof id === 'string' && (SEC
 
 /** Secrets read back: the known ones, each once. */
 const secretsOf = (value: unknown): SecretId[] => (Array.isArray(value) ? [...new Set(value.filter(isSecret))] : [])
+
+const isRelic = (id: unknown): id is RelicId => typeof id === 'string' && (RELIC_IDS as readonly string[]).includes(id)
+
+/** Relics read back: the known ones, each once; a save from before relics has none. */
+const relicsOf = (value: unknown): RelicId[] => (Array.isArray(value) ? [...new Set(value.filter(isRelic))] : [])
 
 /** A delta's idle span read back; null where it has none, as one kept from before an update. */
 function idleSpan(value: unknown): IdleSpan | null {
@@ -182,6 +193,7 @@ export function normalizeMine(mine: Mine): Mine {
     ...d,
     ...stats(d as unknown as Record<string, unknown>),
     secrets: secretsOf(d.secrets),
+    relics: relicsOf(d.relics),
     idle: idleSpan(d.idle),
   })
   return {
@@ -289,6 +301,8 @@ export type Multipliers = {
   /** From the upgrades: what each work event pays more, and how much longer a frenzy lasts. */
   event: Record<EventKind, number>
   frenzyTime: number
+  /** What a caught frenzy multiplies by. */
+  frenzyMult: number
   /** What a new shaft pays, from the layers: the far side pays more stones. */
   stones: number
 }
@@ -314,6 +328,7 @@ export function multipliers(save: Save): Multipliers {
     events: 1,
     event: Object.fromEntries(EVENT_KINDS.map(k => [k, 1])) as Record<EventKind, number>,
     frenzyTime: 1,
+    frenzyMult: VEIN.frenzyMult,
     stones: 1,
   }
   // Every layer this run reached adds its perk.
@@ -399,8 +414,44 @@ export function multipliers(save: Save): Multipliers {
         break
     }
   }
+  // The relics owned; the ones that act on a new shaft act in openShaft.
+  for (const r of ownedRelics(save)) {
+    const effect = r.effect
+    switch (effect.kind) {
+      case 'veinSpeed':
+        m.veinSpeed *= effect.mult
+        break
+      case 'gemWorth':
+        m.gemWorth *= effect.mult
+        break
+      case 'idle':
+        m.idleMult *= effect.mult
+        break
+      case 'frenzy':
+        m.frenzyMult = Math.max(m.frenzyMult, effect.mult)
+        break
+      case 'stones':
+        m.stones *= effect.mult
+        break
+      case 'ledger':
+      case 'crew':
+      case 'survey':
+        break
+    }
+  }
   return m
 }
+
+/** The relics a save owns, in the order the shop lists them. */
+export const ownedRelics = (save: Save): Relic[] => RELICS.filter(r => save.relics.includes(r.id))
+
+export const relic = (id: RelicId): Relic | undefined => RELICS.find(r => r.id === id)
+
+export const hasRelic = (save: Save, id: RelicId): boolean => save.relics.includes(id)
+
+/** Stones found and not yet spent on relics. Two sessions buying at once may overspend: then none are left. */
+export const stonesToSpend = (save: Save): number =>
+  Math.max(0, save.stones - ownedRelics(save).reduce((sum, r) => sum + r.cost, 0))
 
 /** Sparks per second one of this producer mines while Claude works. */
 export function unitRate(save: Save, id: ProducerId, m = multipliers(save)): number {
@@ -733,6 +784,12 @@ function reached(save: Save, goal: Goal): number {
 
 export const isEarned = (save: Save, a: Achievement): boolean => reached(save, a.goal) >= a.goal.n
 
+/** How far a save has come toward an achievement, up to its goal. */
+export const achievementProgress = (save: Save, a: Achievement): { have: number; need: number } => ({
+  have: Math.min(reached(save, a.goal), a.goal.n),
+  need: a.goal.n,
+})
+
 /**
  * The achievements a save has earned. Each counts a record that only grows and
  * survives a new shaft, so they are read off the save and never stored.
@@ -928,16 +985,39 @@ export function buyUpgrade(mine: Mine, id: string): Mine | null {
   }
 }
 
+/** Buys a relic with stones not yet spent; null when it is owned or they are too few. */
+export function buyRelic(mine: Mine, id: RelicId): Mine | null {
+  const r = relic(id)
+  if (r === undefined || hasRelic(mine.save, id) || stonesToSpend(mine.save) < r.cost) return null
+  return {
+    ...mine,
+    save: { ...mine.save, relics: [...mine.save.relics, id] },
+    pending: { ...mine.pending, relics: [...mine.pending.relics, id] },
+  }
+}
+
+/** Lifetime sparks at a depth: the inverse of `depth`. */
+const lifetimeAt = (metres: number): number => Math.ceil(1_000 * (10 ** (metres / 100) - 1))
+
 /**
  * Prestige: a new shaft in fresh rock. Sparks, producers, upgrades and depth
- * go; ancient stones, all-time sparks, the records and the counters stay.
- * Null until the run is deep enough to pay a stone.
+ * go; ancient stones, relics, all-time sparks, the records and the counters
+ * stay. The relics give the new shaft its head start. Null until the run is
+ * deep enough to pay a stone.
  */
 export function openShaft(save: Save, runId: string): Save | null {
   const gain = stoneGain(save)
   if (gain < 1) return null
+  const start = { producers: {} as Counts<ProducerId>, upgrades: [] as string[], lifetime: 0 }
+  for (const r of ownedRelics(save)) {
+    const effect = r.effect
+    if (effect.kind === 'ledger') start.upgrades = save.upgrades.slice(0, effect.n)
+    if (effect.kind === 'crew') start.producers = add(start.producers, effect.producers)
+    if (effect.kind === 'survey') start.lifetime = Math.max(start.lifetime, lifetimeAt(effect.metres))
+  }
   return {
     ...fresh(runId),
+    ...start,
     allTime: save.allTime,
     stones: save.stones + gain,
     deepest: deepestOf(save),
@@ -953,6 +1033,7 @@ export function openShaft(save: Save, runId: string): Save | null {
     veins: save.veins,
     events: save.events,
     secrets: save.secrets,
+    relics: save.relics,
     idleAt: save.idleAt,
   }
 }
@@ -997,6 +1078,8 @@ export function applyDelta(stored: Save, d: Delta): Save {
     veins: stored.veins + d.veins,
     events: add(stored.events, d.events),
     secrets: [...new Set([...stored.secrets, ...d.secrets])],
+    // Relics are bought with stones, which outlast any run: one bought in an older run still counts.
+    relics: [...new Set([...stored.relics, ...d.relics])],
     idleAt: Math.max(stored.idleAt, d.idle?.to ?? 0),
   }
 }
@@ -1054,4 +1137,5 @@ export const isEmptyDelta = (d: Delta): boolean =>
   d.veins === 0 &&
   Object.keys(d.events).length === 0 &&
   d.secrets.length === 0 &&
+  d.relics.length === 0 &&
   d.idle === null

@@ -233,18 +233,20 @@ describe('the layers in the shop', () => {
     }
   })
 
-  test('the layers past the core stay hidden: not counted below, shown once the mine is a layer above', () => {
-    const shop = (lifetime: number) => model.shopModel(saveWith({ lifetime }), 1, true)
-    // At the topsoil more lies below; how much, the shop does not say.
-    expect(shop(0).hasDeeper).toBe(true)
-    // At the ruins the core is next, and nothing seems to lie past it.
-    const ruins = shop(3.2e11)
-    expect(ruins.layers.map(l => l.name).slice(-2)).toEqual(['Ancient ruins', 'The core'])
-    expect(ruins.hasDeeper).toBe(false)
-    // At the core the inner core shows as the next layer, and still nothing past it.
-    const core = shop(1e13)
-    expect(core.layers.map(l => l.name).slice(-2)).toEqual(['The core', 'Inner core'])
-    expect(core.hasDeeper).toBe(false)
+  test('the layers past the core stay hidden: in sight only once the mine is a layer above', () => {
+    const depth = (lifetime: number) => model.shopModel(saveWith({ lifetime }), 1, 'shaft', true).depth
+    // At the topsoil: the stone next, the rest down to the core below, and nothing past the core.
+    expect(depth(0).strata.map(s => s.state)).toEqual(['here', 'next', 'ahead', 'ahead', 'ahead', 'ahead', 'ahead'])
+    expect(depth(0).strata.map(s => s.name).at(-1)).toBe('The core')
+    // At the core the inner core comes in sight as the next layer, and still nothing past it.
+    const core = depth(1e13).strata
+    expect(core.map(s => s.name).slice(-2)).toEqual(['The core', 'Inner core'])
+    expect(core.slice(-2).map(s => s.state)).toEqual(['here', 'next'])
+    // What the layers reached add, a few words each: 100M is the magma.
+    const magma = depth(1e8)
+    expect(magma.perks).toEqual(['clicks +50%', 'a 2% gem chance', 'veins twice as often'])
+    expect(magma.here.name).toBe('Magma')
+    expect(magma.next).toMatchObject({ name: 'Groundwater', from: 700, text: 'The idle crew mines 25% more.' })
   })
 })
 
@@ -320,11 +322,14 @@ describe('secrets', () => {
   })
 
   test('a secret shows as ??? until found, and is never the next goal', () => {
-    const names = (save: Save) => model.shopModel(save, 1, true).achievements.filter(a => a.id === 'good-manners').map(a => a.name)
+    const badges = (save: Save) => model.shopModel(save, 1, 'badges', true).badges.groups.flatMap(g => g.items)
+    const names = (save: Save) => badges(save).filter(a => a.id === 'good-manners').map(a => a.name)
     expect(names(saveWith({}))).toEqual(['???'])
     expect(names(saveWith({ secrets: ['good-manners'] }))).toEqual(['Good manners'])
+    // Not even its picture gives it away.
+    expect(badges(saveWith({})).find(a => a.id === 'good-manners')).toMatchObject({ text: '???', art: { kind: 'icon', id: 'locked' }, isSurprise: true })
     // The layers past the core keep their badges' names to themselves too, until reached.
-    const deep = (save: Save) => model.shopModel(save, 1, true).achievements.filter(a => ['inner-core', 'hollow-earth', 'far-side'].includes(a.id)).map(a => a.name)
+    const deep = (save: Save) => badges(save).filter(a => ['inner-core', 'hollow-earth', 'far-side'].includes(a.id)).map(a => a.name)
     expect(deep(saveWith({ deepest: 1_000 }))).toEqual(['???', '???', '???'])
     expect(deep(saveWith({ deepest: 1_150 }))).toEqual(['Under pressure', '???', '???'])
     expect(game.nextAchievement(saveWith({ deepest: 1_050 }))?.name).not.toBe('Under pressure')
@@ -333,6 +338,79 @@ describe('secrets', () => {
     const almost = saveWith({ allTime: 1e13, deepest: 1_300, veins: 100, gems: 1_000, clicks: 10_000, tools: 1_000, shafts: 10, stones: 500, bestTurn: 1e9, bestStreak: 25,
       events: { tests: 100, commit: 100, longShift: 10, fix: 25, merge: 10 } })
     expect(game.nextAchievement(almost)).toBeNull()
+  })
+})
+
+describe('relics', () => {
+  test('stones buy relics, and spending them never lowers what the stones add', () => {
+    const mine = mineWith({ stones: 30 })
+    const before = game.multipliers(mine.save).global
+    const bought = game.buyRelic(mine, 'starter')
+    if (bought === null) throw new Error('not bought')
+    expect(bought.save.relics).toEqual(['starter'])
+    expect(bought.pending.relics).toEqual(['starter'])
+    expect(game.stonesToSpend(bought.save)).toBe(20)
+    expect(game.multipliers(bought.save).global).toBe(before)
+    // Owned already, or dearer than the stones left: no sale.
+    expect(game.buyRelic(bought, 'starter')).toBeNull()
+    expect(game.buyRelic(bought, 'map')).toBeNull()
+    expect(game.buyRelic(bought, 'lamp')?.save.relics).toEqual(['starter', 'lamp'])
+  })
+
+  test('the lamp, the cutter, the watchman, the bonanza and the lodestone work all along', () => {
+    const plain = game.multipliers(saveWith({}))
+    const m = game.multipliers(saveWith({ relics: ['lamp', 'cutter', 'night', 'lode', 'sense'] }))
+    expect(plain.frenzyMult).toBe(5)
+    expect(m).toMatchObject({ veinSpeed: 1.25, gemWorth: plain.gemWorth * 1.5, idleMult: 1.1, frenzyMult: 7, stones: 1.1 })
+    // More stones from a new shaft: 1B pays ten, and a tenth more of them.
+    expect(game.stoneGain(saveWith({ lifetime: 1e9, relics: ['sense'] }))).toBe(11)
+  })
+
+  test("the ledger, the starter crew and the survey map give a new shaft its head start", () => {
+    const upgrades = ['pick-1', 'pick-2', 'grip-1', 'tool-read', 'gem-1', 'pick-3', 'idle-1']
+    const save = saveWith({ lifetime: 1e9, allTime: 1e9, upgrades, stones: 60, relics: ['ledger', 'starter', 'map'] })
+    const next = game.openShaft(save, 'next')
+    if (next === null) throw new Error('no shaft')
+    // The last shaft's first five upgrades, free; a crew; and a hundred metres down, in the stone.
+    expect(next.upgrades).toEqual(upgrades.slice(0, 5))
+    expect(next.producers).toEqual({ apprentice: 10, cart: 5 })
+    expect(next.sparks).toBe(0)
+    expect(game.depth(next)).toBe(100)
+    expect(next.relics).toEqual(['ledger', 'starter', 'map'])
+    // A shaft opened from that one carries the same five on.
+    const after = game.openShaft({ ...next, lifetime: 1e9, upgrades: [...next.upgrades, 'idle-1'] }, 'after')
+    expect(after?.upgrades).toEqual(upgrades.slice(0, 5))
+    // Without the relics, fresh rock.
+    const bare = game.openShaft({ ...save, relics: [] }, 'bare')
+    expect(bare).toMatchObject({ upgrades: [], producers: {}, lifetime: 0 })
+  })
+
+  test('a relic bought in another session, or in a run since left, stays through a sync', () => {
+    const stored = saveWith({ stones: 100 })
+    const here = { ...game.emptyDelta(stored.runId), relics: ['lamp' as const] }
+    const older = { ...game.emptyDelta('an older run'), relics: ['cutter' as const] }
+    expect(game.applyDelta(game.applyDelta(stored, here), older).relics).toEqual(['lamp', 'cutter'])
+    expect(game.isEmptyDelta(here)).toBe(false)
+  })
+
+  test('a save from before relics reads as having none, and an unknown one is dropped', () => {
+    const { relics: _none, ...old } = saveWith({})
+    expect(game.normalize(old)?.relics).toEqual([])
+    expect(game.normalize({ ...saveWith({}), relics: ['lamp', 'bogus', 'lamp'] })?.relics).toEqual(['lamp'])
+  })
+
+  test('the shop lists the relics: owned ones apart, the rest priced in stones', () => {
+    const relics = model.shopModel(saveWith({ stones: 66, relics: ['ledger', 'starter'] }), 1, 'shaft', true).relics
+    expect(relics).toMatchObject({ found: 66, toSpend: 51 })
+    expect(relics.owned.map(r => r.name)).toEqual(["Foreman's ledger", 'Starter crew'])
+    expect(relics.forSale.map(r => [r.name, r.price, r.canBuy])).toEqual([
+      ['Lucky lamp', 20, true],
+      ['Survey map', 30, true],
+      ['Gem cutter', 50, true],
+      ['Night watchman', 80, false],
+      ['Bonanza', 120, false],
+      ['Lodestone', 200, false],
+    ])
   })
 })
 

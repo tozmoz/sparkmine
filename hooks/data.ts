@@ -1,6 +1,6 @@
 // Everything the shop sells, and the numbers behind it.
 
-import type { EventKind, FindId, ProducerId, SecretId, ToolKind } from '../types'
+import type { EventKind, FindId, IconId, ProducerId, RelicId, SecretId, ToolKind } from '../types'
 
 export type Producer = {
   id: ProducerId
@@ -216,6 +216,42 @@ export const STONE_UNIT = 1_000_000
 /** How deep a run must reach before a new shaft can be opened, in metres: the magma. */
 export const SHAFT_DEPTH = 500
 
+/** What a relic does, for good: to every new shaft, or to the mine all along. */
+export type RelicEffect =
+  /** A new shaft starts with this many of the last one's first upgrades, free. */
+  | { kind: 'ledger'; n: number }
+  /** A new shaft starts with this crew. */
+  | { kind: 'crew'; producers: Readonly<Partial<Record<ProducerId, number>>> }
+  /** A new shaft starts this deep, in metres. */
+  | { kind: 'survey'; metres: number }
+  | { kind: 'veinSpeed'; mult: number }
+  | { kind: 'gemWorth'; mult: number }
+  /** The idle crew mines this many times as much. */
+  | { kind: 'idle'; mult: number }
+  /** A frenzy multiplies by this. */
+  | { kind: 'frenzy'; mult: number }
+  /** A new shaft pays this many times the stones. */
+  | { kind: 'stones'; mult: number }
+
+export type Relic = { id: RelicId; name: string; blurb: string; cost: number; icon: IconId; effect: RelicEffect }
+
+/**
+ * What ancient stones buy, once each and for good. Stones found keep adding
+ * to everything whether or not they are spent: a relic costs none of that.
+ */
+export const RELICS: readonly Relic[] = [
+  { id: 'ledger', name: "Foreman's ledger", blurb: "A new shaft starts with the last one's first 5 upgrades, free.", cost: 5, icon: 'ledger', effect: { kind: 'ledger', n: 5 } },
+  { id: 'starter', name: 'Starter crew', blurb: 'Each new shaft starts with 10 apprentices and 5 mine carts.', cost: 10, icon: 'apprentice', effect: { kind: 'crew', producers: { apprentice: 10, cart: 5 } } },
+  { id: 'lamp', name: 'Lucky lamp', blurb: 'Veins show 25% more often.', cost: 20, icon: 'lantern', effect: { kind: 'veinSpeed', mult: 1.25 } },
+  { id: 'map', name: 'Survey map', blurb: 'A new shaft starts at 100 m, in the stone.', cost: 30, icon: 'map', effect: { kind: 'survey', metres: 100 } },
+  { id: 'cutter', name: 'Gem cutter', blurb: 'Gems are worth 50% more.', cost: 50, icon: 'gem', effect: { kind: 'gemWorth', mult: 1.5 } },
+  { id: 'night', name: 'Night watchman', blurb: 'The idle crew mines 10% more.', cost: 80, icon: 'moon', effect: { kind: 'idle', mult: 1.1 } },
+  { id: 'lode', name: 'Bonanza', blurb: 'A frenzy is ×7, not ×5.', cost: 120, icon: 'nugget', effect: { kind: 'frenzy', mult: 7 } },
+  { id: 'sense', name: 'Lodestone', blurb: 'New shafts pay 10% more ◈.', cost: 200, icon: 'stone', effect: { kind: 'stones', mult: 1.1 } },
+]
+
+export const RELIC_IDS: readonly RelicId[] = RELICS.map(r => r.id)
+
 /**
  * What Claude's own work pays, once a turn each: seconds of the crew's rate,
  * and never less than this many clicks, so it counts before the crew does.
@@ -272,14 +308,15 @@ export type Perk =
 /**
  * A layer: where it starts, its color, its perk, and the emoji square a shared
  * card draws it with. Its color is for text, so it reads on a light theme and
- * a dark one alike. `place` is how the card says where the mine is, when "in
- * the" and the name would read badly.
+ * a dark one alike. `short` is its perk in a few words, for the shaft tab's
+ * sum of them. `place` is how the card says where the mine is, when "in the"
+ * and the name would read badly.
  *
  * A hidden layer is a surprise: the shop shows it once the mine reaches the
  * layer above it, never counts it among the layers below, and a shared card
  * draws its square only once the mine has reached it.
  */
-export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string; place?: string; isHidden?: true }
+export type Biome = { name: string; from: number; color: string; square: string; perk: Perk; text: string; short: string; place?: string; isHidden?: true }
 
 /**
  * The layers the mine digs through, from the depth where each starts, in
@@ -287,16 +324,16 @@ export type Biome = { name: string; from: number; color: string; square: string;
  * run ends, so the deeper a run gets, the more of them it has.
  */
 export const BIOMES: readonly Biome[] = [
-  { name: 'Topsoil', from: 0, color: '#b8804f', square: '🟫', perk: { kind: 'none' }, text: 'Where every mine begins.' },
-  { name: 'Stone', from: 100, color: '#848f9c', square: '⬜', perk: { kind: 'click', mult: 1.5 }, text: 'Clicks mine 50% more.' },
-  { name: 'Crystal caves', from: 300, color: '#9179ff', square: '🟪', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.' },
-  { name: 'Magma', from: 500, color: '#e8641f', square: '🟧', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.' },
-  { name: 'Groundwater', from: 700, color: '#2a98c2', square: '🟦', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.' },
-  { name: 'Ancient ruins', from: 850, color: '#a8894f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double." },
-  { name: 'The core', from: 1_000, color: '#c27f00', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.' },
-  { name: 'Inner core', from: 1_100, color: '#5397b1', square: '💎', perk: { kind: 'gemWorth', mult: 2 }, text: 'Gems are worth twice as much.', isHidden: true },
-  { name: 'Hollow earth', from: 1_200, color: '#3ba057', square: '🟩', perk: { kind: 'tools', mult: 2 }, text: 'Tool calls mine twice as much.', isHidden: true },
-  { name: 'The far side', from: 1_300, color: '#4a8fe0', square: '🌏', perk: { kind: 'stones', mult: 1.5 }, text: 'A new shaft from here pays 50% more ◈.', place: 'on the far side', isHidden: true },
+  { name: 'Topsoil', from: 0, color: '#b8804f', square: '🟫', perk: { kind: 'none' }, text: 'Where every mine begins.', short: '' },
+  { name: 'Stone', from: 100, color: '#848f9c', square: '⬜', perk: { kind: 'click', mult: 1.5 }, text: 'Clicks mine 50% more.', short: 'clicks +50%' },
+  { name: 'Crystal caves', from: 300, color: '#9179ff', square: '🟪', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.', short: 'a 2% gem chance' },
+  { name: 'Magma', from: 500, color: '#e8641f', square: '🟧', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.', short: 'veins twice as often' },
+  { name: 'Groundwater', from: 700, color: '#2a98c2', square: '🟦', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.', short: 'the idle crew +25%' },
+  { name: 'Ancient ruins', from: 850, color: '#a8894f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double.", short: 'work events ×2' },
+  { name: 'The core', from: 1_000, color: '#c27f00', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.', short: 'everything +25%' },
+  { name: 'Inner core', from: 1_100, color: '#5397b1', square: '💎', perk: { kind: 'gemWorth', mult: 2 }, text: 'Gems are worth twice as much.', short: 'gems worth ×2', isHidden: true },
+  { name: 'Hollow earth', from: 1_200, color: '#3ba057', square: '🟩', perk: { kind: 'tools', mult: 2 }, text: 'Tool calls mine twice as much.', short: 'tool calls ×2', isHidden: true },
+  { name: 'The far side', from: 1_300, color: '#4a8fe0', square: '🌏', perk: { kind: 'stones', mult: 1.5 }, text: 'A new shaft from here pays 50% more ◈.', short: 'new shafts +50% ◈', place: 'on the far side', isHidden: true },
 ]
 
 /** What an achievement counts: a record of the save, or how often a work event paid. */
@@ -342,9 +379,9 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'shaft', name: 'Fresh rock', text: 'Open a new shaft.', goal: { kind: 'shafts', n: 1 } },
   { id: 'shafts-5', name: 'Shaft sinker', text: 'Open 5 new shafts.', goal: { kind: 'shafts', n: 5 } },
   { id: 'shafts-10', name: 'Mining magnate', text: 'Open 10 new shafts.', goal: { kind: 'shafts', n: 10 } },
-  { id: 'stones-25', name: 'Stone collector', text: 'Hold 25 ancient stones.', goal: { kind: 'stones', n: 25 } },
-  { id: 'stones-100', name: 'Stone circle', text: 'Hold 100 ancient stones.', goal: { kind: 'stones', n: 100 } },
-  { id: 'stones-500', name: 'Pyramid builder', text: 'Hold 500 ancient stones.', goal: { kind: 'stones', n: 500 } },
+  { id: 'stones-25', name: 'Stone collector', text: 'Find 25 ancient stones.', goal: { kind: 'stones', n: 25 } },
+  { id: 'stones-100', name: 'Stone circle', text: 'Find 100 ancient stones.', goal: { kind: 'stones', n: 100 } },
+  { id: 'stones-500', name: 'Pyramid builder', text: 'Find 500 ancient stones.', goal: { kind: 'stones', n: 500 } },
   { id: 'billion', name: 'Billionaire', text: 'Mine 1B sparks in all.', goal: { kind: 'allTime', n: 1e9 } },
   { id: 'trillion', name: 'Trillionaire', text: 'Mine 1T sparks in all.', goal: { kind: 'allTime', n: 1e12 } },
 

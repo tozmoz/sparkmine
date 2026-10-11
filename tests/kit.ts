@@ -150,6 +150,7 @@ export function seeded(patch: Partial<Save>): Save {
     veins: 0,
     events: {},
     secrets: [],
+    relics: [],
     idleAt: 0,
     writes: {},
     chain: '',
