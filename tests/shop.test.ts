@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import * as game from '../hooks/game.ts'
 import { band, command, endSession, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
 
 test('/mine opens the shop pane', async ($, on) => {
@@ -295,6 +296,28 @@ test('a purchase stays when another session writes over it', async ($, on) => {
   expect(w.store.get('save')).toMatchObject({ sparks: 110, producers: {} })
   await ui.advance(250)
   expect(await ui.find({ type: 'Text', text: 'Apprentice ×1' })).toBeDefined()
+  // The next sync finds its write missing and lays the purchase over the other session's.
+  await wait(w, 6)
+  expect(w.store.get('save')).toMatchObject({ sparks: 95, producers: { apprentice: 1 } })
+  await ui.advance(250)
+  expect(await ui.find({ type: 'Text', text: 'Apprentice ×1' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 95' })).toBeDefined()
+})
+
+test("a purchase stays when another session writes over the save's first write", async ($, on) => {
+  // A new save, a new shaft and a reset have no chain of writes yet.
+  const read = seeded({ sparks: 100, lifetime: 100, allTime: 100 })
+  const w = world(on, { save: read })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  await ui.press({ key: 'buy-apprentice' })
+  // Another session read the same save and mined, and its write lands last.
+  const stored = game.normalize(read)
+  if (stored === null) throw new Error('not a save')
+  const other = game.syncMine(stored, game.earn({ ...game.newMine(stored.runId), save: stored, isLoaded: true }, 10, { kind: 'crew' }), 'other')
+  w.overwrite = other.save
+  await wait(w, 6)
+  expect(w.store.get('save')).toMatchObject({ sparks: 110, producers: {} })
   // The next sync finds its write missing and lays the purchase over the other session's.
   await wait(w, 6)
   expect(w.store.get('save')).toMatchObject({ sparks: 95, producers: { apprentice: 1 } })

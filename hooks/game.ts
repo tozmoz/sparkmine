@@ -1091,6 +1091,24 @@ function wrote(writes: Record<string, number>, writer: string, seq: number): Rec
 }
 
 /**
+ * The chain a save with none yet starts: named after the save itself, so
+ * sessions that read it at once start the same chain, and its record shows
+ * whose write went missing. A save that changed in between, as an older
+ * version's write changes it, starts a chain of its own.
+ */
+function chainOf(save: Save): string {
+  const text = JSON.stringify(save)
+  let a = 2166136261
+  let b = 0x9e3779b9
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text.charCodeAt(i)
+    a = Math.imul(a ^ c, 16777619)
+    b = Math.imul(b ^ c, 0x5bd1e995)
+  }
+  return `${mix(a).toString(36).padStart(7, '0')}${mix(b).toString(36).padStart(7, '0')}`
+}
+
+/**
  * Brings a session's mine in line with the save in the store, and says what
  * to write back. Every session writes the one save: it reads it, lays its own
  * changes over and writes it back. Two that read it at once both write, and the
@@ -1098,11 +1116,12 @@ function wrote(writes: Record<string, number>, writer: string, seq: number): Rec
  * So the save keeps the number of each session's last write, and a session
  * whose write is missing lays those changes over again.
  *
- * That record holds only along one chain of writes. Off it (an older version
- * of the mod wrote the save in between) the write may be in or not, and it is
- * left as it is: a change lost now and then, never one counted twice.
+ * That record holds only along one chain of writes. A save starts one at its
+ * first write: a new save, a new shaft and a reset have none. Off the chain (an
+ * older version of the mod wrote the save in between) the write may be in or
+ * not, and it is left as it is: a change lost now and then, never one counted twice.
  *
- * @param newId a fresh id: the session's name in `writes` when it has none yet, and a new chain's
+ * @param newId a fresh id: the session's name in `writes` when it has none yet
  */
 export function syncMine(stored: Save | null, mine: Mine, newId: string): { mine: Mine; save: Save; isWrite: boolean } {
   const writer = mine.writer === '' ? newId : mine.writer
@@ -1116,7 +1135,7 @@ export function syncMine(stored: Save | null, mine: Mine, newId: string): { mine
   }
   const seq = mine.seq + 1
   const merged = deltas.reduce((save, d) => applyDelta(save, d), base)
-  const chain = base.chain === '' ? newId : base.chain
+  const chain = base.chain === '' ? chainOf(base) : base.chain
   const save = { ...merged, chain, writes: wrote(base.chain === '' ? {} : merged.writes, writer, seq) }
   return { mine: { ...mine, writer, seq, chain, save, pending: emptyDelta(save.runId), inflight: deltas }, save, isWrite: true }
 }
