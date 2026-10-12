@@ -6,7 +6,7 @@
 import type { ElementTable, RenderElement, RenderSurface } from 'claude-code'
 
 import type { Amount, IconId, ProducerId, RelicId, ShopItem, ShopModel, ShopTab } from '../types'
-import { ACHIEVEMENT_BONUS } from './data.ts'
+import { ACHIEVEMENT_BONUS, RELICS } from './data.ts'
 import { commas, fmt, plural } from './format.ts'
 
 type Elements = ElementTable<RenderSurface>
@@ -79,6 +79,9 @@ const TABS: readonly { tab: ShopTab; glyph: string; name: string }[] = [
   { tab: 'badges', glyph: '★', name: 'Badges' },
   { tab: 'stats', glyph: '▤', name: 'Stats' },
 ]
+
+/** On the desktop the owned relics' names take a column as wide as the longest, so what each does lines up. */
+const RELIC_NAME_WIDTH = Math.max(...RELICS.map(r => r.name.length))
 
 /** The gold of an earned badge and a bar of them: the theme's, so a light theme darkens it. */
 const GOLD = 'warning'
@@ -268,17 +271,20 @@ function shaftTab(el: Elements, model: ShopModel, parts: ShopParts, act: ShopAct
       <Text dimColor>{d.perks.length > 0 ? `Your layers add: ${d.perks.join(' · ')}.` : 'Each layer you reach adds its perk for the rest of the run.'}</Text>
     </Box>
   )
+  // The shaft pays stones, it costs none: so the card says what it finds, and
+  // what there is to spend then, in the words the relics use.
   const canOpen = s.gain > 0
+  const total = r.found + s.gain
   const shaft = card(
     el,
     parts,
     {
       id: 'shaft',
       icon: 'stone',
-      name: canOpen ? `Open for ◈ ${commas(s.gain)}` : `Opens at ${s.at} m`,
+      name: canOpen ? `Open it now to find ◈ ${plural(s.gain, 'stone', 'stones')}` : `Opens at ${s.at} m`,
       detail: canOpen
-        ? `Start over in fresh rock. Your stones then add ${s.pct}% to everything${model.bonus.stones > 0 ? `, up from ${model.bonus.stonesPct}%` : ', for good'}. Badges, stats and relics stay.`
-        : `A new shaft opens once this one reaches ${s.at} m, and pays more ◈ the deeper it gets.`,
+        ? `Start over in fresh rock with ◈ ${commas(r.toSpend + s.gain)} to spend on relics. ${total === 1 ? 'The stone then adds' : `All ${commas(total)} stones then add`} ${s.pct}% to everything${r.found > 0 ? `, up from ${model.bonus.stonesPct}%` : ', for good'}. Badges, stats and relics stay.`
+        : `A new shaft opens once this one reaches ${s.at} m, and finds more ◈ stones the deeper it gets.`,
       owned: 0,
       count: 1,
       price: 0,
@@ -286,19 +292,32 @@ function shaftTab(el: Elements, model: ShopModel, parts: ShopParts, act: ShopAct
     },
     priceButton(el, 'shaft', 'Open', canOpen, () => act.shaft()),
   )
+  const spent = r.found - r.toSpend
+  const about =
+    r.found === 0
+      ? 'New shafts find ◈ ancient stones to spend here. They add to everything for good, and spending them never lowers that.'
+      : spent === 0
+        ? `You found ${plural(r.found, 'stone', 'stones')}. ${r.found === 1 ? 'It adds' : 'They add'} ${model.bonus.stonesPct}% to everything, and spending ${r.found === 1 ? 'it' : 'them'} never lowers that.`
+        : `You found ${plural(r.found, 'stone', 'stones')} and spent ${commas(spent)} on relics. All ${commas(r.found)} still add ${model.bonus.stonesPct}% to everything: spending never lowers it.`
+  // The relics owned and what each does: where there is room, beside the
+  // names in a column of their own; elsewhere, under each name.
   const owned =
     r.owned.length === 0 ? null : (
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={parts.isRoomy ? 1 : 0}>
-        {r.owned.map(o =>
-          parts.isRoomy ? (
-            <Box flexDirection="row" columnGap={1} alignItems="center" borderStyle="round" borderColor="inactive" paddingX={1}>
-              {parts.icon(o.icon, false, 18)}
-              <Text>{`${o.name} ✓`}</Text>
+      <Box flexDirection="column">
+        {r.owned.map(o => (
+          <Box flexDirection="row" columnGap={1} alignItems="flex-start">
+            <Text color="success">✓</Text>
+            {parts.icon(o.icon, false, 18)}
+            <Box flexDirection={parts.isRoomy ? 'row' : 'column'} columnGap={2} flexGrow={1} flexShrink={1}>
+              <Box {...(parts.isRoomy ? { width: RELIC_NAME_WIDTH } : {})} flexShrink={0}>
+                <Text bold>{o.name}</Text>
+              </Box>
+              <Box flexGrow={1} flexShrink={1}>
+                <Text dimColor>{o.text}</Text>
+              </Box>
             </Box>
-          ) : (
-            <Text color="success">{`✓ ${o.name}`}</Text>
-          ),
-        )}
+          </Box>
+        ))}
       </Box>
     )
   const forSale = r.forSale.map(item => card(el, parts, item, priceButton(el, `relic-${item.id}`, `◈ ${commas(item.price)}`, item.canBuy, () => act.relic(item.id as RelicId))))
@@ -310,12 +329,11 @@ function shaftTab(el: Elements, model: ShopModel, parts: ShopParts, act: ShopAct
     </Box>,
     <Box flexDirection="column" rowGap={parts.isRoomy ? 1 : 0}>
       <Box flexDirection="column">
-        {heading(el, 'Relics', `◈ ${commas(r.found)} found · ${commas(r.toSpend)} to spend`)}
-        <Text dimColor>
-          {r.found > 0
-            ? 'Found stones keep adding to everything; spending them never lowers it.'
-            : 'New shafts pay ancient stones, and stones buy relics. Found stones keep adding to everything; spending them never lowers it.'}
-        </Text>
+        <Box flexDirection="row" columnGap={1}>
+          <Text bold>Relics</Text>
+          <Text color="permission" bold>{`◈ ${commas(r.toSpend)} to spend`}</Text>
+        </Box>
+        <Text dimColor>{about}</Text>
       </Box>
       {owned}
       {forSale.length > 0 ? cards(el, parts, forSale) : <Text dimColor>Every relic is yours.</Text>}

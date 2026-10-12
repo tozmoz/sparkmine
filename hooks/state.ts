@@ -712,7 +712,7 @@ export async function newShaft(io: Io): Promise<boolean> {
   const headStart = game.ownedRelics(save).some(r => r.effect.kind === 'ledger' || r.effect.kind === 'crew' || r.effect.kind === 'survey')
   const isSure = await confirm(
     io,
-    `Open a new shaft for ${gain} ◈? Sparks, producers, upgrades and depth start over${headStart ? ', with the head start your relics give' : ''}. Ancient stones, relics, achievements and stats stay, and your stones will add ${pct}% to everything.`,
+    `Open a new shaft and find ${gain} ◈? Sparks, producers, upgrades and depth start over${headStart ? ', with the head start your relics give' : ''}. Ancient stones, relics, achievements and stats stay: you will have ${game.stonesToSpend(save) + gain} ◈ to spend on relics, and your stones will add ${pct}% to everything.`,
     'Open it',
     'Keep digging',
   )

@@ -399,10 +399,13 @@ describe('relics', () => {
     expect(game.normalize({ ...saveWith({}), relics: ['lamp', 'bogus', 'lamp'] })?.relics).toEqual(['lamp'])
   })
 
-  test('the shop lists the relics: owned ones apart, the rest priced in stones', () => {
+  test('the shop lists the relics: owned ones apart with what they do, the rest priced in stones', () => {
     const relics = model.shopModel(saveWith({ stones: 66, relics: ['ledger', 'starter'] }), 1, 'shaft', true).relics
     expect(relics).toMatchObject({ found: 66, toSpend: 51 })
-    expect(relics.owned.map(r => r.name)).toEqual(["Foreman's ledger", 'Starter crew'])
+    expect(relics.owned.map(r => [r.name, r.text])).toEqual([
+      ["Foreman's ledger", "A new shaft starts with the last one's first 5 upgrades, free."],
+      ['Starter crew', 'Each new shaft starts with 10 apprentices and 5 mine carts.'],
+    ])
     expect(relics.forSale.map(r => [r.name, r.price, r.canBuy])).toEqual([
       ['Lucky lamp', 20, true],
       ['Survey map', 30, true],

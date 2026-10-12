@@ -409,8 +409,8 @@ export type ShopModel = {
    * all the stones would add to everything then, in percent.
    */
   shaft: { gain: number; at: number; pct: number }
-  /** Stones found and still to spend, the relics owned, and the ones for sale, priced in stones. */
-  relics: { found: number; toSpend: number; owned: { id: RelicId; name: string; icon: IconId }[]; forSale: ShopItem[] }
+  /** Stones found and still to spend, the relics owned and what each does, and the ones for sale, priced in stones. */
+  relics: { found: number; toSpend: number; owned: { id: RelicId; name: string; icon: IconId; text: string }[]; forSale: ShopItem[] }
   /** Every badge by group, earned or not, how many are earned, and the closest unearned one and how close. */
   badges: {
     earned: number
