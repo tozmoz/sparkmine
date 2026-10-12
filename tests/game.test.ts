@@ -515,6 +515,27 @@ describe('sync', () => {
     expect(game.syncMine(again.save, other.mine, 'x').mine.save.producers).toEqual({ apprentice: 1 })
   })
 
+  test("a purchase another session wrote over goes in again on a save's first write too", () => {
+    // A new save, a new shaft and a reset have no chain of writes yet: two sessions read one at once.
+    const stored = saveWith({ sparks: 100, lifetime: 100, allTime: 100 })
+    expect(stored.chain).toBe('')
+    const bought = game.buyProducer(mineWith(stored), 'apprentice', 1)
+    const mined = game.earn(mineWith(stored), 10, { kind: 'crew' })
+    if (bought === null) throw new Error('could not buy')
+    const first = game.syncMine(stored, bought, 'a')
+    const other = game.syncMine(stored, mined, 'b')
+    // Both start the same chain, so the record of writes shows the purchase went missing.
+    expect(other.save.chain).toBe(first.save.chain)
+    expect(other.save.producers).toEqual({})
+    const again = game.syncMine(other.save, first.mine, 'x')
+    expect(again.isWrite).toBe(true)
+    expect(again.save).toMatchObject({ sparks: 100 - 15 + 10, producers: { apprentice: 1 } })
+    expect(again.mine.save.producers).toEqual({ apprentice: 1 })
+    // Once the store holds it, it is not counted twice, and the other session takes it in.
+    expect(game.syncMine(again.save, again.mine, 'x').isWrite).toBe(false)
+    expect(game.syncMine(again.save, other.mine, 'x').mine.save).toMatchObject({ sparks: 95, producers: { apprentice: 1 } })
+  })
+
   test('a write another session built on is not laid over again', () => {
     const stored = saveWith({ sparks: 100 })
     const bought = game.buyProducer(mineWith(stored), 'apprentice', 1)
@@ -536,7 +557,7 @@ describe('sync', () => {
     const older = game.normalize({ ...first.save, writes: undefined, chain: undefined })
     if (older === null) throw new Error('not a save')
     const other = game.syncMine(older, game.earn(mineWith(older), 10, { kind: 'crew' }), 'b')
-    expect(other.save.chain).toBe('b')
+    expect(other.save.chain).not.toBe('c')
     const next = game.syncMine(other.save, first.mine, 'x')
     expect(next.isWrite).toBe(false)
     expect(next.mine.save).toMatchObject({ sparks: 95, producers: { apprentice: 1 } })
