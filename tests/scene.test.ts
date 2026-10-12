@@ -69,6 +69,15 @@ test('every scene fits the size an Svg may have', () => {
   expect(sceneSvg({ ...WORK, mode: 'idle' }, 3)).not.toContain('@keyframes slide')
 })
 
+test('each layer draws its own rock, in the order the mine reaches them', () => {
+  const cave = (name: string) => sceneSvg({ ...WORK, biome: BIOMES.findIndex(b => b.name === name) }, 3)
+  expect(cave('Stone')).toContain('background:#1b1c20')
+  expect(cave('Ancient ruins')).toContain('background:#221a10')
+  expect(cave('Crystal caves')).toContain('background:#17142a')
+  expect(cave('Groundwater')).toContain('background:#0f1d24')
+  expect(cave('The core')).toContain('background:#2a0c06')
+})
+
 test('on the far side the tunnel opens to the sky, where no lantern burns', () => {
   const far: SceneSpec = { ...WORK, biome: BIOMES.length - 1 }
   expect(sceneSvg(far, 3)).toContain('background:#7cb8ec')

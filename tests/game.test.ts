@@ -189,7 +189,7 @@ describe('a new shaft', () => {
     // The layers' perks went with the run; the achievements stay.
     if (after === null) throw new Error('no shaft')
     expect(game.multipliers(after).veinSpeed).toBe(1)
-    expect(game.achievements(after).map(a => a.id)).toEqual(['hard-rock', 'crystal-caves', 'magma', 'shaft'])
+    expect(game.achievements(after).map(a => a.id)).toEqual(['hard-rock', 'ruins', 'crystal-caves', 'magma', 'shaft'])
   })
 })
 
@@ -198,12 +198,14 @@ describe('layers', () => {
     const at = (lifetime: number) => game.multipliers(saveWith({ lifetime }))
     // 9K is 100 m, the stone: clicks mine 50% more, and Hard rock adds 2%.
     expect(near(game.clickValue(saveWith({ lifetime: 9_000 })))).toBe(1.53)
+    // 100K is 200 m, the ancient ruins: Claude's work events pay double.
+    expect(at(9_000).events).toBe(1)
+    expect(at(1e5).events).toBe(2)
     expect(at(1e6).gemChance).toBe(0.02)
-    expect(at(1e8)).toMatchObject({ veinSpeed: 2, idleMult: 1, events: 1 })
-    expect(at(1e10)).toMatchObject({ veinSpeed: 2, idleMult: 1.25, events: 1 })
-    expect(at(3.2e11)).toMatchObject({ idleMult: 1.25, events: 2 })
-    // The core: 25% more, and six depth achievements add 12%.
-    expect(near(at(1e13).global)).toBe(1.4)
+    expect(at(1e8)).toMatchObject({ veinSpeed: 2, idleMult: 1, events: 2 })
+    expect(at(1e10)).toMatchObject({ veinSpeed: 2, idleMult: 1.25, events: 2 })
+    // The core, at 850 m: 25% more, and six depth achievements add 12%.
+    expect(near(at(3.2e11).global)).toBe(1.4)
     // Past it: gems worth twice as much, tool calls mining twice as much, and on the far side half again the stones.
     expect(at(1e14).gemWorth).toBe(20)
     expect(at(1e15).tool).toMatchObject({ read: 2, edit: 2, bash: 2, mcp: 2 })
@@ -239,12 +241,12 @@ describe('the layers in the shop', () => {
     expect(depth(0).strata.map(s => s.state)).toEqual(['here', 'next', 'ahead', 'ahead', 'ahead', 'ahead', 'ahead'])
     expect(depth(0).strata.map(s => s.name).at(-1)).toBe('The core')
     // At the core the inner core comes in sight as the next layer, and still nothing past it.
-    const core = depth(1e13).strata
+    const core = depth(5e11).strata
     expect(core.map(s => s.name).slice(-2)).toEqual(['The core', 'Inner core'])
     expect(core.slice(-2).map(s => s.state)).toEqual(['here', 'next'])
     // What the layers reached add, a few words each: 100M is the magma.
     const magma = depth(1e8)
-    expect(magma.perks).toEqual(['clicks +50%', 'a 2% gem chance', 'veins twice as often'])
+    expect(magma.perks).toEqual(['clicks +50%', 'work events ×2', 'a 2% gem chance', 'veins twice as often'])
     expect(magma.here.name).toBe('Magma')
     expect(magma.next).toMatchObject({ name: 'Groundwater', from: 700, text: 'The idle crew mines 25% more.' })
   })
@@ -253,16 +255,16 @@ describe('the layers in the shop', () => {
 describe('the shared card', () => {
   test('leaves out what is not done yet, and names the core as a place', () => {
     expect(model.shareCard(saveWith({}))).toBe(['⛏️ Sparkmine · 0 m in the Topsoil', '🟫⬛⬛⬛⬛⬛⬛', '✻ 0 mined · ★ 0/42', 'github.com/tozmoz/sparkmine'].join('\n'))
-    const core = model.shareCard(saveWith({ lifetime: 1e13, allTime: 3e13, stones: 1, veins: 1 }))
-    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 1,000 m at the core', '🟫⬜🟪🟧🟦🟨🟥', '✻ 30.00T mined · ◈ 1 stone · ★ 9/42', '1 vein'])
+    const core = model.shareCard(saveWith({ lifetime: 5e11, allTime: 3e13, stones: 1, veins: 1 }))
+    expect(core.split('\n').slice(0, 4)).toEqual(['⛏️ Sparkmine · 870 m at the core', '🟫⬜🟨🟪🟧🟦🟥', '✻ 30.00T mined · ◈ 1 stone · ★ 9/42', '1 vein'])
     const far = model.shareCard(saveWith({ lifetime: 2e16, allTime: 2e16 }))
-    expect(far.split('\n').slice(0, 2)).toEqual(['⛏️ Sparkmine · 1,330 m on the far side', '🟫⬜🟪🟧🟦🟨🟥💎🟩🌏'])
+    expect(far.split('\n').slice(0, 2)).toEqual(['⛏️ Sparkmine · 1,330 m on the far side', '🟫⬜🟨🟪🟧🟦🟥💎🟩🌏'])
   })
 
   test('spoils no surprise: a hidden layer gets its square once reached', () => {
     // The inner core reached in an earlier shaft, the new one back in the stone.
     const card = model.shareCard(saveWith({ lifetime: 9_000, deepest: 1_120 }))
-    expect(card.split('\n')[1]).toBe('🟫⬜🟪🟧🟦🟨🟥💎 deepest 1,120 m')
+    expect(card.split('\n')[1]).toBe('🟫⬜🟨🟪🟧🟦🟥💎 deepest 1,120 m')
   })
 })
 
@@ -330,9 +332,9 @@ describe('secrets', () => {
     expect(badges(saveWith({})).find(a => a.id === 'good-manners')).toMatchObject({ text: '???', art: { kind: 'icon', id: 'locked' }, isSurprise: true })
     // The layers past the core keep their badges' names to themselves too, until reached.
     const deep = (save: Save) => badges(save).filter(a => ['inner-core', 'hollow-earth', 'far-side'].includes(a.id)).map(a => a.name)
-    expect(deep(saveWith({ deepest: 1_000 }))).toEqual(['???', '???', '???'])
-    expect(deep(saveWith({ deepest: 1_150 }))).toEqual(['Under pressure', '???', '???'])
-    expect(game.nextAchievement(saveWith({ deepest: 1_050 }))?.name).not.toBe('Under pressure')
+    expect(deep(saveWith({ deepest: 999 }))).toEqual(['???', '???', '???'])
+    expect(deep(saveWith({ deepest: 1_000 }))).toEqual(['Under pressure', '???', '???'])
+    expect(game.nextAchievement(saveWith({ deepest: 950 }))?.name).not.toBe('Under pressure')
     expect(ACHIEVEMENTS.filter(a => a.goal.kind === 'secret')).toHaveLength(9)
     // Everything but the secrets earned: no goal is left to show.
     const almost = saveWith({ allTime: 1e13, deepest: 1_300, veins: 100, gems: 1_000, clicks: 10_000, tools: 1_000, shafts: 10, stones: 500, bestTurn: 1e9, bestStreak: 25,
@@ -399,10 +401,13 @@ describe('relics', () => {
     expect(game.normalize({ ...saveWith({}), relics: ['lamp', 'bogus', 'lamp'] })?.relics).toEqual(['lamp'])
   })
 
-  test('the shop lists the relics: owned ones apart, the rest priced in stones', () => {
+  test('the shop lists the relics: owned ones apart with what they do, the rest priced in stones', () => {
     const relics = model.shopModel(saveWith({ stones: 66, relics: ['ledger', 'starter'] }), 1, 'shaft', true).relics
     expect(relics).toMatchObject({ found: 66, toSpend: 51 })
-    expect(relics.owned.map(r => r.name)).toEqual(["Foreman's ledger", 'Starter crew'])
+    expect(relics.owned.map(r => [r.name, r.text])).toEqual([
+      ["Foreman's ledger", "A new shaft starts with the last one's first 5 upgrades, free."],
+      ['Starter crew', 'Each new shaft starts with 10 apprentices and 5 mine carts.'],
+    ])
     expect(relics.forSale.map(r => [r.name, r.price, r.canBuy])).toEqual([
       ['Lucky lamp', 20, true],
       ['Survey map', 30, true],
@@ -423,7 +428,7 @@ describe('achievements', () => {
   test('are read off the records, and the closest unearned one is next', () => {
     expect(game.achievements(saveWith({}))).toEqual([])
     const save = saveWith({ veins: 20, bestTurn: 2e6, deepest: 520, events: { commit: 3 } })
-    expect(game.achievements(save).map(a => a.name)).toEqual(['First vein', 'Hard rock', 'Crystal caves', 'Into the magma', 'Big turn'])
+    expect(game.achievements(save).map(a => a.name)).toEqual(['First vein', 'Hard rock', 'Lost ruins', 'Crystal caves', 'Into the magma', 'Big turn'])
     expect(game.nextAchievement(save)?.name).toBe('Vein hunter')
     expect(new Set(ACHIEVEMENTS.map(a => a.id)).size).toBe(ACHIEVEMENTS.length)
   })
@@ -679,8 +684,8 @@ describe('depth', () => {
     expect(game.depth(saveWith({ lifetime: 9_000 }))).toBe(100)
     expect(game.depth(saveWith({ lifetime: 999_000 }))).toBe(300)
     expect(game.depth(saveWith({ lifetime: 99_999_000 }))).toBe(500)
-    expect([0, 99, 100, 299, 300, 499, 500, 699, 700, 849, 850, 999, 1_000, 1_099].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
-    expect([1_100, 1_199, 1_200, 1_299, 1_300, 5_000].map(game.biomeAt)).toEqual([7, 7, 8, 8, 9, 9])
+    expect([0, 99, 100, 199, 200, 299, 300, 499, 500, 699, 700, 849, 850, 999].map(game.biomeAt)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
+    expect([1_000, 1_149, 1_150, 1_299, 1_300, 5_000].map(game.biomeAt)).toEqual([7, 7, 8, 8, 9, 9])
   })
 })
 

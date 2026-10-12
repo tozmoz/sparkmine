@@ -132,13 +132,13 @@ function depthOf(save: Save): ShopModel['depth'] {
   }
 }
 
-/** Stones found and still to spend, and the relics: owned, and for sale at their price in stones. */
+/** Stones found and still to spend, and the relics: owned with what each does, and for sale at their price in stones. */
 function relicsOf(save: Save): ShopModel['relics'] {
   const toSpend = game.stonesToSpend(save)
   return {
     found: save.stones,
     toSpend,
-    owned: game.ownedRelics(save).map(r => ({ id: r.id, name: r.name, icon: r.icon })),
+    owned: game.ownedRelics(save).map(r => ({ id: r.id, name: r.name, icon: r.icon, text: r.blurb })),
     forSale: RELICS.filter(r => !game.hasRelic(save, r.id)).map(r => ({
       id: r.id,
       icon: r.icon,

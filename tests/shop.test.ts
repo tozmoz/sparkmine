@@ -129,11 +129,14 @@ test('a new shaft trades the run for ancient stones, from 500 m down', async ($,
   await ui.press({ key: 'tab-shaft' })
   await ui.advance(50)
   expect((await ui.find({ key: 'shaft' }))?.props).toMatchObject({ label: 'Open', variant: 'primary' })
-  expect(await ui.find({ type: 'Text', text: 'Open for ◈ 5' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Start over in fresh rock. Your stones then add 31% to everything, for good. Badges, stats and relics stay.' })).toBeDefined()
+  // The shaft pays stones and costs none, and says what there is to spend then.
+  expect(await ui.find({ type: 'Text', text: 'Open it now to find ◈ 5 stones' })).toBeDefined()
+  expect(
+    await ui.find({ type: 'Text', text: 'Start over in fresh rock with ◈ 5 to spend on relics. All 5 stones then add 31% to everything, for good. Badges, stats and relics stay.' }),
+  ).toBeDefined()
   w.answers.push('Keep digging')
   await ui.press({ key: 'shaft' })
-  expect(w.asked[0]).toMatch(/your stones will add 31% to everything\.$/)
+  expect(w.asked[0]).toMatch(/^Open a new shaft and find 5 ◈\? .*: you will have 5 ◈ to spend on relics, and your stones will add 31% to everything\.$/)
   await ui.press({ key: 'tab-shop' })
   await ui.advance(50)
   expect(await ui.find({ type: 'Text', text: 'Mine cart ×3' })).toBeDefined()
@@ -142,17 +145,22 @@ test('a new shaft trades the run for ancient stones, from 500 m down', async ($,
   w.answers.push('Open it')
   await ui.press({ key: 'shaft' })
   await ui.advance(250)
-  // Five stones add 31%; Hard rock, Crystal caves, Into the magma and Fresh rock 2% each.
-  expect(await ui.find({ type: 'Text', text: '◈ 5 stones +31% · ★ 4 achievements +8%' })).toBeDefined()
+  // Five stones add 31%; Hard rock, Lost ruins, Crystal caves, Into the magma and Fresh rock 2% each.
+  expect(await ui.find({ type: 'Text', text: '◈ 5 stones +31% · ★ 5 achievements +10%' })).toBeDefined()
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 0' })).toBeDefined()
   expect(w.store.get('save')).toMatchObject({ stones: 5, shafts: 1, deepest: 510, sparks: 0, allTime: 2e8, producers: {} })
   expect(w.toasts).toContain('A new shaft is open: 5 ◈ found, 5 to spend on relics. Achievement: Fresh rock. Everything mines 2% more.')
-  // The relics: five stones buy the ledger, and the shop says what is left.
+  // The relics: what there is to spend, and that spending never lowers what the stones add.
+  expect(await ui.find({ type: 'Text', text: '◈ 5 to spend' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'You found 5 stones. They add 31% to everything, and spending them never lowers that.' })).toBeDefined()
+  // Five stones buy the ledger: it shows with what it does, and the shop says what is left.
   await ui.press({ key: 'relic-ledger' })
   await ui.advance(250)
   expect(await ui.find({ key: 'relic-ledger' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: "Foreman's ledger ✓" })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '◈ 5 found · 0 to spend' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /^Foreman's ledger$/ }))?.props).toMatchObject({ bold: true })
+  expect(await ui.find({ type: 'Text', text: "A new shaft starts with the last one's first 5 upgrades, free." })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '◈ 0 to spend' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'You found 5 stones and spent 5 on relics. All 5 still add 31% to everything: spending never lowers it.' })).toBeDefined()
   expect((await ui.find({ key: 'relic-starter' }))?.props).toMatchObject({ label: '◈ 10', dimColor: true })
   await ui.press({ key: 'relic-starter' })
   expect(w.toasts).toContain('Need 10 more ◈')
@@ -166,7 +174,7 @@ test('the shaft tab says how deep the run is, what its layers add, and how deep 
   const ui = await $.ui.mount(pane('desktop'))
   // The shop opens on its own tab.
   expect((await ui.find({ key: 'tab-shop' }))?.props).toMatchObject({ label: '⛏ Shop', variant: 'primary' })
-  expect((await ui.find({ key: 'tab-badges' }))?.props).toMatchObject({ label: '★ Badges 3/42', dimColor: true })
+  expect((await ui.find({ key: 'tab-badges' }))?.props).toMatchObject({ label: '★ Badges 4/42', dimColor: true })
   expect(await ui.find({ key: 'shaft' })).toBeUndefined()
   await ui.press({ key: 'tab-shaft' })
   await ui.advance(50)
@@ -178,13 +186,40 @@ test('the shaft tab says how deep the run is, what its layers add, and how deep 
   expect(await ui.find({ type: 'Text', text: '330 m' })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /^Crystal caves$/ }))?.props).toMatchObject({ bold: true, color: '#9179ff' })
   expect(await ui.find({ type: 'Text', text: /now · .*at 500 m: veins show twice as often\.$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Your layers add: clicks +50% · a 2% gem chance.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Your layers add: clicks +50% · work events ×2 · a 2% gem chance.' })).toBeDefined()
   const strata = String((await ui.findAll({ type: 'Svg' })).find(svg => String(svg.props.alt).startsWith('The layers in sight'))?.props.source)
   expect(strata).toContain('stroke-dasharray')
   expect(strata.match(/<rect /g)).toHaveLength(8)
   // The relics, before a stone is found.
-  expect(await ui.find({ type: 'Text', text: '◈ 0 found · 0 to spend' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '◈ 0 to spend' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^New shafts find ◈ ancient stones to spend here\./ })).toBeDefined()
   expect((await ui.find({ key: 'relic-ledger' }))?.props).toMatchObject({ label: '◈ 5', dimColor: true })
+})
+
+test('the shaft tab says what there is to spend, what a new shaft finds, and what each relic owned does', async ($, on) => {
+  world(on, { save: seeded({ sparks: 100, lifetime: 3.2e10, allTime: 9e10, stones: 66, shafts: 3, relics: ['ledger', 'starter', 'lamp', 'map'] }) })
+  await start($)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount(pane(surface))
+    await ui.press({ key: 'tab-shaft' })
+    await ui.advance(50)
+    // 66 found and 65 of them in four relics: one to spend, so the gem cutter at 50 waits.
+    expect(await ui.find({ type: 'Text', text: '◈ 1 to spend' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'You found 66 stones and spent 65 on relics. All 66 still add 188% to everything: spending never lowers it.' })).toBeDefined()
+    expect((await ui.find({ key: 'relic-cutter' }))?.props).toMatchObject({ label: '◈ 50', dimColor: true })
+    // The new shaft costs no stones: it finds them, and says what there is to spend then.
+    expect(await ui.find({ type: 'Text', text: 'Open it now to find ◈ 31 stones' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Start over in fresh rock with ◈ 32 to spend on relics\. All 97 stones then add 246% to everything, up from 188%\./ })).toBeDefined()
+    for (const text of [
+      "A new shaft starts with the last one's first 5 upgrades, free.",
+      'Each new shaft starts with 10 apprentices and 5 mine carts.',
+      'Veins show 25% more often.',
+      'A new shaft starts at 100 m, in the stone.',
+    ]) {
+      expect(await ui.find({ type: 'Text', text })).toBeDefined()
+    }
+    await ui.unmount()
+  }
 })
 
 test('the badges tab draws every badge, and a pointer over one names it', async ($, on) => {
@@ -193,11 +228,11 @@ test('the badges tab draws every badge, and a pointer over one names it', async 
   const ui = await $.ui.mount(pane('desktop'))
   await ui.press({ key: 'tab-badges' })
   await ui.advance(50)
-  expect(await ui.find({ type: 'Text', text: '3 of 42' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '4 of 42' })).toBeDefined()
   // The closest badge to go: the magma, 330 m of 500.
   expect(await ui.find({ type: 'Text', text: 'Next: Into the magma' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^▰▰▰▰▰▰▱▱▱▱ 330\/500$/ })).toBeDefined()
-  const wall = (await ui.findAll({ type: 'Svg' })).find(svg => svg.props.alt === '3 of 42 badges')
+  const wall = (await ui.findAll({ type: 'Svg' })).find(svg => svg.props.alt === '4 of 42 badges')
   // Its frame is given the wall's own size: nine badges to a row, a row for each group of up to nine.
   expect(wall?.props).toMatchObject({ isInteractive: true, width: 416, height: 442 })
   const source = String(wall?.props.source)
@@ -213,10 +248,11 @@ test('the badges tab draws every badge, and a pointer over one names it', async 
   // The terminal lists them by group, earned ones in gold.
   await ui.unmount()
   const term = await $.ui.mount(pane('terminal'))
-  expect((await term.find({ key: 'tab-badges' }))?.props).toMatchObject({ label: 'Badges 3/42', variant: 'primary' })
-  expect(await term.find({ type: 'Text', text: 'Depth 2/9' })).toBeDefined()
+  expect((await term.find({ key: 'tab-badges' }))?.props).toMatchObject({ label: 'Badges 4/42', variant: 'primary' })
+  expect(await term.find({ type: 'Text', text: 'Depth 3/9' })).toBeDefined()
   expect((await term.find({ type: 'Text', text: '★ First vein' }))?.props).toMatchObject({ color: 'warning' })
-  expect(await term.find({ type: 'Text', text: '☆ Lost ruins' })).toBeDefined()
+  expect((await term.find({ type: 'Text', text: '★ Lost ruins' }))?.props).toMatchObject({ color: 'warning' })
+  expect(await term.find({ type: 'Text', text: '☆ Underground river' })).toBeDefined()
   expect(await term.find({ type: 'Text', text: '☆ ???' })).toBeDefined()
 })
 
@@ -281,8 +317,8 @@ test('/mine share puts a card of the mine in the conversation, and on the clipbo
   await start($)
   const card = [
     '⛏️ Sparkmine · 453 m in the Crystal caves',
-    '🟫⬜🟪🟧⬛⬛⬛ deepest 528 m',
-    '✻ 224.5M mined · ◈ 5 stones · ★ 9/42',
+    '🟫⬜🟨🟪🟧⬛⬛ deepest 528 m',
+    '✻ 224.5M mined · ◈ 5 stones · ★ 10/42',
     'Best turn +75.47M · 543 gems · 8 veins',
     'github.com/tozmoz/sparkmine',
   ].join('\n')

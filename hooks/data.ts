@@ -326,13 +326,13 @@ export type Biome = { name: string; from: number; color: string; square: string;
 export const BIOMES: readonly Biome[] = [
   { name: 'Topsoil', from: 0, color: '#b8804f', square: '🟫', perk: { kind: 'none' }, text: 'Where every mine begins.', short: '' },
   { name: 'Stone', from: 100, color: '#848f9c', square: '⬜', perk: { kind: 'click', mult: 1.5 }, text: 'Clicks mine 50% more.', short: 'clicks +50%' },
+  { name: 'Ancient ruins', from: 200, color: '#a8894f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double.", short: 'work events ×2' },
   { name: 'Crystal caves', from: 300, color: '#9179ff', square: '🟪', perk: { kind: 'gem', chance: 0.02 }, text: 'Each click gets another 2% chance of a gem.', short: 'a 2% gem chance' },
   { name: 'Magma', from: 500, color: '#e8641f', square: '🟧', perk: { kind: 'veins', speed: 2 }, text: 'Veins show twice as often.', short: 'veins twice as often' },
   { name: 'Groundwater', from: 700, color: '#2a98c2', square: '🟦', perk: { kind: 'idle', mult: 1.25 }, text: 'The idle crew mines 25% more.', short: 'the idle crew +25%' },
-  { name: 'Ancient ruins', from: 850, color: '#a8894f', square: '🟨', perk: { kind: 'events', mult: 2 }, text: "Claude's work events pay double.", short: 'work events ×2' },
-  { name: 'The core', from: 1_000, color: '#c27f00', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.', short: 'everything +25%' },
-  { name: 'Inner core', from: 1_100, color: '#5397b1', square: '💎', perk: { kind: 'gemWorth', mult: 2 }, text: 'Gems are worth twice as much.', short: 'gems worth ×2', isHidden: true },
-  { name: 'Hollow earth', from: 1_200, color: '#3ba057', square: '🟩', perk: { kind: 'tools', mult: 2 }, text: 'Tool calls mine twice as much.', short: 'tool calls ×2', isHidden: true },
+  { name: 'The core', from: 850, color: '#c27f00', square: '🟥', perk: { kind: 'global', mult: 1.25 }, text: 'Everything mines 25% more.', short: 'everything +25%' },
+  { name: 'Inner core', from: 1_000, color: '#5397b1', square: '💎', perk: { kind: 'gemWorth', mult: 2 }, text: 'Gems are worth twice as much.', short: 'gems worth ×2', isHidden: true },
+  { name: 'Hollow earth', from: 1_150, color: '#3ba057', square: '🟩', perk: { kind: 'tools', mult: 2 }, text: 'Tool calls mine twice as much.', short: 'tool calls ×2', isHidden: true },
   { name: 'The far side', from: 1_300, color: '#4a8fe0', square: '🌏', perk: { kind: 'stones', mult: 1.5 }, text: 'A new shaft from here pays 50% more ◈.', short: 'new shafts +50% ◈', place: 'on the far side', isHidden: true },
 ]
 
@@ -355,13 +355,13 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'vein-hunter', name: 'Vein hunter', text: 'Catch 25 veins.', goal: { kind: 'veins', n: 25 } },
   { id: 'veins-100', name: 'Gold rush', text: 'Catch 100 veins.', goal: { kind: 'veins', n: 100 } },
   { id: 'hard-rock', name: 'Hard rock', text: 'Dig down to the stone, 100 m.', goal: { kind: 'deepest', n: 100 } },
+  { id: 'ruins', name: 'Lost ruins', text: 'Reach the ancient ruins, 200 m.', goal: { kind: 'deepest', n: 200 } },
   { id: 'crystal-caves', name: 'Crystal caves', text: 'Reach the crystal caves, 300 m.', goal: { kind: 'deepest', n: 300 } },
   { id: 'magma', name: 'Into the magma', text: 'Reach the magma, 500 m.', goal: { kind: 'deepest', n: 500 } },
   { id: 'groundwater', name: 'Underground river', text: 'Reach the groundwater, 700 m.', goal: { kind: 'deepest', n: 700 } },
-  { id: 'ruins', name: 'Lost ruins', text: 'Reach the ancient ruins, 850 m.', goal: { kind: 'deepest', n: 850 } },
-  { id: 'core', name: 'The core', text: 'Reach the core, 1,000 m.', goal: { kind: 'deepest', n: 1_000 } },
-  { id: 'inner-core', name: 'Under pressure', text: 'Reach the inner core, 1,100 m.', goal: { kind: 'deepest', n: 1_100 }, isHidden: true },
-  { id: 'hollow-earth', name: 'Lost world', text: 'Reach the hollow earth, 1,200 m.', goal: { kind: 'deepest', n: 1_200 }, isHidden: true },
+  { id: 'core', name: 'The core', text: 'Reach the core, 850 m.', goal: { kind: 'deepest', n: 850 } },
+  { id: 'inner-core', name: 'Under pressure', text: 'Reach the inner core, 1,000 m.', goal: { kind: 'deepest', n: 1_000 }, isHidden: true },
+  { id: 'hollow-earth', name: 'Lost world', text: 'Reach the hollow earth, 1,150 m.', goal: { kind: 'deepest', n: 1_150 }, isHidden: true },
   { id: 'far-side', name: 'Out the other side', text: 'Dig through to the far side, 1,300 m.', goal: { kind: 'deepest', n: 1_300 }, isHidden: true },
   { id: 'tests-100', name: 'Green streak', text: 'Pass the tests 100 times.', goal: { kind: 'event', event: 'tests', n: 100 } },
   { id: 'commits-100', name: 'Ship it', text: 'Commit 100 times.', goal: { kind: 'event', event: 'commit', n: 100 } },
@@ -402,14 +402,17 @@ export const SECRET_IDS: readonly SecretId[] = ACHIEVEMENTS.flatMap(a => (a.goal
 /** How long the miner tips his hat when thanked. */
 export const TIP_MS = 3_000
 
+/** The index in BIOMES of the layer of this name. */
+const layer = (name: string): number => BIOMES.findIndex(b => b.name === name)
+
 /**
  * What three layers hide: a vein in one may be its find instead, until it is
  * caught. `biome` is an index of BIOMES; `label` names it on its button.
  */
 export const FINDS: Readonly<Record<FindId, { biome: number; name: string; label: string }>> = {
-  fossil: { biome: 1, name: 'A fossil', label: 'Fossil!' },
-  'rubber-duck': { biome: 4, name: 'A rubber duck', label: 'Rubber duck!' },
-  pharaoh: { biome: 5, name: "A pharaoh's mask", label: "Pharaoh's mask!" },
+  fossil: { biome: layer('Stone'), name: 'A fossil', label: 'Fossil!' },
+  'rubber-duck': { biome: layer('Groundwater'), name: 'A rubber duck', label: 'Rubber duck!' },
+  pharaoh: { biome: layer('Ancient ruins'), name: "A pharaoh's mask", label: "Pharaoh's mask!" },
 }
 
 /** The chance a vein in such a layer is its find, while it is not found. */
