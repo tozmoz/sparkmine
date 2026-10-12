@@ -2,7 +2,7 @@
 // draws its model and the HUD its props, so neither reads the mine itself and
 // neither is redrawn when nothing it shows has changed.
 
-import type { Amount, Badge, BadgeArt, Band, EventKind, HudProps, IconId, Save, SecretId, ShopModel, ShopTab, StatsProps, ToolKind, VeinProps, View } from '../types'
+import type { Amount, Badge, BadgeArt, Band, EventKind, HudProps, IconId, Save, ShopModel, ShopTab, StatsProps, ToolKind, VeinProps, View } from '../types'
 import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, FINDS, PRODUCERS, RELICS, SHAFT_DEPTH, TOOL_NAMES, type Achievement, type Goal, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate, plural } from './format.ts'
 import * as game from './game.ts'
@@ -162,60 +162,47 @@ const BADGE_GROUPS: readonly { title: string; kinds: readonly Goal['kind'][] }[]
   { title: 'Secrets', kinds: ['secret'] },
 ]
 
-const EVENT_BADGES: Readonly<Record<EventKind, IconId>> = {
-  tests: 'check',
-  fix: 'bug',
-  build: 'terminal',
-  lint: 'check',
-  commit: 'terminal',
-  pr: 'glasses',
-  merge: 'glasses',
-  longShift: 'moon',
-  streak: 'bolt',
-}
-
-const SECRET_BADGES: Readonly<Record<SecretId, IconId>> = {
-  'absolutely-right': 'check',
+/** Each badge's own picture, none like another's; a depth badge is a lump of its layer's rock instead. */
+const BADGE_ICONS: Readonly<Record<string, IconId>> = {
+  'first-vein': 'nugget',
+  'vein-hunter': 'ore',
+  'veins-100': 'bars',
+  'gems-100': 'gem',
+  'gems-1k': 'crown',
+  'clicks-10k': 'glove',
+  'tools-1k': 'terminal',
+  billion: 'coins',
+  trillion: 'chest',
+  'tests-100': 'check',
+  'commits-100': 'ship',
+  'long-shifts-10': 'owl',
+  'fixes-25': 'bug',
+  'merges-10': 'train',
+  'streak-10': 'flame',
+  'streak-25': 'bolt',
+  'turn-1m': 'clock',
+  'turn-1b': 'trophy',
+  shaft: 'pick',
+  'shafts-5': 'pickDiamond',
+  'shafts-10': 'pickObsidian',
+  'stones-25': 'stone',
+  'stones-100': 'henge',
+  'stones-500': 'pyramid',
+  'absolutely-right': 'speech',
   'good-manners': 'apprentice',
   'deep-thinker': 'lantern',
-  groundbreaking: 'pick',
-  'friday-deploy': 'glasses',
+  groundbreaking: 'shovel',
+  'friday-deploy': 'rocket',
   'midnight-oil': 'moon',
-  fossil: 'stone',
+  fossil: 'fossil',
   'rubber-duck': 'duck',
-  pharaoh: 'badge',
+  pharaoh: 'mask',
 }
 
-/** A badge's picture: a lump of its layer's rock for a depth, else an icon of what it counts. */
-function badgeArt(a: Achievement): BadgeArt {
-  const icon = (id: IconId): BadgeArt => ({ kind: 'icon', id })
-  const g = a.goal
-  switch (g.kind) {
-    case 'deepest':
-      return { kind: 'rock', color: BIOMES[game.biomeAt(g.n)]?.color ?? TOPSOIL }
-    case 'veins':
-      return icon('nugget')
-    case 'gems':
-      return icon('gem')
-    case 'clicks':
-      return icon('glove')
-    case 'tools':
-      return icon('terminal')
-    case 'allTime':
-      return icon('badge')
-    case 'bestStreak':
-      return icon('bolt')
-    case 'bestTurn':
-      return icon('clock')
-    case 'shafts':
-      return icon(g.n >= 10 ? 'pickObsidian' : g.n >= 5 ? 'pickDiamond' : 'pick')
-    case 'stones':
-      return icon('stone')
-    case 'event':
-      return icon(EVENT_BADGES[g.event])
-    case 'secret':
-      return icon(SECRET_BADGES[g.secret])
-  }
+/** A badge's picture: a lump of its layer's rock for a depth, else its own icon. */
+export function badgeArt(a: Achievement): BadgeArt {
+  if (a.goal.kind === 'deepest') return { kind: 'rock', color: BIOMES[game.biomeAt(a.goal.n)]?.color ?? TOPSOIL }
+  return { kind: 'icon', id: BADGE_ICONS[a.id] ?? 'badge' }
 }
 
 /** Every badge by group, how many are earned, and the closest unearned one. A surprise shows nothing of itself until earned. */

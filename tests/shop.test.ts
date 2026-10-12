@@ -201,10 +201,13 @@ test('the badges tab draws every badge, and a pointer over one names it', async 
   // Its frame is given the wall's own size: nine badges to a row, a row for each group of up to nine.
   expect(wall?.props).toMatchObject({ isInteractive: true, width: 416, height: 442 })
   const source = String(wall?.props.source)
-  expect(source).toContain('<title>First vein · Catch a vein. Earned.</title>')
-  expect(source).toContain('<title>Vein hunter · Catch 25 veins.</title>')
+  // Each badge's note opens at once on hover: no title, which waits a second first.
+  expect(source).not.toContain('<title>')
+  expect(source).toMatch(/>First vein<\/tspan><tspan class="tt"[^>]*>Catch a vein\.<\/tspan><tspan class="te"[^>]*>Earned</)
+  expect(source).toMatch(/>Vein hunter<\/tspan><tspan class="tt"[^>]*>Catch 25 veins\.<\/tspan><\/text>/)
+  expect(source).toContain('#b0:hover~#t0')
   // A secret, and a layer past the core, say nothing of themselves.
-  expect(source.match(/<title>\?\?\?<\/title>/g)).toHaveLength(12)
+  expect(source.match(/Still a secret\./g)).toHaveLength(12)
   expect(source).not.toContain('Good manners')
   expect(source).not.toContain('Under pressure')
   // The terminal lists them by group, earned ones in gold.

@@ -114,40 +114,83 @@ function symbolOf(art: BadgeArt, used: Map<string, string>): string {
   return id
 }
 
-function tile(b: Badge, x: number, y: number, used: Map<string, string>): string {
-  const says = b.isSurprise ? '???' : `${b.name} · ${b.text}${b.isEarned ? ' Earned.' : ''}`
+function tile(b: Badge, i: number, x: number, y: number, used: Map<string, string>): string {
   const kind = b.isEarned ? 'b won' : b.isSurprise ? 'b q' : 'b'
   const frame = `<rect class="f" x="${x + 0.75}" y="${y + 0.75}" width="${TILE - 1.5}" height="${TILE - 1.5}" rx="8"/>`
   const art = b.isSurprise
     ? `<text class="qm" x="${x + TILE / 2}" y="${y + TILE / 2 + 6}">?</text>`
     : `<use href="#${symbolOf(b.art, used)}" x="${x + 8}" y="${y + 8}" width="24" height="24" shape-rendering="crispEdges"${b.isEarned ? '' : ' opacity=".28"'}/>`
-  return `<g class="${kind}"><title>${esc(says)}</title>${frame}${art}</g>`
+  return `<g class="${kind}" id="b${i}" aria-label="${esc(b.name)}">${frame}${art}</g>`
+}
+
+/** The hover note: a box with the badge's name, what it asks, and whether it is earned. */
+const TIP_WIDTH = 216
+const TIP_CHARS = 32
+const TIP_PAD = 9
+const TIP_LINE = 16
+
+/** Words in lines of at most `chars` characters. */
+function wrap(text: string, chars: number): string[] {
+  const lines: string[] = []
+  for (const word of text.split(' ')) {
+    const last = lines.at(-1)
+    if (last !== undefined && last.length + 1 + word.length <= chars) lines[lines.length - 1] = `${last} ${word}`
+    else lines.push(word)
+  }
+  return lines
+}
+
+/**
+ * A badge's note, there at once when the pointer is over it, where a title
+ * would wait a second or more. Under the badge, or over it at the foot of the
+ * wall, and kept inside it.
+ */
+function tip(b: Badge, i: number, x: number, y: number, width: number, height: number): string {
+  const says = b.isSurprise ? ['Still a secret.'] : wrap(b.text, TIP_CHARS)
+  const lines = [
+    { text: b.name, cls: 'tn' },
+    ...says.map(text => ({ text, cls: 'tt' })),
+    ...(b.isEarned ? [{ text: 'Earned', cls: 'te' }] : []),
+  ]
+  const h = TIP_PAD * 2 + lines.length * TIP_LINE - 2
+  const left = Math.max(0, Math.min(width - TIP_WIDTH, x + TILE / 2 - TIP_WIDTH / 2))
+  const below = y + TILE + 6
+  const top = below + h <= height ? below : Math.max(0, y - 6 - h)
+  const text = lines
+    .map((l, n) => `<tspan class="${l.cls}" x="${left + TIP_PAD + 1}" y="${top + TIP_PAD + 11 + n * TIP_LINE}">${esc(l.text)}</tspan>`)
+    .join('')
+  return `<g class="tip" id="t${i}"><rect x="${left + 0.5}" y="${top + 0.5}" width="${TIP_WIDTH - 1}" height="${h - 1}" rx="7"/><text>${text}</text></g>`
 }
 
 /**
  * Every badge, by group, in one picture: earned ones framed in gold, the rest
  * greyed, a surprise a dashed "?". Drawn interactive, so a pointer over a
- * badge rings it and its title names it and what it asks. An interactive
- * picture is drawn in a frame, which takes the size it is given and no other:
- * so the wall says its own.
+ * badge rings it and opens its note at once. An interactive picture is drawn
+ * in a frame, which takes the size it is given and no other: so the wall says
+ * its own.
  */
 export function badgeWall(groups: ShopModel['badges']['groups']): { source: string; width: number; height: number } {
   const width = WALL_WIDTH
   const cols = PER_ROW
   const used = new Map<string, string>()
-  const parts: string[] = []
+  const labels: string[] = []
+  const placed: { b: Badge; x: number; y: number }[] = []
   let y = 0
   for (const g of groups) {
     const won = g.items.filter(b => b.isEarned).length
-    parts.push(`<text class="t" x="0" y="${y + 13}">${esc(g.title)} <tspan class="n">${won}/${g.items.length}</tspan></text>`)
+    labels.push(`<text class="t" x="0" y="${y + 13}">${esc(g.title)} <tspan class="n">${won}/${g.items.length}</tspan></text>`)
     y += 20
-    g.items.forEach((b, i) => parts.push(tile(b, (i % cols) * (TILE + GAP), y + Math.floor(i / cols) * (TILE + GAP), used)))
+    g.items.forEach((b, i) => placed.push({ b, x: (i % cols) * (TILE + GAP), y: y + Math.floor(i / cols) * (TILE + GAP) }))
     y += Math.ceil(g.items.length / cols) * (TILE + GAP) + 8
   }
   const height = Math.max(1, y - 8)
-  // A frame that sets the picture in a page of its own gives that page a margin: none here.
+  const tiles = placed.map((p, i) => tile(p.b, i, p.x, p.y, used))
+  // The notes come after every badge, so one is drawn over the badges below it,
+  // and each opens from its own badge, a sibling before it.
+  const tips = placed.map((p, i) => tip(p.b, i, p.x, p.y, width, height))
   const style =
     '<style>' +
+    // A frame that sets the picture in a page of its own gives that page a margin: none here.
     'html,body{margin:0;padding:0;overflow:hidden}svg{display:block}' +
     `.t{font:12.5px system-ui,-apple-system,sans-serif;fill:#8a8880}.n{opacity:.75}` +
     `.f{fill:${GREY_FILL};stroke:${GREY_LINE};stroke-width:1}` +
@@ -155,7 +198,14 @@ export function badgeWall(groups: ShopModel['badges']['groups']): { source: stri
     `.q .f{stroke-dasharray:3 3}` +
     `.qm{font:700 17px system-ui,-apple-system,sans-serif;fill:rgba(128,128,128,.85);text-anchor:middle}` +
     `.b:hover .f{stroke:${HOVER};stroke-width:1.5}` +
+    // The notes: dark on either theme, as a system's own are.
+    '.tip{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .08s}' +
+    '.tip rect{fill:#2b2a27;stroke:#4a4945}' +
+    '.tip text{font:12px system-ui,-apple-system,sans-serif}' +
+    '.tn{font-weight:700;fill:#f5f4ef}.tt{fill:#c9c6bb}.te{fill:#f2b632;font-weight:600}' +
+    placed.map((_, i) => `#b${i}:hover~#t${i}`).join(',') +
+    '{opacity:1;visibility:visible}' +
     '</style>'
   const defs = [...used].map(([id, body]) => `<symbol id="${id}" viewBox="0 0 12 12">${body}</symbol>`).join('')
-  return { source: svg(width, height, `${style}<defs>${defs}</defs>${parts.join('')}`), width, height }
+  return { source: svg(width, height, `${style}<defs>${defs}</defs>${labels.join('')}${tiles.join('')}${tips.join('')}`), width, height }
 }
