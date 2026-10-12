@@ -415,6 +415,11 @@ describe('relics', () => {
 })
 
 describe('achievements', () => {
+  test('each badge has a picture of its own', () => {
+    const arts = ACHIEVEMENTS.map(a => JSON.stringify(model.badgeArt(a)))
+    expect(new Set(arts).size).toBe(ACHIEVEMENTS.length)
+  })
+
   test('are read off the records, and the closest unearned one is next', () => {
     expect(game.achievements(saveWith({}))).toEqual([])
     const save = saveWith({ veins: 20, bestTurn: 2e6, deepest: 520, events: { commit: 3 } })

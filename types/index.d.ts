@@ -318,6 +318,23 @@ export type IconId =
   | 'map'
   | 'bug'
   | 'duck'
+  | 'ore'
+  | 'bars'
+  | 'crown'
+  | 'coins'
+  | 'chest'
+  | 'ship'
+  | 'owl'
+  | 'train'
+  | 'flame'
+  | 'trophy'
+  | 'henge'
+  | 'pyramid'
+  | 'speech'
+  | 'shovel'
+  | 'rocket'
+  | 'fossil'
+  | 'mask'
 
 /** What the vein Client draws: a vein to catch, or the frenzy one started. */
 export type VeinProps = {
