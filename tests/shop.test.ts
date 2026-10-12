@@ -145,8 +145,8 @@ test('a new shaft trades the run for ancient stones, from 500 m down', async ($,
   w.answers.push('Open it')
   await ui.press({ key: 'shaft' })
   await ui.advance(250)
-  // Five stones add 31%; Hard rock, Crystal caves, Into the magma and Fresh rock 2% each.
-  expect(await ui.find({ type: 'Text', text: '◈ 5 stones +31% · ★ 4 achievements +8%' })).toBeDefined()
+  // Five stones add 31%; Hard rock, Lost ruins, Crystal caves, Into the magma and Fresh rock 2% each.
+  expect(await ui.find({ type: 'Text', text: '◈ 5 stones +31% · ★ 5 achievements +10%' })).toBeDefined()
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 0' })).toBeDefined()
   expect(w.store.get('save')).toMatchObject({ stones: 5, shafts: 1, deepest: 510, sparks: 0, allTime: 2e8, producers: {} })
   expect(w.toasts).toContain('A new shaft is open: 5 ◈ found, 5 to spend on relics. Achievement: Fresh rock. Everything mines 2% more.')
@@ -174,7 +174,7 @@ test('the shaft tab says how deep the run is, what its layers add, and how deep 
   const ui = await $.ui.mount(pane('desktop'))
   // The shop opens on its own tab.
   expect((await ui.find({ key: 'tab-shop' }))?.props).toMatchObject({ label: '⛏ Shop', variant: 'primary' })
-  expect((await ui.find({ key: 'tab-badges' }))?.props).toMatchObject({ label: '★ Badges 3/42', dimColor: true })
+  expect((await ui.find({ key: 'tab-badges' }))?.props).toMatchObject({ label: '★ Badges 4/42', dimColor: true })
   expect(await ui.find({ key: 'shaft' })).toBeUndefined()
   await ui.press({ key: 'tab-shaft' })
   await ui.advance(50)
@@ -186,7 +186,7 @@ test('the shaft tab says how deep the run is, what its layers add, and how deep 
   expect(await ui.find({ type: 'Text', text: '330 m' })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /^Crystal caves$/ }))?.props).toMatchObject({ bold: true, color: '#9179ff' })
   expect(await ui.find({ type: 'Text', text: /now · .*at 500 m: veins show twice as often\.$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Your layers add: clicks +50% · a 2% gem chance.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Your layers add: clicks +50% · work events ×2 · a 2% gem chance.' })).toBeDefined()
   const strata = String((await ui.findAll({ type: 'Svg' })).find(svg => String(svg.props.alt).startsWith('The layers in sight'))?.props.source)
   expect(strata).toContain('stroke-dasharray')
   expect(strata.match(/<rect /g)).toHaveLength(8)
@@ -228,11 +228,11 @@ test('the badges tab draws every badge, and a pointer over one names it', async 
   const ui = await $.ui.mount(pane('desktop'))
   await ui.press({ key: 'tab-badges' })
   await ui.advance(50)
-  expect(await ui.find({ type: 'Text', text: '3 of 42' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '4 of 42' })).toBeDefined()
   // The closest badge to go: the magma, 330 m of 500.
   expect(await ui.find({ type: 'Text', text: 'Next: Into the magma' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^▰▰▰▰▰▰▱▱▱▱ 330\/500$/ })).toBeDefined()
-  const wall = (await ui.findAll({ type: 'Svg' })).find(svg => svg.props.alt === '3 of 42 badges')
+  const wall = (await ui.findAll({ type: 'Svg' })).find(svg => svg.props.alt === '4 of 42 badges')
   // Its frame is given the wall's own size: nine badges to a row, a row for each group of up to nine.
   expect(wall?.props).toMatchObject({ isInteractive: true, width: 416, height: 442 })
   const source = String(wall?.props.source)
@@ -248,10 +248,11 @@ test('the badges tab draws every badge, and a pointer over one names it', async 
   // The terminal lists them by group, earned ones in gold.
   await ui.unmount()
   const term = await $.ui.mount(pane('terminal'))
-  expect((await term.find({ key: 'tab-badges' }))?.props).toMatchObject({ label: 'Badges 3/42', variant: 'primary' })
-  expect(await term.find({ type: 'Text', text: 'Depth 2/9' })).toBeDefined()
+  expect((await term.find({ key: 'tab-badges' }))?.props).toMatchObject({ label: 'Badges 4/42', variant: 'primary' })
+  expect(await term.find({ type: 'Text', text: 'Depth 3/9' })).toBeDefined()
   expect((await term.find({ type: 'Text', text: '★ First vein' }))?.props).toMatchObject({ color: 'warning' })
-  expect(await term.find({ type: 'Text', text: '☆ Lost ruins' })).toBeDefined()
+  expect((await term.find({ type: 'Text', text: '★ Lost ruins' }))?.props).toMatchObject({ color: 'warning' })
+  expect(await term.find({ type: 'Text', text: '☆ Underground river' })).toBeDefined()
   expect(await term.find({ type: 'Text', text: '☆ ???' })).toBeDefined()
 })
 
@@ -316,8 +317,8 @@ test('/mine share puts a card of the mine in the conversation, and on the clipbo
   await start($)
   const card = [
     '⛏️ Sparkmine · 453 m in the Crystal caves',
-    '🟫⬜🟪🟧⬛⬛⬛ deepest 528 m',
-    '✻ 224.5M mined · ◈ 5 stones · ★ 9/42',
+    '🟫⬜🟨🟪🟧⬛⬛ deepest 528 m',
+    '✻ 224.5M mined · ◈ 5 stones · ★ 10/42',
     'Best turn +75.47M · 543 gems · 8 veins',
     'github.com/tozmoz/sparkmine',
   ].join('\n')

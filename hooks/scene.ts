@@ -249,10 +249,10 @@ type Sky = {
 }
 
 /**
- * Deeper is stranger: the mine passes from topsoil through stone and crystal
- * caves into magma, then groundwater, ancient ruins and the core, and on through
+ * Deeper is stranger: the mine passes from topsoil through stone, ancient ruins
+ * and crystal caves into magma, then groundwater and the core, and on through
  * the inner core and a hollow earth out into daylight on the far side. One per
- * BIOMES entry.
+ * BIOMES entry, in its order.
  */
 const STRATA: readonly Strata[] = [
   // Topsoil: warm brown earth with gold and teal.
@@ -268,6 +268,13 @@ const STRATA: readonly Strata[] = [
     rock: [0x2a2c31, 0x4a4d55, 0x5f636c], ceiling: [0x2a2c31, 0x3a3d44, 0x4a4d55],
     dirt: 0x24262b, dirtSpeck: 0x34373e, pebble: 0x4a4d55, pile: 0x575b63, pileTop: 0x7a7f88,
     ores: [GOLD, [0xd0d6de, 0xffffff, 0x8a919b]],
+  },
+  // Ancient ruins: carved sandstone, set with old gold and jade.
+  {
+    cave: 0x221a10, caveDark: 0x18120a, caveLight: 0x2e2416,
+    rock: [0x2e2416, 0x5a4626, 0x7a6236], ceiling: [0x2e2416, 0x4a3a20, 0x5a4626],
+    dirt: 0x2a2014, dirtSpeck: 0x4a3a20, pebble: 0x5a4626, pile: 0x7a6236, pileTop: 0xd9b45f,
+    ores: [[0xd9b45f, 0xfff0b8, 0xa8862e], [0x5dcaa5, 0xb5f0dc, 0x2f8a6c]],
   },
   // Crystal caves: indigo rock grown through with amethyst and diamond.
   {
@@ -289,13 +296,6 @@ const STRATA: readonly Strata[] = [
     rock: [0x13242c, 0x1f3d4a, 0x2b5566], ceiling: [0x13242c, 0x1a3340, 0x1f3d4a],
     dirt: 0x10202a, dirtSpeck: 0x1f3d4a, pebble: 0x2b5566, pile: 0x2b5566, pileTop: 0x4fb3d9,
     ores: [[0x4fb3d9, 0xd8f4ff, 0x2a7fa8], [0xe6edf3, 0xffffff, 0x9aa8b4]],
-  },
-  // Ancient ruins: carved sandstone, set with old gold and jade.
-  {
-    cave: 0x221a10, caveDark: 0x18120a, caveLight: 0x2e2416,
-    rock: [0x2e2416, 0x5a4626, 0x7a6236], ceiling: [0x2e2416, 0x4a3a20, 0x5a4626],
-    dirt: 0x2a2014, dirtSpeck: 0x4a3a20, pebble: 0x5a4626, pile: 0x7a6236, pileTop: 0xd9b45f,
-    ores: [[0xd9b45f, 0xfff0b8, 0xa8862e], [0x5dcaa5, 0xb5f0dc, 0x2f8a6c]],
   },
   // The core: rock glowing red from within, veined with white-hot gold.
   {
