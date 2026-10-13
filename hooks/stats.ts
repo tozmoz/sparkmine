@@ -4,7 +4,9 @@
 //
 // A surface may hand the shop's tree in again, with the numbers it had when
 // drawn (the desktop does, each time something else on screen changes): the
-// stats keep the newest numbers they have had, so none ever goes back.
+// stats keep the newest numbers they have had, so none ever goes back. They
+// keep them in a box set in place as they draw: a setState while drawing would
+// draw them once more (see hud.ts).
 //
 // A surface module has no `$` and takes nothing from the plugin's other files,
 // so it carries its own number formatting.
@@ -50,20 +52,21 @@ const SOURCES = [
   { name: 'Clicks', color: 'success', of: (by: StatsProps['bySource']) => by.click ?? 0 },
 ] as const
 
-const Stats: ClientModule<StatsProps, { isPolling: true; latest?: StatsProps }> = (handed, surface) => {
+const Stats: ClientModule<StatsProps, { isPolling: true; newest?: { props: StatsProps } }> = (handed, surface) => {
   const { Box, Text } = surface.elements
   let s = surface.state
   if (s === undefined) {
-    s = { isPolling: true }
+    s = { isPolling: true, newest: { props: handed } }
     surface.setState(s)
     surface.every(POLL_MS, () => surface.post({ poll: true }))
     surface.post({ poll: true })
   }
   // The newest numbers they have had: a new answer; the shop's tree, handed in again, holds older ones.
-  const kept = s.latest
+  const kept = s.newest?.props
   const isNewer = kept === undefined || (handed.isAnswer === true && JSON.stringify(handed) !== JSON.stringify(kept))
   const props = isNewer || kept === undefined ? handed : kept
-  if (isNewer) surface.setState({ ...s, latest: handed })
+  if (s.newest === undefined) surface.setState({ ...s, newest: { props: handed } })
+  else if (isNewer) s.newest.props = handed
   const by = props.bySource ?? {}
   const events = props.events ?? {}
   const sources = SOURCES.map(s => ({ name: s.name, color: s.color, value: s.of(by) }))

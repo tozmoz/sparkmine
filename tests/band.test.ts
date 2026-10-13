@@ -42,7 +42,8 @@ test('a session kept from before an update reads its ×100 as Max', () => {
 })
 
 test('the HUD keeps the newest numbers: an older tree handed in again never turns it back', () => {
-  const drawn = client<HudProps, unknown>(Hud)
+  const hud = client<HudProps, unknown>(Hud)
+  const drawn = hud.draw
   // The band drawn before the HUD's first poll was answered: no numbers yet.
   const early: HudProps = { ...EMPTY_HUD, surface: 'desktop' }
   expect(drawn(early)).toContain('✻ 0')
@@ -56,16 +57,26 @@ test('the HUD keeps the newest numbers: an older tree handed in again never turn
   // A new answer always draws, even read by a clock set back; a tree drawn after it brings its mode.
   expect(drawn({ ...live, sparks: 120e9, at: 900_000 })).toContain('✻ 120.0B')
   expect(drawn({ ...live, isAnswer: undefined, sparks: 120e9, mode: 'work', at: 1_000_300 })).toContain('⛏ Mine')
+  // A new answer draws once: kept without a setState, which would draw it again (and blink the desktop's pictures).
+  const sets = hud.sets()
+  expect(drawn({ ...live, sparks: 120.5e9, at: 1_000_400 })).toContain('✻ 120.5B')
+  drawn({ ...live, sparks: 121e9, at: 1_000_500 })
+  expect(hud.sets()).toBe(sets)
 })
 
 test('the vein keeps the newest answer: the band redrawn as it was never hides a vein that shows', () => {
-  const drawn = client<VeinProps, unknown>(Vein)
+  const vein = client<VeinProps, unknown>(Vein)
+  const drawn = vein.draw
   const tree: VeinProps = { vein: null, frenzy: null, surface: 'desktop' }
   expect(drawn(tree)).not.toContain('Vein!')
   const showing: VeinProps = { ...tree, vein: { id: 3, kind: 'rich', left: 12, label: 'Vein!' }, isAnswer: true }
   const shown = drawn(showing)
   expect(shown).toContain('✦ Vein! 12s')
   expect(drawn(tree)).toBe(shown)
+  // Its countdown draws without a setState.
+  const sets = vein.sets()
+  expect(drawn({ ...showing, vein: { id: 3, kind: 'rich', left: 11, label: 'Vein!' } })).toContain('✦ Vein! 11s')
+  expect(vein.sets()).toBe(sets)
   // It goes when an answer says so.
   expect(drawn({ ...tree, isAnswer: true })).not.toContain('Vein!')
 })
