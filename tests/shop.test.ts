@@ -1,7 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 
+import type { StatsProps } from '../types'
 import * as game from '../hooks/game.ts'
-import { band, command, endSession, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
+import { EMPTY_STATS } from '../hooks/model.ts'
+import Stats from '../hooks/stats.ts'
+import { band, client, command, endSession, finishTurn, pane, seeded, start, wait, world } from './kit.ts'
 
 test('/mine opens the shop pane', async ($, on) => {
   const w = world(on)
@@ -372,6 +375,15 @@ test('on the desktop the cards stand a row apart, in the terminal they stay pack
   }
   expect(await gapped('desktop')).toBe(true)
   expect(await gapped('terminal')).toBe(false)
+})
+
+test('the stats keep the newest numbers: the shop redrawn as it was never turns them back', () => {
+  const drawn = client<StatsProps, unknown>(Stats)
+  const answered: StatsProps = { ...EMPTY_STATS, surface: 'desktop', clicks: 50, isAnswer: true }
+  const shown = drawn(answered)
+  expect(shown).toContain('Clicks 50')
+  expect(drawn({ ...answered, isAnswer: undefined, clicks: 10 })).toBe(shown)
+  expect(drawn({ ...answered, clicks: 60 })).toContain('Clicks 60')
 })
 
 test('the stats tab says where the sparks came from: a bar and tiles on the desktop, lines on the terminal', async ($, on) => {

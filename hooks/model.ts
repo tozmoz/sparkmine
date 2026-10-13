@@ -359,6 +359,7 @@ export const EMPTY_HUD: HudProps = {
   turns: 0,
   nap: null,
   height: 3,
+  at: 0,
 }
 
 export function hudProps(save: Save, view: View, band: Band, variant: HudProps['variant'], now: number): HudProps {
@@ -395,6 +396,7 @@ export function hudProps(save: Save, view: View, band: Band, variant: HudProps['
     turns: save.turns,
     nap: band.nap,
     height: EMPTY_HUD.height,
+    at: now,
   }
 }
 
@@ -410,6 +412,15 @@ export function veinProps(view: View, now: number, surface: VeinProps['surface']
     frenzy: frenzy === null ? null : { mult: frenzy.mult, left: Math.ceil((frenzy.until - now) / 1000) },
     surface,
   }
+}
+
+/**
+ * An answer to a HUD's poll, given its last: one that says what the last said
+ * keeps the last one's time, so the surface finds the props unchanged and
+ * draws nothing, and an idle band costs no redraws.
+ */
+export function answerOf<P extends { at: number }>(last: P | undefined, props: P): P {
+  return last !== undefined && JSON.stringify({ ...last, at: 0 }) === JSON.stringify({ ...props, at: 0 }) ? { ...props, at: last.at } : props
 }
 
 /** What the shop's stats Client draws, all time. */

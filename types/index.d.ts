@@ -287,6 +287,14 @@ export type HudProps = {
   nap: Nap | null
   /** The HUD's fixed height in rows: a surface unmounts a Client whose size keeps changing. */
   height: number
+  /**
+   * When these numbers were read, in ms; 0 before the first read. The HUD
+   * keeps the newest it has had, so a tree drawn before them, which a surface
+   * may hand in again, never turns the counter back.
+   */
+  at: number
+  /** Set on an answer to its poll, always the newest: unset in a tree, drawn when it was. */
+  isAnswer?: true
 }
 
 
@@ -342,6 +350,8 @@ export type VeinProps = {
   vein: { id: number; kind: VeinKind; left: number; label: string } | null
   frenzy: { mult: number; left: number } | null
   surface: 'terminal' | 'desktop' | 'other'
+  /** Set on an answer to its poll: the band's tree, which holds no vein, never hides one an answer showed. */
+  isAnswer?: true
 }
 
 /** What the shop's stats Client draws: tiles on the desktop, lines of text on the terminal. */
@@ -359,6 +369,8 @@ export type StatsProps = {
   clicks: number
   tools: number
   turns: number
+  /** Set on an answer to its poll, always the newest: unset in the shop's tree, drawn when it was. */
+  isAnswer?: true
 }
 
 export type ShopItem = {

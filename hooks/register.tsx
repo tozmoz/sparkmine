@@ -6,7 +6,7 @@ import type { RenderElement, Register, Timer } from 'claude-code'
 import type { Band, HudProps, StatsProps } from '../types'
 import { newMine, normalizeMine, outcomeOf, producer } from './game.ts'
 import { iconSvg } from './icons.ts'
-import { EMPTY_HUD, EMPTY_SHOP, EMPTY_STATS, hudProps, shareCard, statsProps, veinProps } from './model.ts'
+import { EMPTY_HUD, EMPTY_SHOP, EMPTY_STATS, answerOf, hudProps, shareCard, statsProps, veinProps } from './model.ts'
 import { badgeWall, barSvg, strataSvg } from './pictures.ts'
 import { H, ROWS, W, momentAt, momentKey, sceneCells, sceneSvg, type SceneSpec } from './scene.ts'
 import * as state from './state.ts'
@@ -124,6 +124,13 @@ export const register: Register = on => {
   let isRunning = false
   /** The last numbers a HUD was handed, so a redraw of the band or the shop starts from them. */
   let lastHud: HudProps = EMPTY_HUD
+  /**
+   * When a redraw of the band or the shop hands its HUD those numbers: drawn
+   * now, they are the newest, unless there are none yet. See HudProps `at`.
+   */
+  const handedAt = (now: number): number => (lastHud.at === 0 ? 0 : now)
+  /** The last answer each HUD had to its polls, by its key: see answerOf. */
+  const answered = new Map<string, HudProps>()
   /** The presses the band's HUD was last told were counted: the shop's HUD has none. */
   let lastAcked = 0
   /** The stats the shop's Client was last handed, so a redraw of the shop starts from them. */
@@ -221,6 +228,10 @@ export const register: Register = on => {
       immediate: true,
     })
     await state.ensureLoaded(engine)
+    // A HUD drawn before its first poll is answered starts from the mine, not from nothing.
+    if (lastHud.at === 0) {
+      lastHud = hudProps((await engine.readMine()).save, await engine.readView(), await engine.readBand(), 'band', await $.clock.now())
+    }
 
     if (!isRunning) {
       isRunning = true
@@ -324,14 +335,14 @@ export const register: Register = on => {
     if (data !== null && typeof data === 'object' && typeof (data as { catch?: unknown }).catch === 'number') {
       await state.catchVein(io, (data as { catch: number }).catch)
     }
-    return { props: veinProps(await io.readView(), await io.now(), surfaceOf(e.surface)) }
+    return { props: { ...veinProps(await io.readView(), await io.now(), surfaceOf(e.surface)), isAnswer: true } }
   })
 
   // The shop's stats ask for fresh numbers once a second.
   on('ui.message', { element: 'stats' }, async ($, e) => {
     if (io === null) return {}
     lastStats = statsProps((await io.readMine()).save, surfaceOf(e.surface))
-    return { props: lastStats }
+    return { props: { ...lastStats, isAnswer: true } }
   })
 
   // The HUD Clients ask for fresh numbers ten times a second, and the band's
@@ -343,16 +354,17 @@ export const register: Register = on => {
     const view = state.fillView(await read($, VIEW))
     const band = state.fillBand(await read($, BAND))
     const size = !isBand ? HUD_SHOP : band.mode === 'idle' || band.isCompact ? HUD_IDLE : HUD_WORK
-    const props: HudProps = {
+    const props: HudProps = answerOf(answered.get(e.element), {
       ...hudProps(mine.save, view, band, isBand ? 'band' : 'shop', await $.clock.now()),
       ...size,
       surface: surfaceOf(e.surface),
       acked,
       taps: isBand ? taps : 0,
-    }
+    })
+    answered.set(e.element, props)
     lastHud = props
     if (isBand) lastAcked = acked
-    return { props }
+    return { props: { ...props, isAnswer: true } }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -365,7 +377,7 @@ export const register: Register = on => {
     const hudSize = isOneLine ? HUD_IDLE : HUD_WORK
     const surface = surfaceOf(e.surface)
     // The Mine button is the HUD's own, so a press answers without a round trip.
-    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, taps, isCompact: band.isCompact, ...hudSize }
+    const props: HudProps = { ...lastHud, variant: 'band', mode: band.mode, surface, acked: lastAcked, taps, isCompact: band.isCompact, ...hudSize, at: handedAt(await $.clock.now()) }
     // Thanked, the miner stops a moment to tip his hat; while Claude asks, he faces you.
     const spec = band.tip ? bandSpec(band, 'pause', 'tip') : bandSpec(band, band.mode, band.mode === 'pause' ? 'facing' : undefined)
     const openShop = () => $.ui.open({ id: PANE, title: 'Sparkmine', focus: true, closeOnEscape: true })
@@ -506,7 +518,7 @@ export const register: Register = on => {
       tab: tab => (io === null ? undefined : state.setTab(io, tab)),
       relic: id => (io === null ? false : state.buyRelic(io, id)),
     }
-    const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, acked: 0, ...HUD_SHOP }
+    const props: HudProps = { ...lastHud, variant: 'shop', mode: band.mode, acked: 0, ...HUD_SHOP, at: handedAt(await $.clock.now()) }
     const held = handlesOn(e.surface)
     const { Text } = $.ui.resolve(e)
     const notice = band.isStopped ? <Text color="warning">Sparkmine is stopped. /mine start sets it going again.</Text> : null
