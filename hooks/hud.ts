@@ -26,6 +26,10 @@
 // those. A new answer always is; a tree only when drawn after the last answer
 // was read, for its mode and size. Older ones never turn the counter back.
 //
+// It keeps them in a box of its own, set in place as it draws: a setState
+// while drawing draws the HUD once more, and on the desktop each such draw
+// made the band's scene and the badge wall blink, ten times a second.
+//
 // A surface module has no `$` and takes nothing from the plugin's other files,
 // so it carries its own number formatting.
 
@@ -50,8 +54,8 @@ type State = {
   /** The counter's thousands (K, M, B ...), and frames of gold left since it passed into new ones. */
   tier?: number
   shimmer?: number
-  /** The newest numbers handed in: the ones drawn. */
-  latest?: HudProps
+  /** The newest numbers handed in, the ones drawn, in a box a draw sets in place. */
+  newest?: { props: HudProps }
 }
 
 const POLL_MS = 100
@@ -124,7 +128,7 @@ const Hud: ClientModule<HudProps, State> = (handed, surface) => {
   const old = surface.state
   let s = old !== undefined && typeof old.taps === 'number' && typeof old.pressed === 'number' ? old : undefined
   // The newest numbers it has had: a new answer, or a tree drawn after the last one was read.
-  const kept = s?.latest
+  const kept = s?.newest?.props
   const isNewer = kept === undefined || (handed.isAnswer === true ? JSON.stringify(handed) !== JSON.stringify(kept) : (handed.at ?? 0) > kept.at)
   const props = isNewer || kept === undefined ? handed : kept
   const gem = props.gem ?? null
@@ -133,7 +137,7 @@ const Hud: ClientModule<HudProps, State> = (handed, surface) => {
 
   if (s === undefined) {
     const instance = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`
-    s = { instance, total: 0, recent: [], taps, gemSeq: gem?.seq ?? 0, pop: null, pressed: 0, tier: tierOf(props.sparks), shimmer: 0, latest: handed }
+    s = { instance, total: 0, recent: [], taps, gemSeq: gem?.seq ?? 0, pop: null, pressed: 0, tier: tierOf(props.sparks), shimmer: 0, newest: { props: handed } }
     surface.setState(s)
     surface.every(POLL_MS, () => surface.post({ instance, total: surface.state?.total ?? 0 }))
     // Ages the pop, lets the sign back up and dims the shine; does nothing at all while none is showing.
@@ -149,7 +153,9 @@ const Hud: ClientModule<HudProps, State> = (handed, surface) => {
     })
     surface.post({ instance, total: 0 })
   } else {
-    let next = isNewer ? { ...s, latest: handed } : s
+    let next = s
+    if (s.newest === undefined) next = { ...s, newest: { props: handed } }
+    else if (isNewer) s.newest.props = handed
     const isGem = gem !== null && gem.seq > next.gemSeq
     if (isGem || taps !== next.taps) {
       // Presses of the band's own Mine button, and gems among the presses the

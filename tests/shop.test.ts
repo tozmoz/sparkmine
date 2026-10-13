@@ -378,12 +378,15 @@ test('on the desktop the cards stand a row apart, in the terminal they stay pack
 })
 
 test('the stats keep the newest numbers: the shop redrawn as it was never turns them back', () => {
-  const drawn = client<StatsProps, unknown>(Stats)
+  const stats = client<StatsProps, unknown>(Stats)
+  const drawn = stats.draw
   const answered: StatsProps = { ...EMPTY_STATS, surface: 'desktop', clicks: 50, isAnswer: true }
   const shown = drawn(answered)
   expect(shown).toContain('Clicks 50')
   expect(drawn({ ...answered, isAnswer: undefined, clicks: 10 })).toBe(shown)
+  const sets = stats.sets()
   expect(drawn({ ...answered, clicks: 60 })).toContain('Clicks 60')
+  expect(stats.sets()).toBe(sets)
 })
 
 test('the stats tab says where the sparks came from: a bar and tiles on the desktop, lines on the terminal', async ($, on) => {

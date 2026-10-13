@@ -32,10 +32,12 @@ export type World = {
 
 /**
  * A surface module run as a surface runs it, with plain objects for elements
- * and its clock and port at rest: what it draws, as JSON, for the props given.
+ * and its clock and port at rest: `draw` gives what it draws, as JSON, for the
+ * props given, and `sets` how many times it has set its state.
  */
-export function client<P, S>(module: (props: P, surface: never) => unknown): (props: P) => string {
+export function client<P, S>(module: (props: P, surface: never) => unknown): { draw: (props: P) => string; sets: () => number } {
   let held: S | undefined
+  let sets = 0
   const surface = {
     elements: { Box: (p: object) => ({ type: 'Box', ...p }), Text: (p: object) => ({ type: 'Text', ...p }) },
     get state() {
@@ -43,6 +45,7 @@ export function client<P, S>(module: (props: P, surface: never) => unknown): (pr
     },
     setState: (next: S) => {
       held = next
+      sets += 1
     },
     columns: 80,
     rows: 1,
@@ -51,7 +54,7 @@ export function client<P, S>(module: (props: P, surface: never) => unknown): (pr
     onKey: () => () => undefined,
     post: () => undefined,
   }
-  return props => JSON.stringify(module(props, surface as never))
+  return { draw: props => JSON.stringify(module(props, surface as never)), sets: () => sets }
 }
 
 /** @param now when the session starts: some secrets go by the person's own clock. */

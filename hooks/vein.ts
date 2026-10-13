@@ -7,13 +7,14 @@
 // The band's tree holds no vein; the answers to its polls do. A surface may
 // hand that tree in again (the desktop does, each time something else on
 // screen changes), so the vein keeps the newest answer it has had, and the
-// tree never hides a vein that shows.
+// tree never hides a vein that shows. It keeps it in a box set in place as it
+// draws: a setState while drawing would draw it once more (see hud.ts).
 
 import type { ClientModule } from 'claude-code'
 
 import type { VeinProps } from '../types'
 
-type State = { pulse: number; caught: number; isShowing: boolean; latest?: VeinProps }
+type State = { pulse: number; caught: number; isShowing: boolean; newest?: { props: VeinProps } }
 
 const POLL_MS = 250
 const PULSE_MS = 300
@@ -27,7 +28,7 @@ const Vein: ClientModule<VeinProps, State> = (handed, surface) => {
 
   let s = surface.state
   if (s === undefined) {
-    s = { pulse: 0, caught: 0, isShowing: false }
+    s = { pulse: 0, caught: 0, isShowing: false, newest: { props: handed } }
     surface.setState(s)
     surface.every(POLL_MS, () => surface.post({ poll: true }))
     // The vein glints while it shows; nothing runs while it does not.
@@ -38,12 +39,14 @@ const Vein: ClientModule<VeinProps, State> = (handed, surface) => {
     surface.post({ poll: true })
   }
   // The newest answer it has had: the band's tree, handed in again, holds none.
-  const kept = s.latest
+  const kept = s.newest?.props
   const isNewer = kept === undefined || (handed.isAnswer === true && JSON.stringify(handed) !== JSON.stringify(kept))
   const props = isNewer || kept === undefined ? handed : kept
   const vein = props.vein ?? null
   const frenzy = props.frenzy ?? null
-  let next = isNewer ? { ...s, latest: handed } : s
+  let next = s
+  if (s.newest === undefined) next = { ...s, newest: { props: handed } }
+  else if (isNewer) s.newest.props = handed
   const isShowing = vein !== null && vein.id !== next.caught
   if (isShowing !== next.isShowing) next = { ...next, isShowing }
   if (next !== s) {
