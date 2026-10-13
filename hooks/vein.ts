@@ -3,12 +3,17 @@
 // shows and goes without the band being redrawn, and the whole region is the
 // vein: the pointer going down anywhere on it catches it. While a frenzy runs
 // it says how long is left.
+//
+// The band's tree holds no vein; the answers to its polls do. A surface may
+// hand that tree in again (the desktop does, each time something else on
+// screen changes), so the vein keeps the newest answer it has had, and the
+// tree never hides a vein that shows.
 
 import type { ClientModule } from 'claude-code'
 
 import type { VeinProps } from '../types'
 
-type State = { pulse: number; caught: number; isShowing: boolean }
+type State = { pulse: number; caught: number; isShowing: boolean; latest?: VeinProps }
 
 const POLL_MS = 250
 const PULSE_MS = 300
@@ -17,10 +22,8 @@ const ORE = { face: '#3a2410', lit: '#5e3b1d', edge: '#f2b632', ink: '#ffe08a' }
 /** The theme's gold, so a light theme darkens it. */
 const FRENZY = 'warning'
 
-const Vein: ClientModule<VeinProps, State> = (props, surface) => {
+const Vein: ClientModule<VeinProps, State> = (handed, surface) => {
   const { Box, Text } = surface.elements
-  const vein = props.vein ?? null
-  const frenzy = props.frenzy ?? null
 
   let s = surface.state
   if (s === undefined) {
@@ -34,9 +37,17 @@ const Vein: ClientModule<VeinProps, State> = (props, surface) => {
     })
     surface.post({ poll: true })
   }
-  const isShowing = vein !== null && vein.id !== s.caught
-  if (isShowing !== s.isShowing) {
-    s = { ...s, isShowing }
+  // The newest answer it has had: the band's tree, handed in again, holds none.
+  const kept = s.latest
+  const isNewer = kept === undefined || (handed.isAnswer === true && JSON.stringify(handed) !== JSON.stringify(kept))
+  const props = isNewer || kept === undefined ? handed : kept
+  const vein = props.vein ?? null
+  const frenzy = props.frenzy ?? null
+  let next = isNewer ? { ...s, latest: handed } : s
+  const isShowing = vein !== null && vein.id !== next.caught
+  if (isShowing !== next.isShowing) next = { ...next, isShowing }
+  if (next !== s) {
+    s = next
     surface.setState(s)
   }
 

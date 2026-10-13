@@ -30,6 +30,30 @@ export type World = {
   bash?: (command: string) => { result: unknown; isError?: true } | undefined
 }
 
+/**
+ * A surface module run as a surface runs it, with plain objects for elements
+ * and its clock and port at rest: what it draws, as JSON, for the props given.
+ */
+export function client<P, S>(module: (props: P, surface: never) => unknown): (props: P) => string {
+  let held: S | undefined
+  const surface = {
+    elements: { Box: (p: object) => ({ type: 'Box', ...p }), Text: (p: object) => ({ type: 'Text', ...p }) },
+    get state() {
+      return held
+    },
+    setState: (next: S) => {
+      held = next
+    },
+    columns: 80,
+    rows: 1,
+    every: () => () => undefined,
+    onPointer: () => () => undefined,
+    onKey: () => () => undefined,
+    post: () => undefined,
+  }
+  return props => JSON.stringify(module(props, surface as never))
+}
+
 /** @param now when the session starts: some secrets go by the person's own clock. */
 export function world(on: On, store: Record<string, unknown> = {}, now = 1_000_000): World {
   const w: World = {

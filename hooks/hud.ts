@@ -19,6 +19,13 @@
 // new numbers arrive: a surface unmounts a Client whose size changes frame
 // after frame on its own. The pop sits in a slot of its own fixed width.
 //
+// The numbers come two ways: in the band's or the shop's tree, and in the
+// answers to its polls. A surface may hand in a tree drawn a while ago again,
+// with the numbers it had then: the desktop does, each time something else on
+// screen changes. So the HUD keeps the newest numbers it has had and draws
+// those. A new answer always is; a tree only when drawn after the last answer
+// was read, for its mode and size. Older ones never turn the counter back.
+//
 // A surface module has no `$` and takes nothing from the plugin's other files,
 // so it carries its own number formatting.
 
@@ -43,6 +50,8 @@ type State = {
   /** The counter's thousands (K, M, B ...), and frames of gold left since it passed into new ones. */
   tier?: number
   shimmer?: number
+  /** The newest numbers handed in: the ones drawn. */
+  latest?: HudProps
 }
 
 const POLL_MS = 100
@@ -108,19 +117,23 @@ function bar(have: number, need: number): string {
   return '▰'.repeat(filled) + '▱'.repeat(BAR - filled)
 }
 
-const Hud: ClientModule<HudProps, State> = (props, surface) => {
+const Hud: ClientModule<HudProps, State> = (handed, surface) => {
   const { Box, Text } = surface.elements
-  const gem = props.gem ?? null
-  const acked = props.acked ?? 0
-
-  const taps = props.taps ?? 0
 
   // A HUD an older version drew keeps other state: this one starts afresh.
   const old = surface.state
   let s = old !== undefined && typeof old.taps === 'number' && typeof old.pressed === 'number' ? old : undefined
+  // The newest numbers it has had: a new answer, or a tree drawn after the last one was read.
+  const kept = s?.latest
+  const isNewer = kept === undefined || (handed.isAnswer === true ? JSON.stringify(handed) !== JSON.stringify(kept) : (handed.at ?? 0) > kept.at)
+  const props = isNewer || kept === undefined ? handed : kept
+  const gem = props.gem ?? null
+  const acked = props.acked ?? 0
+  const taps = props.taps ?? 0
+
   if (s === undefined) {
     const instance = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`
-    s = { instance, total: 0, recent: [], taps, gemSeq: gem?.seq ?? 0, pop: null, pressed: 0, tier: tierOf(props.sparks), shimmer: 0 }
+    s = { instance, total: 0, recent: [], taps, gemSeq: gem?.seq ?? 0, pop: null, pressed: 0, tier: tierOf(props.sparks), shimmer: 0, latest: handed }
     surface.setState(s)
     surface.every(POLL_MS, () => surface.post({ instance, total: surface.state?.total ?? 0 }))
     // Ages the pop, lets the sign back up and dims the shine; does nothing at all while none is showing.
@@ -136,23 +149,22 @@ const Hud: ClientModule<HudProps, State> = (props, surface) => {
     })
     surface.post({ instance, total: 0 })
   } else {
-    const isGem = gem !== null && gem.seq > s.gemSeq
-    if (isGem || taps !== s.taps) {
+    let next = isNewer ? { ...s, latest: handed } : s
+    const isGem = gem !== null && gem.seq > next.gemSeq
+    if (isGem || taps !== next.taps) {
       // Presses of the band's own Mine button, and gems among the presses the
       // hooks counted: the pop takes what they mined. Fewer taps than before is
       // the hooks starting over (an update), and pops nothing.
-      const mined = Math.max(0, taps - s.taps) * props.click + (isGem ? gem.bonus : 0)
-      const pop = props.variant === 'band' && mined > 0 ? { value: (s.pop?.value ?? 0) + mined, age: 0, isGem: isGem || s.pop?.isGem === true } : s.pop
-      s = { ...s, taps, gemSeq: isGem ? gem.seq : s.gemSeq, pop }
-      surface.setState(s)
+      const mined = Math.max(0, taps - next.taps) * props.click + (isGem ? gem.bonus : 0)
+      const pop = props.variant === 'band' && mined > 0 ? { value: (next.pop?.value ?? 0) + mined, age: 0, isGem: isGem || next.pop?.isGem === true } : next.pop
+      next = { ...next, taps, gemSeq: isGem ? gem.seq : next.gemSeq, pop }
     }
     // Passing into new thousands, the counter shines a moment; a new shaft's fall says nothing.
     const tier = tierOf(props.sparks)
-    if (tier !== (s.tier ?? tier)) {
-      s = { ...s, tier, shimmer: tier > (s.tier ?? tier) ? SHIMMER_FRAMES : (s.shimmer ?? 0) }
-      surface.setState(s)
-    } else if (s.tier === undefined) {
-      s = { ...s, tier }
+    if (tier !== (next.tier ?? tier)) next = { ...next, tier, shimmer: tier > (next.tier ?? tier) ? SHIMMER_FRAMES : (next.shimmer ?? 0) }
+    else if (next.tier === undefined) next = { ...next, tier }
+    if (next !== s) {
+      s = next
       surface.setState(s)
     }
   }

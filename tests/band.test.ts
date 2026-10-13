@@ -1,11 +1,15 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
+import type { HudProps, VeinProps } from '../types'
 import * as game from '../hooks/game.ts'
+import Hud from '../hooks/hud.ts'
+import { EMPTY_HUD, answerOf } from '../hooks/model.ts'
 import { sceneSvg } from '../hooks/scene.ts'
+import Vein from '../hooks/vein.ts'
 import * as state from '../hooks/state.ts'
 import { CONFETTI_MS, TIP_MS } from '../hooks/data.ts'
-import { band, command, committed, endSession, failed, finishTurn, pane, prompt, seeded, start, wait, world } from './kit.ts'
+import { band, client, command, committed, endSession, failed, finishTurn, pane, prompt, seeded, start, wait, world } from './kit.ts'
 
 /** Lets the HUD poll once, so it holds fresh numbers. */
 const POLL = 150
@@ -35,6 +39,52 @@ test('a shop model kept from before an update draws, with the newer sections emp
 test('a session kept from before an update reads its ×100 as Max', () => {
   expect(state.fillView({ ...state.INITIAL_VIEW, amount: 100 as never }).amount).toBe('max')
   expect(state.fillView({ ...state.INITIAL_VIEW, amount: 10 }).amount).toBe(10)
+})
+
+test('the HUD keeps the newest numbers: an older tree handed in again never turns it back', () => {
+  const drawn = client<HudProps, unknown>(Hud)
+  // The band drawn before the HUD's first poll was answered: no numbers yet.
+  const early: HudProps = { ...EMPTY_HUD, surface: 'desktop' }
+  expect(drawn(early)).toContain('✻ 0')
+  // A poll's answer.
+  const live: HudProps = { ...early, sparks: 119.3e9, depth: 889, idle: 0.5, at: 1_000_100, isAnswer: true }
+  const shown = drawn(live)
+  expect(shown).toContain('✻ 119.3B')
+  // The desktop hands in that early tree again, each time the shop's counter changes: nothing moves.
+  expect(drawn(early)).toBe(shown)
+  expect(drawn({ ...live, isAnswer: undefined, sparks: 1, at: 1_000_050 })).toBe(shown)
+  // A new answer always draws, even read by a clock set back; a tree drawn after it brings its mode.
+  expect(drawn({ ...live, sparks: 120e9, at: 900_000 })).toContain('✻ 120.0B')
+  expect(drawn({ ...live, isAnswer: undefined, sparks: 120e9, mode: 'work', at: 1_000_300 })).toContain('⛏ Mine')
+})
+
+test('the vein keeps the newest answer: the band redrawn as it was never hides a vein that shows', () => {
+  const drawn = client<VeinProps, unknown>(Vein)
+  const tree: VeinProps = { vein: null, frenzy: null, surface: 'desktop' }
+  expect(drawn(tree)).not.toContain('Vein!')
+  const showing: VeinProps = { ...tree, vein: { id: 3, kind: 'rich', left: 12, label: 'Vein!' }, isAnswer: true }
+  const shown = drawn(showing)
+  expect(shown).toContain('✦ Vein! 12s')
+  expect(drawn(tree)).toBe(shown)
+  // It goes when an answer says so.
+  expect(drawn({ ...tree, isAnswer: true })).not.toContain('Vein!')
+})
+
+test('an answer that says what the last said keeps its time, so an idle Client draws nothing new', () => {
+  const last: HudProps = { ...EMPTY_HUD, sparks: 40, at: 1_000_100 }
+  expect(answerOf(last, { ...last, at: 1_000_200 }).at).toBe(1_000_100)
+  expect(answerOf(last, { ...last, sparks: 41, at: 1_000_200 }).at).toBe(1_000_200)
+  expect(answerOf(undefined, { ...last, at: 1_000_200 }).at).toBe(1_000_200)
+})
+
+test("a band drawn before its HUD's first poll starts from the mine, not from nothing", async ($, on) => {
+  world(on, { save: seeded({ sparks: 5_000, lifetime: 9_000, allTime: 9_000 }) })
+  await start($)
+  const ui = await $.ui.mount(band('desktop'))
+  const handed = (await ui.find({ key: 'hud' }))?.props.props as HudProps | undefined
+  expect(handed).toMatchObject({ variant: 'band', sparks: 5_000, depth: 100 })
+  expect(handed?.at).toBeGreaterThan(0)
+  expect(handed?.isAnswer).toBeUndefined()
 })
 
 test('the band keeps one line while Claude is idle', async ($, on) => {
