@@ -225,7 +225,7 @@ test('the HUD keeps one size while the pop fades, and the scene is never redrawn
 })
 
 test('the crew fills the rest of the band, and the next goal is left to the shop', async ($, on) => {
-  world(on, { save: seeded({ clicks: 30, producers: { apprentice: 17, cart: 6 } }) })
+  world(on, { save: seeded({ clicks: 30, lifetime: 50_000, producers: { apprentice: 17, cart: 6 } }) })
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))
@@ -254,7 +254,7 @@ test('the wooden Shop sign opens the shop', async ($, on) => {
 })
 
 test('buying the Diamond pick puts it in the miner\'s hands', async ($, on) => {
-  const w = world(on, { save: seeded({ sparks: 20_000, clicks: 600, upgrades: ['pick-1', 'pick-2', 'grip-1'] }) })
+  const w = world(on, { save: seeded({ sparks: 20_000, lifetime: 20_000, clicks: 600, upgrades: ['pick-1', 'pick-2', 'grip-1'] }) })
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   const ui = await $.ui.mount(band('desktop'))

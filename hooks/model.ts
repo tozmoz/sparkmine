@@ -2,9 +2,9 @@
 // draws its model and the HUD its props, so neither reads the mine itself and
 // neither is redrawn when nothing it shows has changed.
 
-import type { Amount, Badge, BadgeArt, Band, EventKind, HudProps, IconId, Save, ShopModel, ShopTab, StatsProps, ToolKind, VeinProps, View } from '../types'
+import type { Amount, Badge, BadgeArt, Band, EventKind, HudProps, IconId, Save, ShopItem, ShopModel, ShopTab, StatsProps, ToolKind, VeinProps, View } from '../types'
 import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, FINDS, PRODUCERS, RELICS, SHAFT_DEPTH, TOOL_NAMES, type Achievement, type Goal, type Upgrade } from './data.ts'
-import { commas, fmt, fmtRate, plural } from './format.ts'
+import { commas, fmt, fmtRate, fmtSpan, plural } from './format.ts'
 import * as game from './game.ts'
 
 export const SHOP_LIMIT = 8
@@ -40,10 +40,12 @@ export function upgradeIcon(u: Upgrade): IconId {
   if (u.id === 'grip-1') return 'glove'
   switch (u.effect.kind) {
     case 'click':
+    case 'clickAll':
       return 'pick'
     case 'clickRate':
       return 'bolt'
     case 'clickCrew':
+    case 'clickCrewRate':
       return 'whistle'
     case 'gem':
     case 'gemWorth':
@@ -93,6 +95,12 @@ export function unlockText(u: Upgrade): string {
     case 'events':
       return `after ${n} ${u.unlock.label}`
   }
+}
+
+/** When the next upgrade goes on sale: at its unlock, or once this run has mined enough for its price. */
+function nextText(save: Save, u: Upgrade): string {
+  const p = game.progress(save, u)
+  return p.isSparks === true ? `once this shaft has mined ${fmt(p.need)} ✻` : unlockText(u)
 }
 
 export const EMPTY_SHOP: ShopModel = {
@@ -233,37 +241,77 @@ function badgesOf(save: Save, won: ReadonlySet<string>): ShopModel['badges'] {
   }
 }
 
+/** How soon a purchase pays for itself, in words. */
+function paysBack(back: game.Payback): string {
+  const count = (one: string, many: string) => plural(Math.ceil(back.n), one, many)
+  switch (back.per) {
+    case 'work':
+      return `pays back in ${fmtSpan(back.n)} of work`
+    case 'click':
+      return `pays back in ${count('click', 'clicks')}`
+    case 'call':
+      return `pays back in ${count('call', 'calls')}`
+    case 'turn':
+      return `pays back in ${count('turn', 'turns')}`
+    case 'idle':
+      return `pays back in ${fmtSpan(back.n)} idle`
+  }
+}
+
+/** Marks the card that pays back soonest, its wait counted, when one pays back in work at all. */
+function markBest(cards: { item: ShopItem; soon: number }[]): ShopItem[] {
+  const best = cards.reduce<{ item: ShopItem; soon: number } | null>((low, c) => (c.soon < (low?.soon ?? Infinity) ? c : low), null)
+  return cards.map(c => (c === best ? { ...c.item, isBest: true } : c.item))
+}
+
 export function shopModel(save: Save, amount: Amount, tab: ShopTab, isLoaded: boolean): ShopModel {
   const m = game.multipliers(save)
+  const each = game.unitRates(save, m)
+  const rate = game.rate(save, m)
+  // Seconds of work to afford a price and then earn it back: the best buy is the soonest.
+  const soonest = (price: number, back: game.Payback | null): number =>
+    back?.per !== 'work' ? Infinity : (save.sparks >= price ? 0 : rate > 0 ? (price - save.sparks) / rate : Infinity) + back.n
   const top = PRODUCERS.reduce((high, p, i) => (game.owned(save, p.id) > 0 ? i : high), -1)
-  const producers = PRODUCERS.slice(0, top + 2).map(p => {
+  const producerCards = PRODUCERS.slice(0, top + 2).map(p => {
     const owned = game.owned(save, p.id)
     const count = amount === 'max' ? game.maxCount(p, owned, save.sparks) : amount
     const price = game.priceOf(p, owned, count)
-    return {
+    const back = game.producerPayback(save, p.id, count, m)
+    // Once its share of the producers above outgrows its own rate, the card says where the rest comes from.
+    const from = each[p.id] >= 2 * game.ownRate(p, m) ? ', mostly from the producers above' : ''
+    const item: ShopItem = {
       id: p.id,
       icon: p.id,
       name: p.name,
-      detail: `${fmtRate(game.unitRate(save, p.id, m))}/s each · ${p.blurb}`,
+      detail: `${fmtRate(each[p.id])}/s each${from}${back === null ? '' : `, ${paysBack(back)}`} · ${p.blurb}`,
       owned,
       count,
       price,
       // Lit only when the whole count is affordable: ×10 buys ten or none.
       canBuy: save.sparks >= price,
     }
+    return { item, soon: soonest(price, back) }
   })
   const { onSale, next } = game.shopUpgrades(save)
-  const upgrades = onSale.slice(0, SHOP_LIMIT).map(u => ({
-    id: u.id,
-    icon: upgradeIcon(u),
-    name: u.name,
-    detail: u.blurb,
-    owned: 0,
-    count: 1,
-    price: u.cost,
-    canBuy: save.sparks >= u.cost,
-  }))
-  const nextUp: ShopModel['next'] = next === null ? null : { name: next.name, icon: upgradeIcon(next), text: unlockText(next) }
+  const upgradeCards = onSale.slice(0, SHOP_LIMIT).map(u => {
+    const back = game.upgradePayback(save, u, m)
+    const words = back === null ? '' : paysBack(back)
+    const item: ShopItem = {
+      id: u.id,
+      icon: upgradeIcon(u),
+      name: u.name,
+      detail: words === '' ? u.blurb : `${u.blurb} ${words.charAt(0).toUpperCase()}${words.slice(1)}.`,
+      owned: 0,
+      count: 1,
+      price: u.cost,
+      canBuy: save.sparks >= u.cost,
+    }
+    return { item, soon: soonest(u.cost, back) }
+  })
+  const marked = markBest([...producerCards, ...upgradeCards])
+  const producers = marked.slice(0, producerCards.length)
+  const upgrades = marked.slice(producerCards.length)
+  const nextUp: ShopModel['next'] = next === null ? null : { name: next.name, icon: upgradeIcon(next), text: nextText(save, next) }
   const won = new Set(game.achievements(save).map(a => a.id))
   const gain = game.stoneGain(save)
   return {
@@ -391,7 +439,7 @@ export function hudProps(save: Save, view: View, band: Band, variant: HudProps['
     goal:
       next === null || progress === null
         ? null
-        : { name: next.name, have: Math.min(progress.have, progress.need), need: progress.need },
+        : { name: next.name, have: Math.min(progress.have, progress.need), need: progress.need, ...(progress.isSparks === true ? { isSparks: true as const } : {}) },
     tools: save.tools,
     turns: save.turns,
     nap: band.nap,

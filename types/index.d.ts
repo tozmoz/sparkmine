@@ -279,8 +279,8 @@ export type HudProps = {
   turn: number
   lastTurn: number
   last: string | null
-  /** The upgrade closest to unlocking, and how close. */
-  goal: { name: string; have: number; need: number } | null
+  /** The upgrade closest to going on sale, and how close: in sparks mined this run when that is what it waits on. */
+  goal: { name: string; have: number; need: number; isSparks?: true } | null
   tools: number
   turns: number
   /** Claude idle a while: the one-line band says so with a cup, then a snooze. */
@@ -383,6 +383,8 @@ export type ShopItem = {
   count: number
   price: number
   canBuy: boolean
+  /** What earns its price back soonest, the wait to afford it counted: one card at most. */
+  isBest?: true
 }
 
 /** What the shop pane draws. Rebuilt on every change, written only when it differs. */

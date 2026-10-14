@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Mine, Save } from '../types'
-import { ACHIEVEMENTS, BIOMES, PRODUCERS, UPGRADES } from '../hooks/data.ts'
-import { fmt, fmtRate } from '../hooks/format.ts'
+import { ACHIEVEMENTS, BIOMES, PRODUCERS, SUPPORT, UPGRADES } from '../hooks/data.ts'
+import { fmt, fmtRate, fmtSpan } from '../hooks/format.ts'
 import * as game from '../hooks/game.ts'
 import * as model from '../hooks/model.ts'
 
@@ -45,6 +45,20 @@ describe('income', () => {
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, stones: 1 })))).toBe(0.55)
     // First vein and Big turn: 2% each.
     expect(near(game.rate(saveWith({ producers: { apprentice: 10 }, veins: 1, bestTurn: 2e6 })))).toBe(0.52)
+  })
+
+  test('each producer also mines a share of what the producers above it mine on their own', () => {
+    // A goblin mines 4/s and two carts 1/s: each cart gets its share of the goblin, each apprentice of all three.
+    const save = saveWith({ producers: { apprentice: 10, cart: 2, goblin: 1 } })
+    expect(near(game.unitRate(save, 'goblin'))).toBe(4)
+    expect(near(game.unitRate(save, 'cart'))).toBe(near(0.5 + SUPPORT * 4))
+    expect(near(game.unitRate(save, 'apprentice'))).toBe(near(0.05 + SUPPORT * 5))
+    expect(near(game.rate(save))).toBe(near(4 + 2 * (0.5 + SUPPORT * 4) + 10 * (0.05 + SUPPORT * 5)))
+    // Its upgrades grow its share with its own rate; the share is of what the others mine on their own, so it never compounds.
+    const tiered = saveWith({ producers: { apprentice: 10, cart: 2, goblin: 1 }, upgrades: ['apprentice-1', 'cart-1'] })
+    const m = game.multipliers(tiered)
+    expect(near(game.unitRate(tiered, 'apprentice'))).toBe(near((0.05 + SUPPORT * (4 + 2 * 0.5 * m.producer.cart)) * m.producer.apprentice))
+    expect(near(game.rate(tiered))).toBe(near(PRODUCERS.reduce((sum, p) => sum + game.owned(tiered, p.id) * game.unitRate(tiered, p.id), 0)))
   })
 
   test('each next ancient stone adds a little less: ten add half, a hundred two and a half times', () => {
@@ -92,16 +106,62 @@ describe('income', () => {
     expect(gems).toBeLessThan(900)
   })
 
-  test('a tool call is worth its base, its multiplier and seconds of the rate', () => {
+  test('a tool call is worth its base and seconds of the rate, both times its multiplier', () => {
     expect(game.toolValue(saveWith({}), 'edit')).toBe(4)
     expect(game.toolValue(saveWith({}), 'read')).toBe(1)
-    expect(near(game.toolValue(saveWith({ producers: { cart: 10 }, upgrades: ['tool-edit', 'ore-1'] }), 'edit'))).toBe(37)
+    // Ten carts mine 5/s: an edit is 4 and 5 seconds of that, half as much again.
+    expect(near(game.toolValue(saveWith({ producers: { cart: 10 }, upgrades: ['tool-edit', 'ore-1'] }), 'edit'))).toBe(43.5)
+    expect(near(game.toolValue(saveWith({ producers: { cart: 10 }, upgrades: ['ore-1'] }), 'read'))).toBe(26)
+  })
+
+  test('Obsidian edge lifts all a click mines; the late foremen add a share of the rate for every producer', () => {
+    // 100 carts mine 50/s: Muscle memory adds 2% of it to a click of 2.
+    const carts = { producers: { cart: 100 }, upgrades: ['pick-1', 'pick-4'] }
+    expect(near(game.clickValue(saveWith(carts)))).toBe(3)
+    expect(near(game.clickValue(saveWith({ ...carts, upgrades: [...carts.upgrades, 'pick-6'] })))).toBe(3.75)
+    expect(near(game.clickValue(saveWith({ ...carts, upgrades: [...carts.upgrades, 'foreman-3'] })))).toBe(near(3 + 50 * 0.00002 * 100))
   })
 
   test('the crew rests while Claude is idle until a shift upgrade', () => {
     expect(game.idleShare(saveWith({}))).toBe(0)
     expect(game.idleShare(saveWith({ upgrades: ['idle-1'] }))).toBe(0.1)
     expect(game.idleShare(saveWith({ upgrades: ['idle-1', 'idle-2'] }))).toBe(0.25)
+  })
+})
+
+describe('payback', () => {
+  test('a producer pays back in seconds of work, an upgrade in what it pays more for', () => {
+    // Ten carts mine 5/s: an eleventh adds 0.5/s for its price.
+    const carts = saveWith({ producers: { cart: 10 } })
+    expect(game.producerPayback(carts, 'cart', 1)).toEqual({ per: 'work', n: game.priceOf(game.producer('cart'), 10) / 0.5 })
+    expect(near(game.producerPayback(carts, 'cart', 10)?.n ?? 0)).toBe(near(game.priceOf(game.producer('cart'), 10, 10) / 5))
+    const back = (save: typeof carts, id: string) => game.upgradePayback(save, UPGRADES.find(u => u.id === id)!)
+    // A sharpened pick adds a spark a click for 100; blasting caps make a Bash call 3, not 2, for 750.
+    expect(back(carts, 'pick-1')).toEqual({ per: 'click', n: 100 })
+    expect(back(carts, 'tool-bash')).toEqual({ per: 'call', n: 750 / 1 })
+    expect(back(carts, 'ore-1')).toEqual({ per: 'call', n: 25_000 / 25 })
+    expect(back(carts, 'shift-1')).toEqual({ per: 'turn', n: 25_000 / 50 })
+    expect(back(carts, 'idle-1')).toEqual({ per: 'idle', n: 10_000 / 0.5 })
+    expect(back(carts, 'cart-1')?.per).toBe('work')
+    // Veins and work events pay only now and then; a share of a rate of nothing adds nothing.
+    expect(back(carts, 'vein-1')).toBeNull()
+    expect(back(carts, 'ci-1')).toBeNull()
+    expect(back(saveWith({}), 'pick-4')).toBeNull()
+  })
+
+  test('the shop says how soon each card pays back, and marks the soonest, the wait to afford it counted', () => {
+    const shop = model.shopModel(saveWith({ sparks: 600, producers: { apprentice: 5, cart: 1 } }), 1, 'shop', true)
+    const cart = shop.producers.find(p => p.id === 'cart')
+    expect(cart?.detail).toContain(`pays back in ${fmtSpan(game.priceOf(game.producer('cart'), 1) / game.unitRate(saveWith({ producers: { cart: 1 } }), 'cart'))} of work`)
+    expect([...shop.producers, ...shop.upgrades].filter(c => c.isBest === true).map(c => c.id)).toEqual(['cart'])
+    // Short of a cart, the apprentice that pays back slower but can be had now is the better buy.
+    const poor = model.shopModel(saveWith({ sparks: 20, producers: { apprentice: 1, cart: 1 } }), 1, 'shop', true)
+    expect([...poor.producers, ...poor.upgrades].filter(c => c.isBest === true).map(c => c.id)).toEqual(['apprentice'])
+    expect(fmtSpan(45)).toBe('45s')
+    expect(fmtSpan(12 * 60)).toBe('12m')
+    expect(fmtSpan(3.5 * 3_600)).toBe('3.5h')
+    expect(fmtSpan(13 * 3_600)).toBe('13h')
+    expect(fmtSpan(60 * 3_600)).toBe('2.5d')
   })
 })
 
@@ -115,18 +175,25 @@ describe('buying', () => {
     expect(game.buyProducer(mineWith({ sparks: 10 }), 'apprentice', 1)).toBeNull()
   })
 
-  test('an upgrade waits for its unlock', () => {
-    expect(game.buyUpgrade(mineWith({ sparks: 1_000, clicks: 24 }), 'pick-1')).toBeNull()
-    const bought = game.buyUpgrade(mineWith({ sparks: 1_000, clicks: 25 }), 'pick-1')
+  test('an upgrade waits for its unlock, and for the run to mine twice its price', () => {
+    expect(game.buyUpgrade(mineWith({ sparks: 1_000, lifetime: 1_000, clicks: 24 }), 'pick-1')).toBeNull()
+    expect(game.buyUpgrade(mineWith({ sparks: 1_000, lifetime: 199, clicks: 25 }), 'pick-1')).toBeNull()
+    const bought = game.buyUpgrade(mineWith({ sparks: 1_000, lifetime: 200, clicks: 25 }), 'pick-1')
     expect(bought?.save.upgrades).toEqual(['pick-1'])
     expect(bought?.save.sparks).toBe(900)
     expect(game.buyUpgrade(bought ?? mineWith({}), 'pick-1')).toBeNull()
   })
 
   test('the shop lists what is on sale and the closest unlock', () => {
-    const { onSale, next } = game.shopUpgrades(saveWith({ clicks: 30, producers: { apprentice: 1 } }))
+    const { onSale, next } = game.shopUpgrades(saveWith({ clicks: 30, lifetime: 1_000, producers: { apprentice: 1 } }))
     expect(onSale.map(u => u.id)).toEqual(['pick-1', 'apprentice-1'])
     expect(next?.id).toBe('pick-2')
+    // A producer's own upgrades wait for its count alone; the rest, for the run to mine twice their price.
+    const early = saveWith({ clicks: 30, lifetime: 150, producers: { apprentice: 1 } })
+    expect(game.shopUpgrades(early).onSale.map(u => u.id)).toEqual(['apprentice-1'])
+    const pick = UPGRADES.find(u => u.id === 'pick-1')!
+    expect(game.progress(early, pick)).toEqual({ have: 150, need: 200, isSparks: true })
+    expect(model.shopModel(early, 1, 'shop', true).next?.text).toBe('once this shaft has mined 200 ✻')
   })
 
   test('a line of upgrades doing the same goes on sale a tier at a time', () => {
@@ -139,8 +206,8 @@ describe('buying', () => {
     expect(game.buyUpgrade(mineWith({ sparks: 1e9, producers: { drill: 5 } }), 'drill-2')).toBeNull()
     expect(UPGRADES.find(u => u.id === 'drill-2')).toMatchObject({ name: 'Pressure valves', blurb: 'Steam drills mine 50% more again.', after: 'drill-1' })
     // A tier waits behind the one before it: no goal that the shop could not sell when reached.
-    expect(game.shopUpgrades(saveWith({ clicks: 30 })).next?.id).toBe('pick-2')
-    expect(game.shopUpgrades(saveWith({ clicks: 150 })).next?.id).not.toBe('grip-1')
+    expect(game.shopUpgrades(saveWith({ clicks: 30, lifetime: 1_000 })).next?.id).toBe('pick-2')
+    expect(game.shopUpgrades(saveWith({ clicks: 150, lifetime: 1_000 })).next?.id).not.toBe('grip-1')
   })
 
   test('no two upgrades on sale do the same, and every line runs cheapest first', () => {
@@ -154,13 +221,14 @@ describe('buying', () => {
     expect(new Set(effects).size).toBe(effects.length)
   })
 
-  test('there are 79 upgrades, each with its own id', () => {
-    expect(UPGRADES).toHaveLength(79)
-    expect(new Set(UPGRADES.map(u => u.id)).size).toBe(79)
+  test('there are 89 upgrades, each with its own id and name', () => {
+    expect(UPGRADES).toHaveLength(89)
+    expect(new Set(UPGRADES.map(u => u.id)).size).toBe(89)
+    expect(new Set(UPGRADES.map(u => u.name)).size).toBe(89)
   })
 
   test('a mine with a crew of 59 finds the new click upgrades on sale', () => {
-    const save = saveWith({ clicks: 2_930, producers: { apprentice: 34, cart: 16, goblin: 8, drill: 1 }, upgrades: ['pick-1', 'pick-2', 'pick-3'] })
+    const save = saveWith({ clicks: 2_930, lifetime: 1e6, producers: { apprentice: 34, cart: 16, goblin: 8, drill: 1 }, upgrades: ['pick-1', 'pick-2', 'pick-3'] })
     const onSale = game.shopUpgrades(save).onSale.map(u => u.id)
     expect(onSale).toContain('grip-1')
     expect(onSale).toContain('foreman-1')
@@ -675,6 +743,18 @@ describe('the work behind the mine', () => {
   test("a call's outcome is read off its input and result", () => {
     const commit = game.outcomeOf('Bash', { command: 'git commit -m x' }, { result: { interrupted: false, gitOperation: { commit: { sha: 'a', kind: 'committed' } } } })
     expect(commit).toMatchObject({ tool: 'Bash', committed: true, isError: false })
+    // `git commit -q` prints nothing for the engine to read: the command that ran and finished says it.
+    const quiet = (command: string, more: { isError?: boolean; stdout?: string } = {}) =>
+      game.outcomeOf('Bash', { command }, { result: { interrupted: false, stdout: more.stdout ?? '', stderr: '' }, isError: more.isError ?? false }).committed
+    expect(quiet('git commit -q -m "Fix the parser"')).toBe(true)
+    expect(quiet(`cd "/Users/t/My Repo" && git add -A && git commit -q -F - <<'EOF'\nFix the parser\nEOF`)).toBe(true)
+    expect(quiet('git -C "/Users/t/My Repo" -c user.name=t commit -q -m x && git push -q')).toBe(true)
+    expect(quiet('git commit --amend --no-edit -q')).toBe(false)
+    expect(quiet('git commit --dry-run')).toBe(false)
+    expect(quiet('git commit -q -m x', { isError: true })).toBe(false)
+    expect(quiet('git commit -m x; git status', { stdout: 'nothing to commit, working tree clean' })).toBe(false)
+    for (const cmd of ['git log --oneline', 'echo git commit', 'grep -r "git commit" .', 'gh pr create --title "git commit"']) expect([cmd, quiet(cmd)]).toEqual([cmd, false])
+    expect(game.outcomeOf('Bash', { command: 'git commit -q -m x', run_in_background: true }, { result: {} }).committed).toBe(false)
     expect(game.outcomeOf('Bash', { command: 'npm test', run_in_background: true }, { result: {} }).background).toBe(true)
     expect(game.outcomeOf('Bash', { command: 'npm test' }, { result: {}, isError: true }).isError).toBe(true)
   })
@@ -689,8 +769,8 @@ describe('the work behind the mine', () => {
   test('the work upgrades double their own events once Claude has done enough of them', () => {
     const ci = UPGRADES.find(u => u.id === 'ci-1')
     if (ci === undefined) throw new Error('no CI pipeline')
-    expect(game.isUnlocked(saveWith({ events: { build: 20, lint: 4 } }), ci)).toBe(false)
-    expect(game.isUnlocked(saveWith({ events: { build: 20, lint: 5 } }), ci)).toBe(true)
+    expect(game.isUnlocked(saveWith({ lifetime: 2e6, events: { build: 20, lint: 4 } }), ci)).toBe(false)
+    expect(game.isUnlocked(saveWith({ lifetime: 2e6, events: { build: 20, lint: 5 } }), ci)).toBe(true)
     expect(model.unlockText(ci)).toBe('after 25 passing builds and lints')
     const crew = { producers: { cart: 10 }, upgrades: ['ci-1'] }
     expect(near(game.eventValue(saveWith(crew), 'build'))).toBe(150)

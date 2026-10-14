@@ -35,3 +35,14 @@ export function fmtRate(n: number): string {
   if (tenths < 10) return tenths.toFixed(1)
   return fmt(Math.round(n))
 }
+
+/** A span of seconds in its largest unit: 45s, 12m, 3.5h, 13h, 2.5d. */
+export function fmtSpan(seconds: number): string {
+  if (!Number.isFinite(seconds)) return '∞'
+  const s = Math.max(1, Math.round(seconds))
+  const one = (n: number) => (n < 10 ? n.toFixed(1).replace(/\.0$/, '') : commas(Math.round(n)))
+  if (s < 60) return `${s}s`
+  if (s < 3_600) return `${Math.round(s / 60)}m`
+  if (s < 48 * 3_600) return `${one(s / 3_600)}h`
+  return `${one(s / 86_400)}d`
+}
