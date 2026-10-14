@@ -738,55 +738,6 @@ export function idleShare(save: Save, m = multipliers(save)): number {
   return Math.min(1, m.idle * m.idleMult)
 }
 
-/** What a purchase earns its price back in: seconds of Claude's work, clicks, tool calls, turns or idle seconds. */
-export type Payback = { per: 'work' | 'click' | 'call' | 'turn' | 'idle'; n: number }
-
-/** What one click mines on average, its chance of a gem counted. */
-const clickWorth = (save: Save, m: Multipliers): number => clickValue(save, m) * (1 + m.gemChance * (m.gemWorth - 1))
-
-/** How soon `count` more of a producer earn back their price, in seconds of Claude's work; null while they add nothing. */
-export function producerPayback(save: Save, id: ProducerId, count: number, m = multipliers(save)): Payback | null {
-  const owns = owned(save, id)
-  const gain = rate({ ...save, producers: { ...save.producers, [id]: owns + count } }, m) - rate(save, m)
-  return gain > 0 ? { per: 'work', n: priceOf(producer(id), owns, count) / gain } : null
-}
-
-/**
- * How soon an upgrade earns back its price, in what it pays more for: seconds
- * of work for the crew, clicks, tool calls, turns or idle seconds. Null for
- * what pays only now and then, veins and work events, and while it adds nothing.
- */
-export function upgradePayback(save: Save, u: Upgrade, m = multipliers(save)): Payback | null {
-  const after = { ...save, upgrades: [...save.upgrades, u.id] }
-  const n = multipliers(after)
-  const back = (per: Payback['per'], gain: number): Payback | null => (gain > 0 ? { per, n: u.cost / gain } : null)
-  switch (u.effect.kind) {
-    case 'producer':
-    case 'global':
-      return back('work', rate(after, n) - rate(save, m))
-    case 'click':
-    case 'clickRate':
-    case 'clickCrew':
-    case 'clickCrewRate':
-    case 'clickAll':
-    case 'gem':
-    case 'gemWorth':
-      return back('click', clickWorth(after, n) - clickWorth(save, m))
-    case 'tool':
-      return back('call', toolValue(after, u.effect.tool, n) - toolValue(save, u.effect.tool, m))
-    case 'ore':
-      return back('call', rate(save, m) * (n.ore - m.ore))
-    case 'shift':
-      return back('turn', shiftValue(after, n) - shiftValue(save, m))
-    case 'idle':
-      return back('idle', rate(save, m) * (idleShare(after, n) - idleShare(save, m)))
-    case 'events':
-    case 'veinSpeed':
-    case 'frenzy':
-      return null
-  }
-}
-
 function have(save: Save, unlock: Unlock): number {
   switch (unlock.kind) {
     case 'clicks':

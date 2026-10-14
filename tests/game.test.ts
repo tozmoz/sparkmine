@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Mine, Save } from '../types'
 import { ACHIEVEMENTS, BIOMES, PRODUCERS, SUPPORT, UPGRADES } from '../hooks/data.ts'
-import { fmt, fmtRate, fmtSpan } from '../hooks/format.ts'
+import { fmt, fmtRate } from '../hooks/format.ts'
 import * as game from '../hooks/game.ts'
 import * as model from '../hooks/model.ts'
 
@@ -126,39 +126,6 @@ describe('income', () => {
     expect(game.idleShare(saveWith({}))).toBe(0)
     expect(game.idleShare(saveWith({ upgrades: ['idle-1'] }))).toBe(0.1)
     expect(game.idleShare(saveWith({ upgrades: ['idle-1', 'idle-2'] }))).toBe(0.25)
-  })
-})
-
-describe('payback', () => {
-  test('a producer pays back in seconds of work, an upgrade in what it pays more for', () => {
-    // Ten carts mine 5/s: an eleventh adds 0.5/s for its price.
-    const carts = saveWith({ producers: { cart: 10 } })
-    expect(game.producerPayback(carts, 'cart', 1)).toEqual({ per: 'work', n: game.priceOf(game.producer('cart'), 10) / 0.5 })
-    expect(near(game.producerPayback(carts, 'cart', 10)?.n ?? 0)).toBe(near(game.priceOf(game.producer('cart'), 10, 10) / 5))
-    const back = (save: typeof carts, id: string) => game.upgradePayback(save, UPGRADES.find(u => u.id === id)!)
-    // A sharpened pick adds a spark a click for 100; blasting caps make a Bash call 3, not 2, for 750.
-    expect(back(carts, 'pick-1')).toEqual({ per: 'click', n: 100 })
-    expect(back(carts, 'tool-bash')).toEqual({ per: 'call', n: 750 / 1 })
-    expect(back(carts, 'ore-1')).toEqual({ per: 'call', n: 25_000 / 25 })
-    expect(back(carts, 'shift-1')).toEqual({ per: 'turn', n: 25_000 / 50 })
-    expect(back(carts, 'idle-1')).toEqual({ per: 'idle', n: 10_000 / 0.5 })
-    expect(back(carts, 'cart-1')?.per).toBe('work')
-    // Veins and work events pay only now and then; a share of a rate of nothing adds nothing.
-    expect(back(carts, 'vein-1')).toBeNull()
-    expect(back(carts, 'ci-1')).toBeNull()
-    expect(back(saveWith({}), 'pick-4')).toBeNull()
-  })
-
-  test('the shop says how soon each card pays back', () => {
-    const shop = model.shopModel(saveWith({ sparks: 600, clicks: 30, lifetime: 1_000, producers: { apprentice: 5, cart: 1 } }), 1, 'shop', true)
-    const cart = shop.producers.find(p => p.id === 'cart')
-    expect(cart?.detail).toContain(`pays back in ${fmtSpan(game.priceOf(game.producer('cart'), 1) / game.unitRate(saveWith({ producers: { cart: 1 } }), 'cart'))} of work`)
-    expect(shop.upgrades.find(u => u.id === 'pick-1')?.detail).toBe('Clicks mine twice as much. Pays back in 100 clicks.')
-    expect(fmtSpan(45)).toBe('45s')
-    expect(fmtSpan(12 * 60)).toBe('12m')
-    expect(fmtSpan(3.5 * 3_600)).toBe('3.5h')
-    expect(fmtSpan(13 * 3_600)).toBe('13h')
-    expect(fmtSpan(60 * 3_600)).toBe('2.5d')
   })
 })
 
