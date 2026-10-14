@@ -149,14 +149,11 @@ describe('payback', () => {
     expect(back(saveWith({}), 'pick-4')).toBeNull()
   })
 
-  test('the shop says how soon each card pays back, and marks the soonest, the wait to afford it counted', () => {
-    const shop = model.shopModel(saveWith({ sparks: 600, producers: { apprentice: 5, cart: 1 } }), 1, 'shop', true)
+  test('the shop says how soon each card pays back', () => {
+    const shop = model.shopModel(saveWith({ sparks: 600, clicks: 30, lifetime: 1_000, producers: { apprentice: 5, cart: 1 } }), 1, 'shop', true)
     const cart = shop.producers.find(p => p.id === 'cart')
     expect(cart?.detail).toContain(`pays back in ${fmtSpan(game.priceOf(game.producer('cart'), 1) / game.unitRate(saveWith({ producers: { cart: 1 } }), 'cart'))} of work`)
-    expect([...shop.producers, ...shop.upgrades].filter(c => c.isBest === true).map(c => c.id)).toEqual(['cart'])
-    // Short of a cart, the apprentice that pays back slower but can be had now is the better buy.
-    const poor = model.shopModel(saveWith({ sparks: 20, producers: { apprentice: 1, cart: 1 } }), 1, 'shop', true)
-    expect([...poor.producers, ...poor.upgrades].filter(c => c.isBest === true).map(c => c.id)).toEqual(['apprentice'])
+    expect(shop.upgrades.find(u => u.id === 'pick-1')?.detail).toBe('Clicks mine twice as much. Pays back in 100 clicks.')
     expect(fmtSpan(45)).toBe('45s')
     expect(fmtSpan(12 * 60)).toBe('12m')
     expect(fmtSpan(3.5 * 3_600)).toBe('3.5h')
@@ -554,12 +551,21 @@ describe('sync', () => {
     expect(merged.mined.read).toBe(1)
   })
 
-  test('after a collapse elsewhere, only earnings carry over', () => {
-    const stored = saveWith({ runId: 'new', sparks: 0 })
-    const delta = { ...game.emptyDelta('old'), sparks: -10, earned: 30, producers: { cart: 2 } }
+  test('after a new shaft elsewhere, what the old run mined counts only in the all-time records', () => {
+    const stored = saveWith({ runId: 'new', sparks: 0, lifetime: 0, allTime: 5e8 })
+    const delta = { ...game.emptyDelta('old'), sparks: -10, earned: 3e8, clicks: 4, bySource: { crew: 3e8 }, producers: { cart: 2 }, secrets: ['fossil' as const] }
     const merged = game.applyDelta(stored, delta)
-    expect(merged.sparks).toBe(30)
-    expect(merged.producers).toEqual({})
+    expect(merged).toMatchObject({ sparks: 0, lifetime: 0, allTime: 8e8, clicks: 4, bySource: { crew: 3e8 }, producers: {}, secrets: ['fossil'] })
+  })
+
+  test('a reset elsewhere is not undone by what a session mined before it heard', () => {
+    // A session still on the old mine mines at its old rate until it syncs; the reset save takes none of it.
+    const old = saveWith({ runId: 'old', sparks: 2e11, lifetime: 2e12, allTime: 3e12, stones: 171, producers: { furnace: 5 } })
+    const late = game.payCrew(mineWith(old), 3e8, 0, 0, 10_000)
+    const synced = game.syncMine(game.fresh('reset'), late, 'b')
+    expect(synced.isWrite).toBe(false)
+    expect(synced.save).toMatchObject({ runId: 'reset', sparks: 0, lifetime: 0, allTime: 0, clicks: 0, stones: 0, producers: {} })
+    expect(synced.mine.save.runId).toBe('reset')
   })
 
   test('a purchase another session wrote over goes in again, once', () => {

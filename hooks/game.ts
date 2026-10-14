@@ -1177,8 +1177,9 @@ export function applyDelta(stored: Save, d: Delta): Save {
   const bySource = paid > 0 ? { ...d.bySource, crew: Math.max(0, (d.bySource.crew ?? 0) - paid) } : d.bySource
   return {
     ...stored,
-    sparks: sameRun ? Math.max(0, stored.sparks + d.sparks - paid) : stored.sparks + earned,
-    lifetime: stored.lifetime + earned,
+    // What an older run mined went with it: a new shaft starts from nothing, and only the all-time records keep it.
+    sparks: sameRun ? Math.max(0, stored.sparks + d.sparks - paid) : stored.sparks,
+    lifetime: sameRun ? stored.lifetime + earned : stored.lifetime,
     allTime: stored.allTime + earned,
     clicks: stored.clicks + d.clicks,
     tools: stored.tools + d.tools,
@@ -1244,7 +1245,10 @@ export function syncMine(stored: Save | null, mine: Mine, newId: string): { mine
   const isLost = base.chain !== '' && base.chain === mine.chain && (base.writes[writer] ?? 0) < mine.seq
   // The changes of an older run went with it on purpose: a new shaft opened, or the mine was reset.
   const lost = isLost ? mine.inflight.filter(d => d.runId === base.runId) : []
-  const deltas = isEmptyDelta(mine.pending) ? lost : [...lost, mine.pending]
+  // A reset elsewhere took even the all-time records back to nothing, what this session mined since it last synced too.
+  // Only a reset makes them fall: a new shaft never halves them.
+  const isReset = base.runId !== mine.save.runId && base.allTime < mine.save.allTime / 2
+  const deltas = isEmptyDelta(mine.pending) || isReset ? lost : [...lost, mine.pending]
   if (deltas.length === 0) {
     return { mine: { ...mine, writer, save: base, pending: emptyDelta(base.runId), inflight: [] }, save: base, isWrite: stored === null }
   }

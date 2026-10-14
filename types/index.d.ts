@@ -383,8 +383,6 @@ export type ShopItem = {
   count: number
   price: number
   canBuy: boolean
-  /** What earns its price back soonest, the wait to afford it counted: one card at most. */
-  isBest?: true
 }
 
 /** What the shop pane draws. Rebuilt on every change, written only when it differs. */

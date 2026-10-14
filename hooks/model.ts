@@ -2,7 +2,7 @@
 // draws its model and the HUD its props, so neither reads the mine itself and
 // neither is redrawn when nothing it shows has changed.
 
-import type { Amount, Badge, BadgeArt, Band, EventKind, HudProps, IconId, Save, ShopItem, ShopModel, ShopTab, StatsProps, ToolKind, VeinProps, View } from '../types'
+import type { Amount, Badge, BadgeArt, Band, EventKind, HudProps, IconId, Save, ShopModel, ShopTab, StatsProps, ToolKind, VeinProps, View } from '../types'
 import { ACHIEVEMENT_BONUS, ACHIEVEMENTS, BIOMES, FINDS, PRODUCERS, RELICS, SHAFT_DEPTH, TOOL_NAMES, type Achievement, type Goal, type Upgrade } from './data.ts'
 import { commas, fmt, fmtRate, fmtSpan, plural } from './format.ts'
 import * as game from './game.ts'
@@ -258,28 +258,18 @@ function paysBack(back: game.Payback): string {
   }
 }
 
-/** Marks the card that pays back soonest, its wait counted, when one pays back in work at all. */
-function markBest(cards: { item: ShopItem; soon: number }[]): ShopItem[] {
-  const best = cards.reduce<{ item: ShopItem; soon: number } | null>((low, c) => (c.soon < (low?.soon ?? Infinity) ? c : low), null)
-  return cards.map(c => (c === best ? { ...c.item, isBest: true } : c.item))
-}
-
 export function shopModel(save: Save, amount: Amount, tab: ShopTab, isLoaded: boolean): ShopModel {
   const m = game.multipliers(save)
   const each = game.unitRates(save, m)
-  const rate = game.rate(save, m)
-  // Seconds of work to afford a price and then earn it back: the best buy is the soonest.
-  const soonest = (price: number, back: game.Payback | null): number =>
-    back?.per !== 'work' ? Infinity : (save.sparks >= price ? 0 : rate > 0 ? (price - save.sparks) / rate : Infinity) + back.n
   const top = PRODUCERS.reduce((high, p, i) => (game.owned(save, p.id) > 0 ? i : high), -1)
-  const producerCards = PRODUCERS.slice(0, top + 2).map(p => {
+  const producers = PRODUCERS.slice(0, top + 2).map(p => {
     const owned = game.owned(save, p.id)
     const count = amount === 'max' ? game.maxCount(p, owned, save.sparks) : amount
     const price = game.priceOf(p, owned, count)
     const back = game.producerPayback(save, p.id, count, m)
     // Once its share of the producers above outgrows its own rate, the card says where the rest comes from.
     const from = each[p.id] >= 2 * game.ownRate(p, m) ? ', mostly from the producers above' : ''
-    const item: ShopItem = {
+    return {
       id: p.id,
       icon: p.id,
       name: p.name,
@@ -290,13 +280,12 @@ export function shopModel(save: Save, amount: Amount, tab: ShopTab, isLoaded: bo
       // Lit only when the whole count is affordable: ×10 buys ten or none.
       canBuy: save.sparks >= price,
     }
-    return { item, soon: soonest(price, back) }
   })
   const { onSale, next } = game.shopUpgrades(save)
-  const upgradeCards = onSale.slice(0, SHOP_LIMIT).map(u => {
+  const upgrades = onSale.slice(0, SHOP_LIMIT).map(u => {
     const back = game.upgradePayback(save, u, m)
     const words = back === null ? '' : paysBack(back)
-    const item: ShopItem = {
+    return {
       id: u.id,
       icon: upgradeIcon(u),
       name: u.name,
@@ -306,11 +295,7 @@ export function shopModel(save: Save, amount: Amount, tab: ShopTab, isLoaded: bo
       price: u.cost,
       canBuy: save.sparks >= u.cost,
     }
-    return { item, soon: soonest(u.cost, back) }
   })
-  const marked = markBest([...producerCards, ...upgradeCards])
-  const producers = marked.slice(0, producerCards.length)
-  const upgrades = marked.slice(producerCards.length)
   const nextUp: ShopModel['next'] = next === null ? null : { name: next.name, icon: upgradeIcon(next), text: nextText(save, next) }
   const won = new Set(game.achievements(save).map(a => a.id))
   const gain = game.stoneGain(save)
