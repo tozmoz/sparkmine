@@ -133,10 +133,7 @@ function card(el: Elements, parts: ShopParts, item: ShopItem, button: RenderElem
     >
       {parts.icon(item.icon, !item.canBuy && item.owned === 0)}
       <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-        <Box flexDirection="row" columnGap={1}>
-          <Text bold>{name}</Text>
-          {item.isBest === true ? <Text color="success">best buy</Text> : null}
-        </Box>
+        <Text bold>{name}</Text>
         <Text dimColor>{item.detail}</Text>
       </Box>
       {button}
