@@ -108,7 +108,7 @@ test('a short purse says how much is missing', async ($, on) => {
 })
 
 test('an upgrade goes on sale at its unlock', async ($, on) => {
-  const w = world(on, { save: seeded({ sparks: 500, clicks: 25 }) })
+  const w = world(on, { save: seeded({ sparks: 500, lifetime: 1_000, clicks: 25 }) })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
   await ui.advance(250)
@@ -124,6 +124,16 @@ test('an upgrade goes on sale at its unlock', async ($, on) => {
   expect(await ui.find({ key: 'up-pick-1' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: 'Click +2 · Read +1 · Edit +4' })).toBeDefined()
   expect(await ui.find({ in: 'shophud', type: 'Text', text: '✻ 400' })).toBeDefined()
+})
+
+test('an upgrade the run has not mined twice the price of waits, and the shop says how far off it is', async ($, on) => {
+  world(on, { save: seeded({ sparks: 150, lifetime: 100, clicks: 25 }) })
+  await start($)
+  const ui = await $.ui.mount(pane('desktop'))
+  await ui.advance(250)
+  expect(await ui.find({ key: 'up-pick-1' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Next: Sharpened pick, once this shaft has mined 200 ✻' })).toBeDefined()
+  expect(await ui.find({ in: 'shophud', type: 'Text', text: '▰▰▰▰▰▱▱▱▱▱ 100/200 ✻' })).toBeDefined()
 })
 
 test('a new shaft trades the run for ancient stones, from 500 m down', async ($, on) => {

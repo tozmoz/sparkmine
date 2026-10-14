@@ -15,6 +15,14 @@ export type Producer = {
 
 export const GROWTH = 1.17
 
+/**
+ * Each producer also mines this share of what the producers above it mine on
+ * their own, times its own upgrades: the first ones grow with the crew, so an
+ * apprentice is still worth buying when the cores do the digging. It is a
+ * share of their own rate, so it never compounds.
+ */
+export const SUPPORT = 0.00006
+
 export const PRODUCERS: readonly Producer[] = [
   { id: 'apprentice', name: 'Apprentice', plural: 'Apprentices', blurb: 'Swings a tiny pick when nobody is looking.', cost: 15, rate: 0.05 },
   { id: 'cart', name: 'Mine cart', plural: 'Mine carts', blurb: 'Rolls loose ore up to the surface.', cost: 110, rate: 0.5 },
@@ -24,8 +32,8 @@ export const PRODUCERS: readonly Producer[] = [
   { id: 'cache', name: 'Cache vein', plural: 'Cache veins', blurb: 'Ore you already mined, mined again.', cost: 1_500_000, rate: 700 },
   { id: 'refinery', name: 'Token refinery', plural: 'Token refineries', blurb: 'Smelts raw tokens into sparks.', cost: 21_000_000, rate: 3_900 },
   { id: 'core', name: 'Context core', plural: 'Context cores', blurb: 'A million tokens of solid ore.', cost: 340_000_000, rate: 22_000 },
-  { id: 'furnace', name: 'GPU furnace', plural: 'GPU furnaces', blurb: 'Smelts ore at a thousand teraflops.', cost: 100_000_000_000, rate: 250_000 },
-  { id: 'datacenter', name: 'Datacenter', plural: 'Datacenters', blurb: 'A building full of miners, cooled by the groundwater.', cost: 2_500_000_000_000, rate: 1_500_000 },
+  { id: 'furnace', name: 'GPU furnace', plural: 'GPU furnaces', blurb: 'Smelts ore at a thousand teraflops.', cost: 20_000_000_000, rate: 250_000 },
+  { id: 'datacenter', name: 'Datacenter', plural: 'Datacenters', blurb: 'A building full of miners, cooled by the groundwater.', cost: 1_000_000_000_000, rate: 1_500_000 },
 ]
 
 /** Sparks one tool call mines before any upgrade. */
@@ -55,11 +63,16 @@ export type Effect =
   | { kind: 'clickRate'; pct: number }
   /** Each click also mines this many sparks for every producer owned. */
   | { kind: 'clickCrew'; per: number }
+  /** Each click also mines this percent of the per-second rate for every producer owned. */
+  | { kind: 'clickCrewRate'; pct: number }
+  /** Everything a click mines, its shares of the rate and the crew included, is worth this many times more. */
+  | { kind: 'clickAll'; mult: number }
   /** Adds this chance that a click strikes a gem. */
   | { kind: 'gem'; chance: number }
   /** Gems are worth this many times more. */
   | { kind: 'gemWorth'; mult: number }
   | { kind: 'producer'; id: ProducerId; mult: number }
+  /** This kind of tool call mines this many times as much, its seconds of the rate included. */
   | { kind: 'tool'; tool: ToolKind; mult: number }
   /** Each tool call also mines this many seconds of the rate. */
   | { kind: 'ore'; seconds: number }
@@ -106,19 +119,20 @@ const TIERS = [
   { at: 5, times: 50 },
   { at: 25, times: 500 },
   { at: 50, times: 50_000 },
+  { at: 100, times: 50_000_000 },
 ] as const
 
-const TIER_NAMES: Readonly<Record<ProducerId, readonly [string, string, string, string]>> = {
-  apprentice: ['Hard hats', 'Coffee rations', 'Union contract', 'Guild charter'],
-  cart: ['Greased axles', 'Double rails', 'Express track', 'Maglev carts'],
-  goblin: ['Regex lessons', 'Case folding', 'Multiline mode', 'Ripgrep blood'],
-  drill: ['Tungsten bits', 'Pressure valves', 'Twin turbines', 'Diamond crowns'],
-  crew: ['Shared context', 'Worktrees', 'Background agents', 'Swarm protocol'],
-  cache: ['Warm cache', 'Longer TTL', 'Prefix reuse', 'Perfect hit rate'],
-  refinery: ['Better tokenizer', 'Batch smelting', 'Speculative pours', 'Distillation'],
-  core: ['Long context', 'Auto compaction', 'Memory files', 'Total recall'],
-  furnace: ['Liquid cooling', 'Tensor cores', 'Overclocking', 'Wafer-scale'],
-  datacenter: ['Hot aisles', 'Fiber backbone', 'Own power plant', 'Planet-scale'],
+const TIER_NAMES: Readonly<Record<ProducerId, readonly [string, string, string, string, string]>> = {
+  apprentice: ['Hard hats', 'Coffee rations', 'Union contract', 'Guild charter', 'Master miners'],
+  cart: ['Greased axles', 'Double rails', 'Express track', 'Maglev carts', 'Hyperloop'],
+  goblin: ['Regex lessons', 'Case folding', 'Multiline mode', 'Ripgrep blood', 'Backreferences'],
+  drill: ['Tungsten bits', 'Pressure valves', 'Twin turbines', 'Diamond crowns', 'Magma bits'],
+  crew: ['Shared context', 'Worktrees', 'Background agents', 'Swarm protocol', 'Agent teams'],
+  cache: ['Warm cache', 'Longer TTL', 'Prefix reuse', 'Perfect hit rate', 'Global cache'],
+  refinery: ['Better tokenizer', 'Batch smelting', 'Speculative pours', 'Distillation', "Philosopher's stone"],
+  core: ['Long context', 'Auto compaction', 'Memory files', 'Total recall', 'Infinite context'],
+  furnace: ['Liquid cooling', 'Tensor cores', 'Overclocking', 'Wafer-scale', 'Immersion baths'],
+  datacenter: ['Hot aisles', 'Fiber backbone', 'Own power plant', 'Planet-scale', 'Orbital racks'],
 }
 
 const producerUpgrades: Upgrade[] = PRODUCERS.flatMap(p =>
@@ -137,52 +151,52 @@ const otherUpgrades: Upgrade[] = [
   { id: 'pick-2', name: 'Steel pick', blurb: 'Clicks mine twice as much again.', cost: 500, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 100 } },
   { id: 'grip-1', name: 'Work gloves', blurb: 'Clicks mine twice as much again.', cost: 3_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 250 } },
   { id: 'pick-3', name: 'Diamond pick', blurb: 'Clicks mine twice as much again.', cost: 10_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 500 } },
-  { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 2% of your rate.', cost: 50_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 1_000 } },
-  { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 4% of your rate.', cost: 5_000_000, effect: { kind: 'clickRate', pct: 4 }, unlock: { kind: 'clicks', n: 3_000 } },
-  { id: 'pick-6', name: 'Obsidian edge', blurb: 'Clicks mine twice as much again.', cost: 500_000_000, effect: { kind: 'click', mult: 2 }, unlock: { kind: 'clicks', n: 10_000 } },
-  { id: 'strike-1', name: 'Seismic tap', blurb: 'Each click mines another 6% of your rate.', cost: 50_000_000, effect: { kind: 'clickRate', pct: 6 }, unlock: { kind: 'clicks', n: 6_000 } },
+  { id: 'pick-4', name: 'Muscle memory', blurb: 'Each click also mines 2% of your rate.', cost: 15_000, effect: { kind: 'clickRate', pct: 2 }, unlock: { kind: 'clicks', n: 1_000 } },
+  { id: 'pick-5', name: 'Deep strike', blurb: 'Each click mines another 4% of your rate.', cost: 2_500_000, effect: { kind: 'clickRate', pct: 4 }, unlock: { kind: 'clicks', n: 3_000 } },
+  { id: 'pick-6', name: 'Obsidian edge', blurb: 'Everything a click mines is worth 25% more.', cost: 100_000_000, effect: { kind: 'clickAll', mult: 1.25 }, unlock: { kind: 'clicks', n: 10_000 } },
+  { id: 'strike-1', name: 'Seismic tap', blurb: 'Each click mines another 6% of your rate.', cost: 20_000_000, effect: { kind: 'clickRate', pct: 6 }, unlock: { kind: 'clicks', n: 6_000 } },
   { id: 'strike-2', name: 'Fault line', blurb: 'Each click mines another 10% of your rate.', cost: 10_000_000_000, effect: { kind: 'clickRate', pct: 10 }, unlock: { kind: 'clicks', n: 15_000 } },
-  { id: 'strike-3', name: 'Tectonic strike', blurb: 'Each click mines another 15% of your rate.', cost: 1_000_000_000_000, effect: { kind: 'clickRate', pct: 15 }, unlock: { kind: 'clicks', n: 30_000 } },
+  { id: 'strike-3', name: 'Tectonic strike', blurb: 'Each click mines another 15% of your rate.', cost: 800_000_000_000, effect: { kind: 'clickRate', pct: 15 }, unlock: { kind: 'clicks', n: 30_000 } },
 
   // The crew cheers you on: clicks grow with every producer owned.
   { id: 'foreman-1', name: "Foreman's whistle", blurb: 'Each click also mines 0.2 for every producer you own.', cost: 10_000, effect: { kind: 'clickCrew', per: 0.2 }, unlock: { kind: 'crew', n: 25 } },
   { id: 'foreman-2', name: 'Work song', blurb: 'Each click mines another 1 per producer.', cost: 500_000, effect: { kind: 'clickCrew', per: 1 }, unlock: { kind: 'crew', n: 80 } },
-  { id: 'foreman-3', name: 'Drill sergeant', blurb: 'Each click mines another 5 per producer.', cost: 50_000_000, effect: { kind: 'clickCrew', per: 5 }, unlock: { kind: 'crew', n: 160 } },
-  { id: 'foreman-4', name: 'Hive mind', blurb: 'Each click mines another 30 per producer.', cost: 10_000_000_000, effect: { kind: 'clickCrew', per: 30 }, unlock: { kind: 'crew', n: 300 } },
+  { id: 'foreman-3', name: 'Drill sergeant', blurb: 'Each click mines another 0.002% of your rate per producer.', cost: 150_000, effect: { kind: 'clickCrewRate', pct: 0.002 }, unlock: { kind: 'crew', n: 160 } },
+  { id: 'foreman-4', name: 'Hive mind', blurb: 'Each click mines another 0.004% of your rate per producer.', cost: 10_000_000, effect: { kind: 'clickCrewRate', pct: 0.004 }, unlock: { kind: 'crew', n: 300 } },
 
   // Now and then a click strikes a gem, worth many clicks at once.
   { id: 'gem-1', name: "Prospector's luck", blurb: `1 click in 25 strikes a gem worth ${GEM_WORTH} clicks.`, cost: 25_000, effect: { kind: 'gem', chance: 0.04 }, unlock: { kind: 'clicks', n: 1_500 } },
-  { id: 'gem-2', name: "Jeweler's loupe", blurb: 'Gems are worth twice as much.', cost: 5_000_000, effect: { kind: 'gemWorth', mult: 2 }, unlock: { kind: 'clicks', n: 4_000 } },
-  { id: 'gem-3', name: 'Geode sense', blurb: 'Gems turn up twice as often.', cost: 1_000_000_000, effect: { kind: 'gem', chance: 0.04 }, unlock: { kind: 'clicks', n: 8_000 } },
+  { id: 'gem-2', name: "Jeweler's loupe", blurb: 'Gems are worth twice as much.', cost: 3_000_000, effect: { kind: 'gemWorth', mult: 2 }, unlock: { kind: 'clicks', n: 4_000 } },
+  { id: 'gem-3', name: 'Geode sense', blurb: 'Gems turn up twice as often.', cost: 50_000_000, effect: { kind: 'gem', chance: 0.04 }, unlock: { kind: 'clicks', n: 8_000 } },
 
-  { id: 'tool-read', name: 'Reading glasses', blurb: 'Read, Grep and Glob calls mine 3x.', cost: 300, effect: { kind: 'tool', tool: 'read', mult: 3 }, unlock: { kind: 'mined', tool: 'read', n: 50 } },
-  { id: 'tool-bash', name: 'Blasting caps', blurb: 'Bash calls mine 3x.', cost: 1_500, effect: { kind: 'tool', tool: 'bash', mult: 3 }, unlock: { kind: 'mined', tool: 'bash', n: 25 } },
-  { id: 'tool-edit', name: 'Edit dynamite', blurb: 'Edit and Write calls mine 3x.', cost: 2_000, effect: { kind: 'tool', tool: 'edit', mult: 3 }, unlock: { kind: 'mined', tool: 'edit', n: 25 } },
-  { id: 'tool-web', name: 'Surface survey', blurb: 'Web calls mine 3x.', cost: 3_000, effect: { kind: 'tool', tool: 'web', mult: 3 }, unlock: { kind: 'mined', tool: 'web', n: 10 } },
-  { id: 'tool-mcp', name: 'MCP adapters', blurb: 'MCP tool calls mine 3x.', cost: 5_000, effect: { kind: 'tool', tool: 'mcp', mult: 3 }, unlock: { kind: 'mined', tool: 'mcp', n: 10 } },
-  { id: 'tool-agent', name: 'Subagent swarm', blurb: 'Agent calls mine 3x.', cost: 8_000, effect: { kind: 'tool', tool: 'agent', mult: 3 }, unlock: { kind: 'mined', tool: 'agent', n: 5 } },
+  { id: 'tool-read', name: 'Reading glasses', blurb: 'Read, Grep and Glob calls mine 50% more.', cost: 125, effect: { kind: 'tool', tool: 'read', mult: 1.5 }, unlock: { kind: 'mined', tool: 'read', n: 50 } },
+  { id: 'tool-bash', name: 'Blasting caps', blurb: 'Bash calls mine 50% more.', cost: 750, effect: { kind: 'tool', tool: 'bash', mult: 1.5 }, unlock: { kind: 'mined', tool: 'bash', n: 25 } },
+  { id: 'tool-edit', name: 'Edit dynamite', blurb: 'Edit and Write calls mine 50% more.', cost: 1_000, effect: { kind: 'tool', tool: 'edit', mult: 1.5 }, unlock: { kind: 'mined', tool: 'edit', n: 25 } },
+  { id: 'tool-web', name: 'Surface survey', blurb: 'Web calls mine 50% more.', cost: 40, effect: { kind: 'tool', tool: 'web', mult: 1.5 }, unlock: { kind: 'mined', tool: 'web', n: 10 } },
+  { id: 'tool-mcp', name: 'MCP adapters', blurb: 'MCP tool calls mine 50% more.', cost: 30, effect: { kind: 'tool', tool: 'mcp', mult: 1.5 }, unlock: { kind: 'mined', tool: 'mcp', n: 10 } },
+  { id: 'tool-agent', name: 'Subagent swarm', blurb: 'Agent calls mine 50% more.', cost: 250, effect: { kind: 'tool', tool: 'agent', mult: 1.5 }, unlock: { kind: 'mined', tool: 'agent', n: 5 } },
   { id: 'ore-1', name: 'Ore sense', blurb: 'Every tool call also mines 5s of your rate.', cost: 25_000, effect: { kind: 'ore', seconds: 5 }, unlock: { kind: 'tools', n: 200 } },
   { id: 'ore-2', name: 'Mother lode', blurb: 'Every tool call mines another 15s of your rate.', cost: 2_500_000, effect: { kind: 'ore', seconds: 15 }, unlock: { kind: 'tools', n: 1_000 } },
 
   { id: 'idle-1', name: 'Night shift', blurb: 'Your crew mines at 10% while Claude is idle.', cost: 10_000, effect: { kind: 'idle', share: 0.1 }, unlock: { kind: 'crew', n: 10 } },
   { id: 'idle-2', name: 'Graveyard shift', blurb: 'Your idle crew mines at 25%.', cost: 1_000_000, effect: { kind: 'idle', share: 0.25 }, unlock: { kind: 'crew', n: 50 } },
-  { id: 'idle-3', name: 'Automation', blurb: 'Your idle crew mines at 50%.', cost: 1_000_000_000, effect: { kind: 'idle', share: 0.5 }, unlock: { kind: 'crew', n: 200 } },
-  { id: 'idle-4', name: 'Lights-out mining', blurb: 'Your idle crew mines at 70%.', cost: 1_000_000_000_000, effect: { kind: 'idle', share: 0.7 }, unlock: { kind: 'crew', n: 400 } },
-  { id: 'shift-1', name: 'Overtime pay', blurb: 'Each finished turn pays 10s of your rate.', cost: 50_000, effect: { kind: 'shift', seconds: 10 }, unlock: { kind: 'turns', n: 50 } },
+  { id: 'idle-3', name: 'Automation', blurb: 'Your idle crew mines at 50%.', cost: 320_000_000, effect: { kind: 'idle', share: 0.5 }, unlock: { kind: 'crew', n: 200 } },
+  { id: 'idle-4', name: 'Lights-out mining', blurb: 'Your idle crew mines at 70%.', cost: 3_300_000_000, effect: { kind: 'idle', share: 0.7 }, unlock: { kind: 'crew', n: 400 } },
+  { id: 'shift-1', name: 'Overtime pay', blurb: 'Each finished turn pays 10s of your rate.', cost: 25_000, effect: { kind: 'shift', seconds: 10 }, unlock: { kind: 'turns', n: 50 } },
   { id: 'shift-2', name: 'Hazard pay', blurb: 'Each finished turn pays another 30s.', cost: 5_000_000, effect: { kind: 'shift', seconds: 30 }, unlock: { kind: 'turns', n: 250 } },
 
   { id: 'lamp-1', name: 'Brighter lanterns', blurb: 'Everything mines 10% more.', cost: 250_000, effect: { kind: 'global', mult: 1.1 }, unlock: { kind: 'earned', n: 1_000_000 } },
   { id: 'lamp-2', name: 'Canary in the mine', blurb: 'Everything mines 15% more.', cost: 25_000_000, effect: { kind: 'global', mult: 1.15 }, unlock: { kind: 'earned', n: 100_000_000 } },
 
   // Claude's work pays more once it is a habit.
-  { id: 'ci-1', name: 'CI pipeline', blurb: 'Passing builds and clean lints pay double.', cost: 5_000_000_000, effect: { kind: 'events', events: ['build', 'lint'], mult: 2 }, unlock: { kind: 'events', events: ['build', 'lint'], n: 25, label: 'passing builds and lints' } },
-  { id: 'coverage-1', name: 'Test coverage', blurb: 'Passing tests and squashed bugs pay double.', cost: 10_000_000_000, effect: { kind: 'events', events: ['tests', 'fix'], mult: 2 }, unlock: { kind: 'events', events: ['tests', 'fix'], n: 50, label: 'passing test runs' } },
-  { id: 'flow-1', name: 'Flow state', blurb: 'Commits, long shifts and streaks pay double.', cost: 25_000_000_000, effect: { kind: 'events', events: ['commit', 'longShift', 'streak'], mult: 2 }, unlock: { kind: 'events', events: ['commit'], n: 50, label: 'commits' } },
-  { id: 'review-1', name: 'Code review', blurb: 'Pull requests opened and merged pay double.', cost: 50_000_000_000, effect: { kind: 'events', events: ['pr', 'merge'], mult: 2 }, unlock: { kind: 'events', events: ['pr', 'merge'], n: 10, label: 'pull requests opened or merged' } },
+  { id: 'ci-1', name: 'CI pipeline', blurb: 'Passing builds and clean lints pay double.', cost: 1_000_000, effect: { kind: 'events', events: ['build', 'lint'], mult: 2 }, unlock: { kind: 'events', events: ['build', 'lint'], n: 25, label: 'passing builds and lints' } },
+  { id: 'coverage-1', name: 'Test coverage', blurb: 'Passing tests and squashed bugs pay double.', cost: 100_000_000, effect: { kind: 'events', events: ['tests', 'fix'], mult: 2 }, unlock: { kind: 'events', events: ['tests', 'fix'], n: 50, label: 'passing test runs' } },
+  { id: 'flow-1', name: 'Flow state', blurb: 'Commits, long shifts and streaks pay double.', cost: 2_000_000_000, effect: { kind: 'events', events: ['commit', 'longShift', 'streak'], mult: 2 }, unlock: { kind: 'events', events: ['commit'], n: 50, label: 'commits' } },
+  { id: 'review-1', name: 'Code review', blurb: 'Pull requests opened and merged pay double.', cost: 2_000_000, effect: { kind: 'events', events: ['pr', 'merge'], mult: 2 }, unlock: { kind: 'events', events: ['pr', 'merge'], n: 10, label: 'pull requests opened or merged' } },
 
   // Veins come more often to those who catch them.
-  { id: 'vein-1', name: 'Divining rod', blurb: 'Veins show 50% more often.', cost: 1_000_000_000, effect: { kind: 'veinSpeed', mult: 1.5 }, unlock: { kind: 'veins', n: 10 } },
-  { id: 'vein-2', name: 'Gold fever', blurb: 'A frenzy lasts twice as long.', cost: 20_000_000_000, effect: { kind: 'frenzy', mult: 2 }, unlock: { kind: 'veins', n: 25 } },
+  { id: 'vein-1', name: 'Divining rod', blurb: 'Veins show 50% more often.', cost: 75_000_000, effect: { kind: 'veinSpeed', mult: 1.5 }, unlock: { kind: 'veins', n: 10 } },
+  { id: 'vein-2', name: 'Gold fever', blurb: 'A frenzy lasts twice as long.', cost: 200_000_000, effect: { kind: 'frenzy', mult: 2 }, unlock: { kind: 'veins', n: 25 } },
 ]
 
 /**
@@ -203,6 +217,13 @@ function inLines(list: Upgrade[]): Upgrade[] {
 }
 
 export const UPGRADES: readonly Upgrade[] = inLines([...otherUpgrades, ...producerUpgrades])
+
+/**
+ * An upgrade goes on sale once the run has mined this many times its price,
+ * as well as reached its unlock, so the shop never shows a price the run is
+ * nowhere near. A producer's own upgrades wait for its count alone.
+ */
+export const SALE_GATE = 2
 
 /**
  * Ancient stones add to everything the mine earns, for good: the first this

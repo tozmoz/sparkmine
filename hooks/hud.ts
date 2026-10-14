@@ -224,7 +224,9 @@ const Hud: ClientModule<HudProps, State> = (handed, surface) => {
       line([Text({ color: props.layer?.color ?? TOPSOIL, children: [props.layer?.name ?? 'Topsoil'] }), dim(`· ${commas(props.depth ?? 0)} m deep`)]),
     ]
     if (props.goal !== null) {
-      rows.push(line([dim(goal ?? ''), Text({ color: 'claude', children: [`${bar(props.goal.have, props.goal.need)} ${commas(props.goal.have)}/${commas(props.goal.need)}`] })]))
+      const { have, need } = props.goal
+      const count = props.goal.isSparks === true ? `${short(have)}/${short(need)} ✻` : `${commas(have)}/${commas(need)}`
+      rows.push(line([dim(goal ?? ''), Text({ color: 'claude', children: [`${bar(have, need)} ${count}`] })]))
     }
     return box(rows)
   }

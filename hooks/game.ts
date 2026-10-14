@@ -17,11 +17,13 @@ import {
   RELIC_IDS,
   RELICS,
   REWARDS,
+  SALE_GATE,
   SECRET_IDS,
   SHAFT_DEPTH,
   STONE_BONUS,
   STONE_POWER,
   STONE_UNIT,
+  SUPPORT,
   TOOL_BASE,
   UPGRADES,
   VEIN,
@@ -286,6 +288,10 @@ export type Multipliers = {
   clickRate: number
   /** Sparks a click adds for every producer owned. */
   clickCrew: number
+  /** The share of the rate a click adds for every producer owned. */
+  clickCrewRate: number
+  /** What everything a click mines is multiplied by. */
+  clickAll: number
   /** The chance a click strikes a gem, and how many clicks a gem is worth. */
   gemChance: number
   gemWorth: number
@@ -316,6 +322,8 @@ export function multipliers(save: Save): Multipliers {
     click: 1,
     clickRate: 0,
     clickCrew: 0,
+    clickCrewRate: 0,
+    clickAll: 1,
     gemChance: 0,
     gemWorth: GEM_WORTH,
     producer: Object.fromEntries(PRODUCERS.map(p => [p.id, 1])) as Record<ProducerId, number>,
@@ -378,6 +386,12 @@ export function multipliers(save: Save): Multipliers {
         break
       case 'clickCrew':
         m.clickCrew += effect.per
+        break
+      case 'clickCrewRate':
+        m.clickCrewRate += effect.pct / 100
+        break
+      case 'clickAll':
+        m.clickAll *= effect.mult
         break
       case 'gem':
         m.gemChance += effect.chance
@@ -453,19 +467,50 @@ export const hasRelic = (save: Save, id: RelicId): boolean => save.relics.includ
 export const stonesToSpend = (save: Save): number =>
   Math.max(0, save.stones - ownedRelics(save).reduce((sum, r) => sum + r.cost, 0))
 
+/** The producers from the top of the ladder down. */
+const TOP_DOWN: readonly Producer[] = [...PRODUCERS].reverse()
+
+/** Sparks per second one of this producer mines on its own, before its share of the crew above. */
+export const ownRate = (p: Producer, m: Multipliers): number => p.rate * m.producer[p.id] * m.global
+
+/**
+ * Sparks per second one of each producer mines while Claude works: its own
+ * rate, and SUPPORT of what the producers above it mine on their own, both
+ * times its upgrades. One pass from the top down.
+ */
+export function unitRates(save: Save, m = multipliers(save)): Record<ProducerId, number> {
+  const out = { ...m.producer }
+  let above = 0
+  for (const p of TOP_DOWN) {
+    const own = ownRate(p, m)
+    out[p.id] = own + SUPPORT * m.producer[p.id] * above
+    above += owned(save, p.id) * own
+  }
+  return out
+}
+
 /** Sparks per second one of this producer mines while Claude works. */
 export function unitRate(save: Save, id: ProducerId, m = multipliers(save)): number {
-  return producer(id).rate * m.producer[id] * m.global
+  return unitRates(save, m)[id]
 }
 
-/** Sparks per second the whole crew mines while Claude works. */
+/** Sparks per second the whole crew mines while Claude works: unitRates summed in the same pass, with nothing built. */
 export function rate(save: Save, m = multipliers(save)): number {
-  return PRODUCERS.reduce((sum, p) => sum + owned(save, p.id) * unitRate(save, p.id, m), 0)
+  let sum = 0
+  let above = 0
+  for (const p of TOP_DOWN) {
+    const n = owned(save, p.id)
+    const own = ownRate(p, m)
+    sum += n * (own + SUPPORT * m.producer[p.id] * above)
+    above += n * own
+  }
+  return sum
 }
 
-/** What one click mines, gems aside. The crew's share is not doubled by the picks. */
+/** What one click mines, gems aside. The picks double the click alone; Obsidian edge lifts the shares of the rate and the crew too. */
 export function clickValue(save: Save, m = multipliers(save)): number {
-  return (m.click + m.clickCrew * crewSize(save)) * m.global + rate(save, m) * m.clickRate
+  const crew = crewSize(save)
+  return ((m.click + m.clickCrew * crew) * m.global + rate(save, m) * (m.clickRate + m.clickCrewRate * crew)) * m.clickAll
 }
 
 function mix(h: number): number {
@@ -581,6 +626,12 @@ const LINTERS: readonly RegExp[] = [
 const OPENS_PR: readonly RegExp[] = [/^gh\s+pr\s+create\b/]
 const MERGES_PR: readonly RegExp[] = [/^gh\s+pr\s+merge\b(?!.*--auto)/]
 
+/** A commit at the head of one step, after git's own options; an amend rewrites one, and a dry run makes none. */
+const COMMITS: readonly RegExp[] = [/^git(\s+(-[cC]\s+("[^"]*"|'[^']*'|\S+)|--[\w-]+(=\S+)?))*\s+commit\b(?!.*\s--(amend|dry-run)\b)/]
+
+/** What git says when a commit had nothing in it. */
+const NOTHING_COMMITTED = /nothing (added )?to commit|no changes added to commit/
+
 /** Each step of a shell command, with the variables set before it dropped. */
 const steps = (command: string): string[] =>
   command.split(/&&|\|\||;|\||\n/).map(step => step.trim().replace(/^(\w+=\S*\s+)+/, ''))
@@ -605,13 +656,19 @@ export function outcomeOf(tool: string, input: unknown, answer: { isError?: unkn
   const record = (answer.result ?? {}) as { interrupted?: unknown; backgroundTaskId?: unknown; stdout?: unknown; stderr?: unknown; gitOperation?: { commit?: { kind?: unknown } } }
   const tail = (text: unknown) => (typeof text === 'string' ? text.slice(-OUTPUT_TAIL) : '')
   const output = `${tail(record.stdout)}\n${tail(record.stderr)}`.trim()
+  const command = typeof args.command === 'string' ? args.command : undefined
+  const isError = answer.isError === true
+  const interrupted = record.interrupted === true
+  const background = args.run_in_background === true || typeof record.backgroundTaskId === 'string'
+  // The engine reads a commit off the line git prints for it, which `git commit -q` keeps to itself: a commit that ran and finished counts too.
+  const ranCommit = command !== undefined && !isError && !interrupted && !background && runs(command, COMMITS) && !NOTHING_COMMITTED.test(output)
   return {
     tool,
-    ...(typeof args.command === 'string' ? { command: args.command } : {}),
-    isError: answer.isError === true,
-    interrupted: record.interrupted === true,
-    background: args.run_in_background === true || typeof record.backgroundTaskId === 'string',
-    committed: record.gitOperation?.commit?.kind === 'committed',
+    ...(command === undefined ? {} : { command }),
+    isError,
+    interrupted,
+    background,
+    committed: record.gitOperation?.commit?.kind === 'committed' || ranCommit,
     ...(output === '' ? {} : { output }),
   }
 }
@@ -668,17 +725,66 @@ export function strike(save: Save, m = multipliers(save)): { value: number; isGe
   return { value: isGem ? value * m.gemWorth : value, isGem }
 }
 
+/** What one tool call mines: its base and its seconds of the rate, both times what its kind is multiplied by. */
 export function toolValue(save: Save, kind: ToolKind, m = multipliers(save)): number {
-  return TOOL_BASE[kind] * m.tool[kind] * m.global + rate(save, m) * m.ore
+  return (TOOL_BASE[kind] * m.global + rate(save, m) * m.ore) * m.tool[kind]
 }
 
 export function shiftValue(save: Save, m = multipliers(save)): number {
   return rate(save, m) * m.shift
 }
 
-export function idleShare(save: Save): number {
-  const m = multipliers(save)
+export function idleShare(save: Save, m = multipliers(save)): number {
   return Math.min(1, m.idle * m.idleMult)
+}
+
+/** What a purchase earns its price back in: seconds of Claude's work, clicks, tool calls, turns or idle seconds. */
+export type Payback = { per: 'work' | 'click' | 'call' | 'turn' | 'idle'; n: number }
+
+/** What one click mines on average, its chance of a gem counted. */
+const clickWorth = (save: Save, m: Multipliers): number => clickValue(save, m) * (1 + m.gemChance * (m.gemWorth - 1))
+
+/** How soon `count` more of a producer earn back their price, in seconds of Claude's work; null while they add nothing. */
+export function producerPayback(save: Save, id: ProducerId, count: number, m = multipliers(save)): Payback | null {
+  const owns = owned(save, id)
+  const gain = rate({ ...save, producers: { ...save.producers, [id]: owns + count } }, m) - rate(save, m)
+  return gain > 0 ? { per: 'work', n: priceOf(producer(id), owns, count) / gain } : null
+}
+
+/**
+ * How soon an upgrade earns back its price, in what it pays more for: seconds
+ * of work for the crew, clicks, tool calls, turns or idle seconds. Null for
+ * what pays only now and then, veins and work events, and while it adds nothing.
+ */
+export function upgradePayback(save: Save, u: Upgrade, m = multipliers(save)): Payback | null {
+  const after = { ...save, upgrades: [...save.upgrades, u.id] }
+  const n = multipliers(after)
+  const back = (per: Payback['per'], gain: number): Payback | null => (gain > 0 ? { per, n: u.cost / gain } : null)
+  switch (u.effect.kind) {
+    case 'producer':
+    case 'global':
+      return back('work', rate(after, n) - rate(save, m))
+    case 'click':
+    case 'clickRate':
+    case 'clickCrew':
+    case 'clickCrewRate':
+    case 'clickAll':
+    case 'gem':
+    case 'gemWorth':
+      return back('click', clickWorth(after, n) - clickWorth(save, m))
+    case 'tool':
+      return back('call', toolValue(after, u.effect.tool, n) - toolValue(save, u.effect.tool, m))
+    case 'ore':
+      return back('call', rate(save, m) * (n.ore - m.ore))
+    case 'shift':
+      return back('turn', shiftValue(after, n) - shiftValue(save, m))
+    case 'idle':
+      return back('idle', rate(save, m) * (idleShare(after, n) - idleShare(save, m)))
+    case 'events':
+    case 'veinSpeed':
+    case 'frenzy':
+      return null
+  }
 }
 
 function have(save: Save, unlock: Unlock): number {
@@ -704,12 +810,21 @@ function have(save: Save, unlock: Unlock): number {
   }
 }
 
-export function progress(save: Save, u: Upgrade): { have: number; need: number } {
-  return { have: have(save, u.unlock), need: u.unlock.n }
+/** The sparks this run must mine before an upgrade goes on sale: none for a producer's own. */
+export const saleGate = (u: Upgrade): number => (u.effect.kind === 'producer' ? 0 : SALE_GATE * u.cost)
+
+/**
+ * How far an upgrade is from going on sale: its unlock, or this run's sparks
+ * against its sale gate when that is further off (`isSparks` says so).
+ */
+export function progress(save: Save, u: Upgrade): { have: number; need: number; isSparks?: true } {
+  const gate = saleGate(u)
+  const unlock = { have: have(save, u.unlock), need: u.unlock.n }
+  return gate > 0 && save.lifetime / gate < unlock.have / unlock.need ? { have: save.lifetime, need: gate, isSparks: true } : unlock
 }
 
-/** Whether the upgrade's own unlock is reached: so many clicks, producers, sparks. */
-const isReached = (save: Save, u: Upgrade): boolean => have(save, u.unlock) >= u.unlock.n
+/** Whether the upgrade's own unlock is reached, and this run has mined enough for its price. */
+const isReached = (save: Save, u: Upgrade): boolean => have(save, u.unlock) >= u.unlock.n && save.lifetime >= saleGate(u)
 
 /** Whether the cheaper upgrade that does the same is bought, when there is one. */
 const isInTurn = (save: Save, u: Upgrade): boolean => u.after === undefined || save.upgrades.includes(u.after)

@@ -49,7 +49,9 @@ auto-update**.
 - Open the shop with **Shop** or `/mine`. Its tabs hold the producers and
   upgrades, the shaft and its relics, your badges and your stats. Producers
   mine every second Claude works; upgrades make clicks, tool calls, Claude's
-  work and the crew stronger.
+  work and the crew stronger. Each producer also mines a small share of what
+  the ones above it mine, so the first ones keep paying. Every card says how
+  soon it pays for itself, and the best buy is marked.
 - **Claude's work pays**, once a turn each: tests that pass, a bug squashed
   (tests that failed, then pass), a build that passes, a clean lint, a commit,
   a pull request opened or merged, and a turn longer than five minutes. Every
